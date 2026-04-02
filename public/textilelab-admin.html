@@ -1,0 +1,2213 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#F59E0B">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="TextileLab">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Textile Studio Lab — Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#0a0a0c; --bg2:#111116; --bg3:#18181f; --bg4:#1e1e28;
+  --amber:#F59E0B; --amber2:#FCD34D; --amber-dim:rgba(245,158,11,0.12); --amber-glow:rgba(245,158,11,0.06);
+  --border:rgba(255,255,255,0.08); --border2:rgba(245,158,11,0.3);
+  --glass:rgba(255,255,255,0.04); --glass2:rgba(255,255,255,0.07);
+  --text:#f0f0f5; --text2:#9090a8; --text3:#5a5a72;
+  --success:#10B981; --danger:#EF4444; --info:#3B82F6; --warning:#F59E0B;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;overflow:hidden}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── SHELL ── */
+#shell{display:flex;height:100dvh;overflow:hidden}
+
+/* ── NAV ── */
+#nav{width:220px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden}
+.nav-logo{padding:18px;border-bottom:1px solid var(--border)}
+.nav-logo .logo{font-family:'Syne',sans-serif;font-weight:800;font-size:17px}
+.nav-logo .logo span{color:var(--amber)}
+.nav-logo .badge{margin-top:4px;font-size:10px;color:var(--text3);font-family:'DM Mono',monospace}
+.nav-section{padding:16px 10px 4px;font-size:9px;font-family:'DM Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:9px;cursor:pointer;transition:all .15s;margin:1px 6px;color:var(--text2);font-size:13px;border:1px solid transparent}
+.nav-item svg{width:15px;height:15px;flex-shrink:0;opacity:.6}
+.nav-item:hover{background:var(--glass);color:var(--text)}
+.nav-item.active{background:var(--amber-dim);color:var(--amber);border-color:var(--border2)}
+.nav-item.active svg{opacity:1}
+.nav-badge{margin-left:auto;background:var(--danger);color:#fff;font-size:9px;font-family:'DM Mono',monospace;padding:1px 5px;border-radius:20px;min-width:18px;text-align:center}
+.nav-footer{margin-top:auto;padding:12px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:4px}
+.nav-user{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg3);border-radius:10px}
+.nav-user-avatar{width:28px;height:28px;background:var(--amber-dim);border:1px solid var(--border2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0}
+.nav-user-name{font-size:12px;font-weight:500}
+.nav-user-role{font-size:10px;color:var(--text3);font-family:'DM Mono',monospace}
+
+/* ── CONTENT ── */
+#content{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.page-header{padding:18px 24px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:16px;flex-shrink:0;background:var(--bg2)}
+.page-title{font-family:'Syne',sans-serif;font-weight:700;font-size:18px}
+.page-sub{font-size:11px;color:var(--text3);font-family:'DM Mono',monospace;margin-top:2px}
+.page-actions{margin-left:auto;display:flex;gap:8px}
+.view{display:none;flex:1;overflow-y:auto;padding:24px}
+.view.active{display:block}
+
+/* ── STAT CARDS ── */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+@media(max-width:900px){.stats-row{grid-template-columns:repeat(2,1fr)}}
+.stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:18px 20px;transition:border-color .2s}
+.stat-card:hover{border-color:rgba(245,158,11,.2)}
+.stat-label{font-size:11px;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+.stat-value{font-family:'Syne',sans-serif;font-weight:700;font-size:26px;color:var(--text)}
+.stat-value span{font-size:14px;color:var(--text2);font-weight:400;font-family:'DM Sans',sans-serif}
+.stat-delta{font-size:11px;margin-top:6px}
+.stat-delta.up{color:var(--success)}
+.stat-delta.neutral{color:var(--text3)}
+
+/* ── TABLE ── */
+.table-card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;overflow:hidden}
+.table-toolbar{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border)}
+.table-toolbar h3{font-family:'Syne',sans-serif;font-weight:700;font-size:14px}
+table{width:100%;border-collapse:collapse}
+th{padding:11px 16px;text-align:left;font-size:10px;font-family:'DM Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid var(--border);background:var(--bg3);font-weight:400}
+td{padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.04);font-size:13px;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--glass)}
+.status-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-family:'DM Mono',monospace;font-weight:500}
+.status-badge::before{content:'';width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.status-pending{background:rgba(245,158,11,.12);color:var(--amber)}.status-pending::before{background:var(--amber)}
+.status-confirmed{background:rgba(59,130,246,.12);color:var(--info)}.status-confirmed::before{background:var(--info)}
+.status-printing{background:rgba(139,92,246,.12);color:#8B5CF6}.status-printing::before{background:#8B5CF6}
+.status-shipped{background:rgba(16,185,129,.2);color:var(--success)}.status-shipped::before{background:var(--success)}
+.status-done{background:rgba(255,255,255,.06);color:var(--text3)}.status-done::before{background:var(--text3)}
+
+/* ── BUTTONS ── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:10px;border:1px solid var(--border);background:var(--glass);color:var(--text2);font-size:12px;cursor:pointer;transition:all .15s;font-family:'DM Sans',sans-serif;white-space:nowrap}
+.btn:hover{border-color:rgba(255,255,255,.15);color:var(--text)}
+.btn-primary{background:var(--amber);border-color:var(--amber);color:#000;font-weight:700}
+.btn-primary:hover{background:var(--amber2);border-color:var(--amber2);transform:translateY(-1px)}
+.btn-danger{border-color:rgba(239,68,68,.3);color:var(--danger)}
+.btn-danger:hover{background:rgba(239,68,68,.1)}
+.btn-sm{padding:4px 10px;font-size:11px;border-radius:7px}
+.btn-icon{width:28px;height:28px;padding:0;justify-content:center}
+.btn-ghost{background:transparent;color:var(--text2)}
+.btn-ghost:hover{border-color:var(--text2);color:var(--text)}
+
+/* ── CHIPS / FILTER ── */
+.filter-chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{padding:4px 12px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text2);font-size:11px;font-family:'DM Mono',monospace;cursor:pointer;transition:all .15s}
+.chip:hover{border-color:var(--amber);color:var(--amber)}
+.chip.active{background:var(--amber-dim);border-color:var(--border2);color:var(--amber)}
+
+/* ── LIBRARY ── */
+.lib-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;margin-top:16px}
+.lib-item{position:relative;aspect-ratio:1;border-radius:10px;border:2px solid var(--border);overflow:hidden;background:var(--bg3);transition:all .15s;cursor:pointer}
+.lib-item:hover{border-color:var(--amber)}
+.lib-item.selected{border-color:var(--amber);background:var(--amber-dim)}
+.lib-item.selected::after{content:'✓';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:28px;color:var(--amber);font-weight:800;background:rgba(0,0,0,.35);pointer-events:none}
+.lib-item img{width:100%;height:100%;object-fit:contain;padding:4px}
+.lib-item-del{position:absolute;top:4px;right:4px;background:rgba(0,0,0,.7);border:none;border-radius:6px;color:var(--danger);width:22px;height:22px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;opacity:0;transition:.15s;z-index:2}
+.lib-item:hover .lib-item-del{opacity:1}
+.lib-cat-label{font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;position:absolute;bottom:4px;left:6px;pointer-events:none}
+.lib-sel-toolbar{display:none;align-items:center;gap:10px;padding:10px 14px;background:var(--amber-dim);border:1px solid rgba(245,158,11,.4);border-radius:12px;margin-bottom:12px}
+.lib-sel-toolbar.visible{display:flex}
+.upload-zone{border:2px dashed var(--border);border-radius:14px;padding:30px;text-align:center;cursor:pointer;transition:all .2s}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--amber);background:var(--amber-dim)}
+
+/* ── COMPRESSEUR IMAGES ── */
+.compress-toggle-row{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg3);border-radius:10px;border:1px solid var(--border)}
+.compress-toggle-row .label{font-size:12px;font-weight:600;color:var(--text)}
+.compress-toggle-row .sub{font-size:11px;color:var(--text3);margin-top:2px}
+.toggle-sw{position:relative;width:40px;height:22px;flex-shrink:0}
+.toggle-sw input{opacity:0;width:0;height:0;position:absolute}
+.toggle-sw .slider{position:absolute;inset:0;background:var(--border2);border-radius:11px;cursor:pointer;transition:.2s}
+.toggle-sw .slider:before{content:'';position:absolute;width:16px;height:16px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+.toggle-sw input:checked + .slider{background:var(--amber)}
+.toggle-sw input:checked + .slider:before{transform:translateX(18px)}
+.compress-stats{display:none;padding:10px 14px;background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2);border-radius:10px}
+.compress-stats .stat-row{display:flex;align-items:center;justify-content:space-between;font-size:12px;gap:8px}
+.compress-stats .saved-badge{background:rgba(16,185,129,.15);color:#10b981;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap}
+.compress-file-list{margin-top:6px;display:flex;flex-direction:column;gap:3px;max-height:80px;overflow-y:auto}
+.compress-file-row{display:flex;justify-content:space-between;font-size:10px;color:var(--text3);font-family:'DM Mono',monospace}
+
+/* ── MODAL ── */
+.modal-overlay{position:fixed;inset:0;z-index:9000;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.7);backdrop-filter:blur(4px)}
+.modal-overlay.open{display:flex}
+.modal-box{background:var(--bg2);border:1px solid var(--border);border-radius:20px;width:min(520px,94vw);max-height:85vh;display:flex;flex-direction:column;overflow:hidden}
+.modal-header{display:flex;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border)}
+.modal-title{font-family:'Syne',sans-serif;font-weight:700;font-size:15px;flex:1}
+.modal-body{padding:20px;overflow-y:auto;flex:1}
+.modal-footer{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end}
+.modal-close{background:transparent;border:none;color:var(--text2);font-size:20px;cursor:pointer;line-height:1;padding:2px 6px}
+
+/* ── MOCKUPS ── */
+.product-tabs{display:flex;gap:6px;margin-bottom:20px;flex-wrap:wrap}
+.ptab{display:flex;align-items:center;gap:8px;padding:9px 16px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);cursor:pointer;font-size:13px;color:var(--text2);transition:all .15s}
+.ptab:hover{border-color:var(--amber);color:var(--text)}
+.ptab.active{background:var(--amber-dim);border-color:var(--border2);color:var(--amber)}
+.ptab-count{font-family:'DM Mono',monospace;font-size:10px;background:var(--bg3);padding:2px 6px;border-radius:10px}
+.ptab.active .ptab-count{background:rgba(245,158,11,.2)}
+.mockup-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-bottom:24px}
+.mockup-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;transition:border-color .15s}
+.mockup-card:hover{border-color:rgba(255,255,255,.15)}
+.mockup-card-thumb{height:180px;background:var(--bg3);position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.mockup-card-thumb img{max-width:100%;max-height:100%;object-fit:contain}
+.mockup-card-thumb .no-img{color:var(--text3);font-size:11px;text-align:center}
+.mockup-card-thumb .no-img span{font-size:32px;display:block;margin-bottom:6px}
+.zone-overlay{position:absolute;border:2px solid var(--amber);background:rgba(245,158,11,.1);pointer-events:none;border-radius:2px}
+.zone-overlay::after{content:attr(data-label);position:absolute;top:-18px;left:0;font-size:9px;font-family:'DM Mono',monospace;color:var(--amber);background:var(--bg);padding:1px 5px;border-radius:3px;white-space:nowrap}
+.mockup-card-body{padding:12px 14px}
+.mockup-card-name{font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:3px}
+.mockup-card-meta{font-family:'DM Mono',monospace;font-size:10px;color:var(--text3)}
+.mockup-card-views{display:flex;gap:4px;margin:8px 0;flex-wrap:wrap}
+.view-chip{padding:3px 8px;border-radius:12px;font-size:10px;background:var(--bg3);border:1px solid var(--border);color:var(--text2)}
+.view-chip.has-img{border-color:var(--success);color:var(--success)}
+.mockup-add-card{background:var(--bg2);border:2px dashed var(--border);border-radius:14px;min-height:280px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;cursor:pointer;transition:all .2s;color:var(--text3)}
+.mockup-add-card:hover{border-color:var(--amber);color:var(--amber);background:var(--amber-glow)}
+
+/* ── MOCKUP MODAL ── */
+.mockup-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);z-index:9100;opacity:0;pointer-events:none;transition:opacity .2s}
+.mockup-modal-backdrop.open{opacity:1;pointer-events:all}
+.mockup-modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-52%) scale(.97);background:var(--bg2);border:1px solid var(--border);border-radius:18px;z-index:9200;width:min(820px,96vw);max-height:92vh;display:flex;flex-direction:column;opacity:0;pointer-events:none;transition:all .25s}
+.mockup-modal.open{opacity:1;pointer-events:all;transform:translate(-50%,-50%) scale(1)}
+.mockup-modal-header{padding:20px 24px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-shrink:0}
+.mockup-modal-title{font-family:'Syne',sans-serif;font-weight:800;font-size:17px}
+.mockup-modal-close{margin-left:auto;width:32px;height:32px;border-radius:50%;background:var(--glass);border:1px solid var(--border);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:18px;transition:all .15s}
+.mockup-modal-close:hover{background:var(--bg3);color:var(--text)}
+.mockup-modal-body{flex:1;overflow-y:auto;padding:20px 24px;display:flex;gap:20px}
+.mockup-modal-footer{padding:16px 24px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;flex-shrink:0}
+.editor-left{width:280px;flex-shrink:0;display:flex;flex-direction:column;gap:14px}
+.editor-right{flex:1;display:flex;flex-direction:column;gap:12px}
+.field-group{display:flex;flex-direction:column;gap:6px}
+.field-label{font-size:10px;font-family:'DM Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:1px}
+.field-input{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;outline:none;width:100%;transition:border-color .15s}
+.field-input:focus{border-color:var(--amber)}
+.field-select{appearance:none;cursor:pointer}
+.views-section{border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.views-header{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--bg3);border-bottom:1px solid var(--border)}
+.views-header-title{font-family:'Syne',sans-serif;font-weight:600;font-size:13px}
+.views-list{display:flex;flex-direction:column}
+.view-row{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);transition:background .1s}
+.view-row:last-child{border-bottom:none}
+.view-row:hover{background:var(--glass)}
+.view-row.active-view{background:var(--amber-dim)}
+.view-thumb{width:44px;height:44px;background:var(--bg3);border-radius:6px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;cursor:pointer;position:relative}
+.view-thumb img{width:100%;height:100%;object-fit:contain}
+.view-thumb .upload-hint{position:absolute;inset:0;background:rgba(245,158,11,.85);display:flex;align-items:center;justify-content:center;opacity:0;font-size:16px;border-radius:5px;transition:opacity .15s}
+.view-thumb:hover .upload-hint{opacity:1}
+.view-name-input{flex:1;background:transparent;border:none;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;outline:none;padding:4px 0}
+.view-status{font-size:10px;padding:2px 7px;border-radius:8px;font-family:'DM Mono',monospace;flex-shrink:0}
+.view-status.ok{background:rgba(16,185,129,.15);color:var(--success);border:1px solid rgba(16,185,129,.3)}
+.view-status.empty{background:var(--bg3);color:var(--text3);border:1px solid var(--border)}
+.zone-editor-canvas-wrap{position:relative;background:var(--bg3);border:1px solid var(--border);border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center;min-height:300px}
+.zone-editor-canvas-wrap canvas{display:block}
+.zone-editor-canvas-wrap .no-img-msg{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--text3);pointer-events:none;transition:background .15s;border-radius:10px}
+.mockup-modal.open .zone-editor-canvas-wrap .no-img-msg{pointer-events:all}
+.zone-editor-canvas-wrap .no-img-msg:hover{background:rgba(245,158,11,.05)}
+.zone-info-bar{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap}
+.zone-coord{display:flex;align-items:center;gap:5px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:4px 10px;font-family:'DM Mono',monospace;font-size:11px}
+.zone-coord label{color:var(--text3)}
+.zone-coord span{color:var(--amber)}
+.formats-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.fmt-chip{padding:4px 10px;border-radius:8px;font-size:10px;font-family:'DM Mono',monospace;background:var(--bg3);border:1px solid var(--border);color:var(--text2);cursor:pointer;transition:all .15s}
+.fmt-chip:hover{border-color:var(--amber);color:var(--amber)}
+.fmt-chip.active{background:var(--amber-dim);border-color:var(--border2);color:var(--amber)}
+.view-selector{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+.vs-btn{padding:5px 12px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text2);font-size:11px;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:5px}
+.vs-btn:hover{border-color:var(--amber);color:var(--amber)}
+.vs-btn.active{background:var(--amber-dim);border-color:var(--border2);color:var(--amber)}
+.vs-dot{width:6px;height:6px;border-radius:50%;background:var(--text3)}
+.vs-btn.active .vs-dot,.vs-btn.has-img .vs-dot{background:var(--success)}
+.upload-3d-zone{border:2px dashed var(--border);border-radius:10px;padding:20px;text-align:center;cursor:pointer;transition:all .2s;position:relative}
+.upload-3d-zone:hover{border-color:var(--amber);background:var(--amber-glow)}
+.upload-3d-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;pointer-events:none}
+.mockup-modal.open .upload-3d-zone input{pointer-events:all}
+
+/* ── PRODUCT BARS ── */
+.product-bars{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:24px}
+.product-bars h3{font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:16px}
+.bar-row{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.bar-label{width:80px;font-size:12px;color:var(--text2);flex-shrink:0}
+.bar-track{flex:1;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden}
+.bar-fill{height:100%;border-radius:3px;background:var(--amber);transition:width .6s}
+.bar-val{width:50px;text-align:right;font-family:'DM Mono',monospace;font-size:11px;color:var(--text3)}
+
+/* ── PRODUCT LINKS ── */
+.pl-table{width:100%;border-collapse:collapse}
+.pl-table th{font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.04em;padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)}
+.pl-table td{padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
+.pl-table tr:last-child td{border-bottom:none}
+.pl-table tr:hover td{background:var(--glass)}
+.pl-prod-name{font-weight:500;color:var(--text)}
+.pl-prod-handle{font-size:10px;font-family:'DM Mono',monospace;color:var(--text3);margin-top:2px}
+.pl-mockup-select{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-size:12px;font-family:'DM Sans',sans-serif;outline:none;width:100%;max-width:260px;cursor:pointer}
+.pl-mockup-select:focus{border-color:var(--amber)}
+.pl-linked{color:var(--success);font-size:11px;font-family:'DM Mono',monospace}
+.pl-unlinked{color:var(--text3);font-size:11px}
+.pl-badge-ok{background:rgba(16,185,129,.15);color:var(--success);border:1px solid rgba(16,185,129,.3)}
+.pl-badge-warn{background:rgba(245,158,11,.15);color:var(--amber);border:1px solid rgba(245,158,11,.3)}
+.pl-badge-err{background:rgba(239,68,68,.15);color:var(--danger);border:1px solid rgba(239,68,68,.3)}
+.pl-empty{text-align:center;padding:32px 16px;color:var(--text3);font-size:13px}
+.pl-save-indicator{font-size:11px;color:var(--success);opacity:0;transition:opacity .3s;margin-left:8px}
+.pl-save-indicator.show{opacity:1}
+
+/* ── TOAST ── */
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:9px 18px;font-size:12px;z-index:9999;opacity:0;transition:all .25s;white-space:nowrap;pointer-events:none}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+/* Bloquer les clics sur la page quand un modal est ouvert */
+body.modal-open #lib-drop-zone { pointer-events: none !important; }
+body.modal-open #lib-drop-zone * { pointer-events: none !important; }
+
+/* ── MOBILE NAV ── */
+#nav-toggle{display:none;position:fixed;top:12px;left:12px;z-index:200;background:var(--bg2);border:1px solid var(--border);border-radius:10px;width:38px;height:38px;cursor:pointer;align-items:center;justify-content:center}
+#nav-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:150}
+@media(max-width:768px){
+  #nav{position:fixed;left:-240px;top:0;bottom:0;z-index:160;transition:left .25s;width:220px}
+  #nav.open{left:0}
+  #nav-toggle{display:flex}
+  #nav-overlay.open{display:block}
+  #content{padding-top:0}
+  .view{padding:16px}
+  .stats-row{grid-template-columns:1fr 1fr}
+}
+</style>
+</head>
+<body>
+<div id="shell">
+
+  <!-- NAV -->
+  <nav id="nav">
+    <div class="nav-logo">
+      <div class="logo">Textile<span>Lab</span> Studio</div>
+      <div class="badge">Administration</div>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:8px 0">
+      <div class="nav-section">Principal</div>
+      <div class="nav-item active" onclick="showView('dashboard')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        Dashboard
+      </div>
+      <div class="nav-item" onclick="showView('designs')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        Designs
+      </div>
+
+      <div class="nav-section">Catalogue</div>
+      <div class="nav-item" onclick="showView('categories')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h8M4 18h12"/></svg>
+        Catégories produits
+      </div>
+      <div class="nav-item" onclick="showView('mockups')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+        Mockups & Zones
+      </div>
+      <div class="nav-item" onclick="showView('library')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+        Bibliothèque
+      </div>
+      <div class="nav-item" onclick="showView('pricing')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+        Produits & Mockups
+      </div>
+
+      <div class="nav-section">Système</div>
+      <div class="nav-item" onclick="showView('settings')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        Paramètres
+      </div>
+    </div>
+
+    <div class="nav-footer">
+      <a href="textilelab-studio.html" style="display:flex;align-items:center;gap:8px;color:var(--text3);font-size:12px;text-decoration:none;padding:6px 8px;border-radius:8px;transition:all .15s" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        Retour à l'éditeur
+      </a>
+      <div class="nav-user">
+        <div class="nav-user-avatar">👤</div>
+        <div>
+          <div class="nav-user-name" id="nav-username">admin</div>
+          <div class="nav-user-role">Administrateur</div>
+        </div>
+      </div>
+      <button class="btn btn-danger btn-sm" style="width:100%;justify-content:center;margin-top:4px" onclick="logout()">Déconnexion</button>
+    </div>
+  </nav>
+
+  <!-- MOBILE NAV TOGGLE -->
+  <button id="nav-toggle" onclick="toggleNav()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <div id="nav-overlay" onclick="toggleNav()"></div>
+
+  <!-- CONTENT -->
+  <div id="content">
+
+    <!-- ══ DASHBOARD ══ -->
+    <div class="view active" id="view-dashboard">
+      <div class="page-header">
+        <div><div class="page-title">Dashboard</div><div class="page-sub" id="dash-date">—</div></div>
+        <div class="page-actions">
+          <button class="btn" onclick="refreshAll()">↻ Actualiser</button>
+        </div>
+      </div>
+      <div style="padding:24px">
+        <div class="stats-row">
+          <div class="stat-card"><div class="stat-label">Designs créés</div><div class="stat-value" id="s-designs">—</div><div class="stat-delta neutral">Toutes créations</div></div>
+          <div class="stat-card"><div class="stat-label">Images bibliothèque</div><div class="stat-value" id="s-library">—</div><div class="stat-delta neutral">Visuels disponibles</div></div>
+          <div class="stat-card"><div class="stat-label">Mockups</div><div class="stat-value" id="s-mockups">—</div><div class="stat-delta neutral">Produits configurés</div></div>
+          <div class="stat-card"><div class="stat-label">Catégories</div><div class="stat-value" id="s-categories">—</div><div class="stat-delta neutral">Types de produits</div></div>
+        </div>
+        <div class="product-bars" id="product-bars" style="display:none"></div>
+      </div>
+    </div>
+
+    <!-- ══ ORDERS ══ -->
+    <!-- ══ DESIGNS ══ -->
+    <div class="view" id="view-designs">
+      <div class="page-header">
+        <div><div class="page-title">Designs</div><div class="page-sub">Créations sauvegardées</div></div>
+      </div>
+      <div style="padding:24px">
+        <div id="designs-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px">
+          <div style="color:var(--text3);padding:24px;grid-column:1/-1;text-align:center">Chargement…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ MOCKUPS ══ -->
+    <div class="view" id="view-mockups">
+      <div class="page-header">
+        <div><div class="page-title">Mockups & Zones</div><div class="page-sub">Visuels produits et zones d'impression</div></div>
+        <div class="page-actions">
+          <button class="btn btn-primary" onclick="openNewMockup()">+ Nouveau mockup</button>
+        </div>
+      </div>
+      <div style="padding:24px" id="mockups-content">
+        <div style="display:flex;align-items:center;justify-content:center;height:40vh;color:var(--text3)">Chargement…</div>
+      </div>
+    </div>
+
+    <!-- ══ CATEGORIES PRODUITS ══ -->
+    <div class="view" id="view-categories">
+      <div class="page-header">
+        <div><div class="page-title">Catégories produits</div><div class="page-sub">Types de produits personnalisables</div></div>
+        <div class="page-actions">
+          <button class="btn btn-primary" onclick="openAddCategoryModal()">+ Nouvelle catégorie</button>
+        </div>
+      </div>
+      <div style="padding:24px">
+        <div id="categories-list" style="display:flex;flex-direction:column;gap:12px;max-width:640px">
+          <div style="color:var(--text3);font-size:13px;padding:20px">Chargement…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal : ajouter / éditer une catégorie -->
+    <div class="modal-overlay" id="modal-cat" onclick="if(event.target===this)closeCatModal()">
+      <div class="modal-box" style="max-width:400px">
+        <div class="modal-header">
+          <div class="modal-title" id="modal-cat-title">Nouvelle catégorie</div>
+          <button class="modal-close" onclick="closeCatModal()">✕</button>
+        </div>
+        <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+          <div>
+            <label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-family:'DM Mono',monospace;display:block;margin-bottom:6px">Emoji</label>
+            <input type="text" id="cat-emoji" placeholder="📦" maxlength="4"
+              style="width:60px;background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;color:var(--text);font-size:22px;text-align:center;outline:none">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-family:'DM Mono',monospace;display:block;margin-bottom:6px">Nom affiché</label>
+            <input type="text" id="cat-name" placeholder="Ex: Sweat Capuche, T-Shirt Premium…"
+              style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;color:var(--text);font-size:14px;outline:none;box-sizing:border-box">
+            <div id="cat-key-preview" style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace;margin-top:5px"></div>
+          </div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
+            <button class="btn" onclick="closeCatModal()">Annuler</button>
+            <button class="btn btn-primary" onclick="saveCategoryModal()">Enregistrer</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ LIBRARY ══ -->
+    <div class="view" id="view-library">
+      <div class="page-header">
+        <div><div class="page-title">Bibliothèque visuels</div><div class="page-sub" id="lib-count-label">—</div></div>
+        <div class="page-actions">
+          <button class="btn" onclick="openCreateCatModal()">+ Catégorie</button>
+          <button class="btn btn-primary" onclick="openUploadModal()">+ Ajouter des images</button>
+        </div>
+      </div>
+      <div style="padding:24px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+          <div class="filter-chips" id="lib-cat-chips">
+            <button class="chip active" data-cat="all" onclick="filterLib('all')">Tout</button>
+          </div>
+        </div>
+        <div class="upload-zone" id="lib-drop-zone">
+          <div style="font-size:28px;margin-bottom:8px">🖼</div>
+          <div style="font-size:13px;font-weight:500;margin-bottom:4px">Glissez des images ici ou cliquez</div>
+          <div style="font-size:11px;color:var(--text3)">PNG, JPG, SVG, WEBP — max 20 Mo chacune</div>
+        </div>
+        <!-- Toolbar multi-sélection -->
+        <div class="lib-sel-toolbar" id="lib-sel-toolbar">
+          <span id="lib-sel-count" style="font-size:13px;font-weight:600;color:var(--amber)">0 sélectionné(s)</span>
+          <button class="btn btn-sm" onclick="libSelectAll()" id="lib-btn-selectall">Tout sélectionner</button>
+          <button class="btn btn-sm" onclick="libDeselectAll()">Désélectionner</button>
+          <div style="flex:1"></div>
+          <button class="btn btn-sm" style="background:transparent;border:1px solid var(--border);color:var(--text2)" onclick="libChangeCatSelected()">📁 Changer catégorie</button>
+          <button class="btn btn-sm btn-danger" onclick="libDeleteSelected()">🗑 Supprimer la sélection</button>
+        </div>
+        <div class="lib-grid" id="lib-grid">
+          <div style="grid-column:1/-1;text-align:center;color:var(--text3);padding:24px;font-size:12px">Chargement…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ PRICING / PRODUITS ══ -->
+    <div class="view" id="view-pricing">
+      <div class="page-header">
+        <div><div class="page-title">Produits & Mockups</div><div class="page-sub">Liaisons Shopify ↔ Mockups + Tarification</div></div>
+        <div class="page-actions">
+          <button class="btn" onclick="refreshShopifyProducts()" id="btn-refresh-shopify" title="Rafraîchir les produits Shopify">↺ Shopify</button>
+          <button class="btn btn-primary" onclick="saveProductPricing()">💾 Enregistrer les prix</button>
+        </div>
+      </div>
+      <div style="padding:24px;display:flex;flex-direction:column;gap:28px">
+
+        <!-- ── Section 1 : Liaisons Shopify → Mockup ── -->
+        <div class="table-card" style="padding:0;overflow:hidden">
+          <div style="padding:18px 20px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">
+            <span style="font-size:16px">🔗</span>
+            <div>
+              <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px">Liaisons Produits Shopify → Mockups</div>
+              <div style="font-size:11px;color:var(--text3);margin-top:2px">Associez chaque produit Shopify au mockup correspondant</div>
+            </div>
+            <div id="shopify-status-badge" style="margin-left:auto;font-size:11px;padding:3px 10px;border-radius:20px;font-family:'DM Mono',monospace"></div>
+          </div>
+          <div id="product-links-container" style="padding:16px">
+            <div style="color:var(--text3);font-size:13px;padding:12px">Chargement…</div>
+          </div>
+        </div>
+
+        <!-- ── Section 2 : Tarification ── -->
+        <div>
+          <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:14px;display:flex;align-items:center;gap:8px"><span>💰</span> Tarification</div>
+          <div id="products-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px">
+            <div style="color:var(--text3);font-size:13px;padding:20px">Chargement…</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ══ SETTINGS ══ -->
+    <div class="view" id="view-settings">
+      <div class="page-header">
+        <div><div class="page-title">Paramètres</div><div class="page-sub">Configuration du système</div></div>
+      </div>
+      <div style="padding:24px;display:flex;flex-direction:column;gap:20px;max-width:700px">
+        <div class="table-card" style="padding:20px">
+          <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:16px">🔌 Connexion API</h3>
+          <div style="font-size:12px;color:var(--text2);margin-bottom:8px">URL du backend</div>
+          <div style="font-size:13px;font-family:'DM Mono',monospace;color:var(--amber);background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px" id="api-url-display">—</div>
+          <div style="margin-top:12px;display:flex;gap:8px">
+            <button class="btn btn-primary" onclick="testAPIConnection()">Tester la connexion</button>
+            <span id="api-test-result" style="font-size:12px;color:var(--text3);align-self:center"></span>
+          </div>
+        </div>
+        <div class="table-card" style="padding:20px">
+          <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:16px">🔑 Changer le mot de passe</h3>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <input type="password" id="pw-old" placeholder="Ancien mot de passe" class="field-input" style="background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 14px;color:var(--text);font-size:13px;outline:none">
+            <input type="password" id="pw-new" placeholder="Nouveau mot de passe" class="field-input" style="background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 14px;color:var(--text);font-size:13px;outline:none">
+            <button class="btn btn-primary" style="align-self:flex-start" onclick="changePassword()">Enregistrer</button>
+          </div>
+        </div>
+        <!-- IA / OpenAI -->
+        <div class="table-card" style="padding:20px">
+          <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px">🤖 Intelligence Artificielle — OpenAI</h3>
+          <p style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5">La clé API OpenAI est nécessaire pour les fonctions <strong style="color:var(--text2)">Photo → Illustration</strong> et <strong style="color:var(--text2)">Génération IA</strong> du studio. Obtenez une clé sur <a href="https://platform.openai.com/api-keys" target="_blank" style="color:var(--amber);text-decoration:none">platform.openai.com/api-keys</a>.</p>
+
+          <!-- Statut actuel -->
+          <div id="ai-key-status" style="display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:14px;padding:10px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:9px">
+            <span id="ai-key-dot" style="width:8px;height:8px;border-radius:50%;background:var(--text3);flex-shrink:0"></span>
+            <span id="ai-key-label" style="color:var(--text3)">Vérification…</span>
+            <span id="ai-key-masked" style="margin-left:auto;font-family:'DM Mono',monospace;font-size:11px;color:var(--text3)"></span>
+          </div>
+
+          <!-- Saisie -->
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="position:relative">
+              <input type="password" id="ai-key-input" placeholder="sk-proj-xxxxxxxxxxxxxxxxxxxxxxxx"
+                style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 44px 10px 14px;color:var(--text);font-size:13px;outline:none;font-family:'DM Mono',monospace;box-sizing:border-box"
+                oninput="document.getElementById('ai-key-save-btn').disabled = !this.value.trim().startsWith('sk-')">
+              <button onclick="toggleAIKeyVisibility()" title="Afficher/Masquer"
+                style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text3);font-size:16px;padding:0;line-height:1">👁</button>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button id="ai-key-save-btn" class="btn btn-primary" onclick="saveAIKey()" disabled>
+                💾 Sauvegarder et tester
+              </button>
+              <button class="btn" onclick="testAIKey()" style="font-size:12px">
+                ⚡ Tester la clé actuelle
+              </button>
+              <button class="btn" onclick="deleteAIKey()" style="font-size:12px;color:var(--danger);border-color:var(--danger)">
+                🗑 Supprimer
+              </button>
+            </div>
+            <div id="ai-key-result" style="font-size:12px;color:var(--text3);min-height:16px"></div>
+          </div>
+        </div>
+
+        <div class="table-card" style="padding:20px">
+          <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:12px">🔧 Services</h3>
+          <div id="services-status" style="display:flex;flex-direction:column;gap:8px;font-size:13px">Chargement…</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /shell -->
+
+<!-- ══ MODAL ORDER DETAIL ══ -->
+<div class="modal-overlay" id="order-modal" onclick="if(event.target===this)closeModal('order-modal')">
+  <div class="modal-box" style="width:min(600px,94vw)">
+    <div class="modal-header"><div class="modal-title" id="order-modal-title">Commande</div><button class="modal-close" onclick="closeModal('order-modal')">×</button></div>
+    <div class="modal-body" id="order-modal-body"></div>
+    <div class="modal-footer"><button class="btn" onclick="closeModal('order-modal')">Fermer</button></div>
+  </div>
+</div>
+
+<!-- ══ MODAL MOCKUP EDITOR ══ -->
+<div class="mockup-modal-backdrop" id="mockup-modal-backdrop" onclick="closeMockupModal()"></div>
+<div class="mockup-modal" id="mockup-modal-editor">
+  <div class="mockup-modal-header">
+    <div class="mockup-modal-title" id="mockup-modal-title">Nouveau mockup</div>
+    <button class="mockup-modal-close" onclick="closeMockupModal()">×</button>
+  </div>
+  <div class="mockup-modal-body">
+    <div class="editor-left">
+      <div class="field-group">
+        <div class="field-label">Nom du mockup</div>
+        <input type="text" class="field-input" id="m-name" placeholder="Ex: T-Shirt Col Rond">
+      </div>
+      <div class="field-group">
+        <div class="field-label">Produit associé</div>
+        <select class="field-input field-select" id="m-product">
+          <!-- Peuplé dynamiquement par _populateProductSelect() -->
+        </select>
+      </div>
+      <div class="field-label">Vues disponibles</div>
+      <div class="views-section">
+        <div class="views-header">
+          <div class="views-header-title">Vues</div>
+          <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="addView()">+ Ajouter</button>
+        </div>
+        <div class="views-list" id="views-list"></div>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Fichier 3D (OBJ / GLB)</div>
+        <div class="upload-3d-zone" id="zone-3d-upload">
+          <input type="file" accept=".obj,.glb,.gltf" onchange="handle3DUpload(event)">
+          <div style="font-size:22px;margin-bottom:6px">📦</div>
+          <div style="font-size:12px;color:var(--text2)" id="file-3d-label">Glissez ou cliquez pour importer</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:3px">.OBJ, .GLB, .GLTF</div>
+        </div>
+      </div>
+    </div>
+    <div class="editor-right">
+      <div class="field-label">Zone d'impression — sélectionnez une vue puis glissez le cadre</div>
+      <div class="view-selector" id="view-selector"></div>
+      <!-- Format unique par vue — la taille est gérée côté studio -->
+      <div class="zone-editor-canvas-wrap" id="zone-canvas-wrap">
+        <canvas id="zone-canvas" width="440" height="340"></canvas>
+        <div class="no-img-msg" id="zone-no-img" onclick="triggerViewUpload(ED.activeViewIdx)" style="cursor:pointer">
+          <span style="font-size:28px;display:block;margin-bottom:4px">📤</span>
+          <strong style="color:var(--text);font-size:13px">Cliquez pour importer le PNG</strong>
+          <span style="font-size:11px;margin-top:2px;color:var(--text3)">de cette vue</span>
+          <span style="font-size:10px;color:var(--text3);margin-top:6px;border:1px dashed var(--border);padding:4px 10px;border-radius:6px">PNG · JPG · WEBP</span>
+        </div>
+      </div>
+      <div class="zone-info-bar">
+        <div class="zone-coord"><label>X</label><span id="zc-x">0</span><label>px</label></div>
+        <div class="zone-coord"><label>Y</label><span id="zc-y">0</span><label>px</label></div>
+        <div class="zone-coord"><label>W</label><span id="zc-w">200</span><label>px</label></div>
+        <div class="zone-coord"><label>H</label><span id="zc-h">260</span><label>px</label></div>
+        <button class="btn btn-ghost btn-sm" onclick="resetZone()">↺ Reset</button>
+        <button class="btn btn-ghost btn-sm" onclick="centerZone()">⊕ Centrer</button>
+      </div>
+    </div>
+  </div>
+  <div class="mockup-modal-footer">
+    <button class="btn btn-ghost" onclick="closeMockupModal()">Annuler</button>
+    <button class="btn btn-primary" onclick="saveMockup()">💾 Enregistrer le mockup</button>
+  </div>
+</div>
+
+<input type="file" id="global-view-file-input" accept="image/*" style="display:none" onchange="handleViewImage(event)">
+<input type="file" id="lib-upload-file-input" accept="image/*,image/svg+xml" multiple style="display:none">
+<input type="file" id="lib-upload-folder-input" accept="image/*,image/svg+xml" multiple webkitdirectory style="display:none">
+<div id="toast"></div>
+
+<script>
+// ============================================
+// GLOBALS
+// ============================================
+let _libItems = [], _libCat = 'all', _libCats = [];
+let _libSelected = new Set(); // IDs des items sélectionnés
+let _renderPollInterval;
+let _toastTimer;
+
+// Gestion état modal global — bloque les clics en dessous
+function _modalOpen()  { document.body.classList.add('modal-open'); }
+function _modalClose() {
+  // Délai pour laisser l'event click se dissiper avant de réactiver la drop zone
+  setTimeout(() => {
+    if (!document.querySelector('.modal-overlay.open') &&
+        !document.getElementById('mockup-modal-editor')?.classList.contains('open')) {
+      document.body.classList.remove('modal-open');
+    }
+  }, 150);
+}
+let _pricingData = null;
+// Mockups
+let MOCKUPS = [], _apiAvailable = false;
+let currentProductFilter = 'all';
+// PRODUCTS_META est chargé dynamiquement depuis /api/product-categories
+let PRODUCTS_META = {
+  tshirt:  { name:'T-Shirt',   emoji:'👕' },
+  hoodie:  { name:'Hoodie',    emoji:'🧥' },
+  cap:     { name:'Casquette', emoji:'🧢' },
+  totebag: { name:'Tote Bag',  emoji:'👜' },
+};
+async function loadProductCategories() {
+  const cats = await api('/api/product-categories');
+  if (Array.isArray(cats) && cats.length) {
+    PRODUCTS_META = {};
+    cats.forEach(c => { PRODUCTS_META[c.key] = { name: c.name, emoji: c.emoji, id: c.id }; });
+  }
+}
+// Zone canvas
+let ED = { id:null, _apiId:null, name:'', product:'tshirt', views:[], file3d:null, activeViewIdx:0 };
+const FORMATS_RATIO = { A3:297/420, A4:210/297, A5:148/210, A6:105/148 };
+const CANVAS_W=440, CANVAS_H=340, HANDLE_SIZE=10;
+let zCtx, zImg=null;
+let zone={x:60,y:40,w:180,h:240};
+let dragging=false, resizing=false, dragOff={x:0,y:0}, resizeDir='', zoneRafId=null;
+
+// ============================================
+// AUTH
+// ============================================
+const token = sessionStorage.getItem('tl_admin_token');
+if (!token) window.location.href = 'textilelab-login.html';
+const adminUser = sessionStorage.getItem('tl_admin_user') || 'admin';
+document.getElementById('nav-username').textContent = adminUser;
+const API_BASE = (window.location.hostname==='localhost'||window.location.hostname==='127.0.0.1')
+  ? 'http://localhost:3001' : '';
+const _apiUrlEl = document.getElementById('api-url-display');
+if (_apiUrlEl) _apiUrlEl.textContent = API_BASE || window.location.origin;
+
+function logout() {
+  sessionStorage.removeItem('tl_admin_token');
+  sessionStorage.removeItem('tl_admin_user');
+  window.location.href = 'textilelab-login.html';
+}
+
+// ============================================
+// NAV
+// ============================================
+function toggleNav() {
+  document.getElementById('nav').classList.toggle('open');
+  document.getElementById('nav-overlay').classList.toggle('open');
+}
+
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+  const navEl = document.querySelector(`[onclick="showView('${name}')"]`);
+  if (navEl) navEl.classList.add('active');
+  document.getElementById('nav').classList.remove('open');
+  document.getElementById('nav-overlay').classList.remove('open');
+  if (name === 'dashboard') loadDashboard();
+  if (name === 'designs')   loadDesigns();
+  if (name === 'categories') loadCategoriesView();
+  if (name === 'mockups')   loadMockupsView();
+  if (name === 'library')   loadLibrary();
+  if (name === 'pricing')   { loadProductLinks(); loadPricingEditor(); }
+  if (name === 'settings')  loadSettingsInfo();
+}
+
+// ============================================
+// API HELPER
+// ============================================
+async function api(path, opts = {}) {
+  try {
+    const res = await fetch(API_BASE + path, {
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, ...(opts.headers||{}) },
+      ...opts,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch(e) {
+    console.warn('API error:', path, e.message);
+    return null;
+  }
+}
+
+// ============================================
+// DASHBOARD
+// ============================================
+async function loadDashboard() {
+  const d = new Date();
+  document.getElementById('dash-date').textContent = d.toLocaleDateString('fr-FR',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  const [stats, libData, mockupData, catData] = await Promise.all([
+    api('/api/stats'),
+    api('/api/library'),
+    api('/api/mockups'),
+    api('/api/product-categories'),
+  ]);
+  document.getElementById('s-designs').textContent   = stats?.designs?.count ?? '—';
+  document.getElementById('s-library').textContent   = Array.isArray(libData) ? libData.filter(i => !i.filename?.startsWith('__cat_placeholder_')).length : '—';
+  document.getElementById('s-mockups').textContent   = Array.isArray(mockupData) ? mockupData.length : '—';
+  document.getElementById('s-categories').textContent = Array.isArray(catData) ? catData.length : '—';
+}
+
+// ============================================
+// ORDERS
+// ============================================
+// DESIGNS
+// ============================================
+const PRODUCT_NAMES = {tshirt:'T-Shirt',hoodie:'Hoodie',cap:'Casquette',totebag:'Tote Bag'};
+
+async function loadDesigns() {
+  const designs = await api('/api/designs') || [];
+  const grid = document.getElementById('designs-grid');
+  if (!designs.length) { grid.innerHTML = '<div style="text-align:center;color:var(--text3);padding:40px;grid-column:1/-1">Aucun design</div>'; return; }
+  grid.innerHTML = designs.map(d => `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(245,158,11,.3)'" onmouseout="this.style.borderColor='var(--border)'">
+      <div style="aspect-ratio:1;background:var(--bg3);display:flex;align-items:center;justify-content:center;overflow:hidden">
+        ${d.thumbnail?`<img src="${d.thumbnail}" style="width:100%;height:100%;object-fit:cover">`:'<div style="font-size:32px">🎨</div>'}
+      </div>
+      <div style="padding:12px">
+        <div style="font-weight:600;font-size:13px;font-family:'Syne',sans-serif;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.name}</div>
+        <div style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace">${PRODUCT_NAMES[d.product]||d.product} · ${d.format}</div>
+        <div style="display:flex;gap:6px;margin-top:10px">
+          <button class="btn btn-sm btn-primary" style="flex:1" onclick="launchRenderForDesign(${d.id})">Rendu HD</button>
+          <button class="btn btn-sm btn-danger btn-icon" onclick="deleteDesign(${d.id})">🗑</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+async function deleteDesign(id) {
+  if (!confirm('Supprimer ce design ?')) return;
+  await api(`/api/designs/${id}`, {method:'DELETE'});
+  showToast('🗑 Design supprimé');
+  loadDesigns();
+}
+
+async function launchRenderForDesign(id) {
+  const info = await api(`/api/render/${id}`);
+  if (info?.render_url) {
+    window.open(`${API_BASE}/api/render/download/${id}`, '_blank');
+  } else {
+    showToast('⚠ Aucun rendu disponible pour ce design');
+  }
+}
+
+// ============================================
+// LIBRARY
+// ============================================
+async function loadLibrary() {
+  let data = null, cats = [];
+  try {
+    [data, cats] = await Promise.all([
+      api('/api/library'),
+      api('/api/library/categories').catch(() => []),
+    ]);
+  } catch(e) {
+    data = await api('/api/library').catch(() => []);
+  }
+  _libItems = Array.isArray(data) ? data : (data?.items || []);
+  _libCats  = Array.isArray(cats) ? cats : [];
+  if (!_libCats.length && _libItems.length) {
+    _libCats = [...new Set(_libItems.map(i => i.category).filter(Boolean))].sort();
+  }
+  document.getElementById('lib-count-label').textContent = `${_libItems.filter(i=>!i.filename?.startsWith('__cat_placeholder_')).length} image(s)`;
+  _libCat = 'all';
+  _buildLibCatChips();
+  renderLibGrid();
+}
+
+function _buildLibCatChips() {
+  const c = document.getElementById('lib-cat-chips');
+  c.innerHTML = `<button class="chip ${_libCat==='all'?'active':''}" data-cat="all">Tout</button>` +
+    _libCats.map(cat => `<button class="chip ${_libCat===cat?'active':''}" data-cat="${cat.replace(/"/g,'&quot;')}">${cat.replace(/</g,'&lt;')}</button>`).join('');
+  // Event delegation robuste (pas d'onclick inline → évite les problèmes d'apostrophe)
+  c.onclick = e => { const btn = e.target.closest('.chip'); if(btn) filterLib(btn.dataset.cat); };
+}
+
+function filterLib(cat) {
+  _libCat = cat;
+  _libSelected.clear();
+  document.querySelectorAll('#lib-cat-chips .chip').forEach(c => c.classList.toggle('active', c.dataset.cat === cat));
+  renderLibGrid();
+}
+
+function renderLibGrid() {
+  const allVisible = _libItems.filter(i => !i.filename?.startsWith('__cat_placeholder_'));
+  const items = _libCat === 'all' ? allVisible : allVisible.filter(i => i.category === _libCat);
+  const grid = document.getElementById('lib-grid');
+  if (!items.length) {
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--text3);padding:24px;font-size:12px">Aucune image dans cette catégorie</div>';
+    _updateLibSelToolbar(0, 0);
+    return;
+  }
+  grid.innerHTML = items.map(i => `
+    <div class="lib-item ${_libSelected.has(i.id) ? 'selected' : ''}" data-id="${i.id}" title="${i.filename}">
+      <img src="${API_BASE}${i.url}" alt="${i.filename}" loading="lazy" onerror="this.style.display='none'">
+      <span class="lib-cat-label">${i.category}</span>
+      <button class="lib-item-del" title="Supprimer">✕</button>
+    </div>`).join('');
+
+  // Délégation d'événements sur la grille — un seul listener, pas d'onclick inline
+  grid.onclick = e => {
+    const item = e.target.closest('.lib-item');
+    if (!item) return;
+    const id = parseInt(item.dataset.id);
+    // Clic sur le bouton supprimer
+    if (e.target.closest('.lib-item-del')) {
+      e.stopPropagation();
+      deleteLibItem(id);
+      return;
+    }
+    // Toggle sélection
+    if (_libSelected.has(id)) {
+      _libSelected.delete(id);
+      item.classList.remove('selected');
+    } else {
+      _libSelected.add(id);
+      item.classList.add('selected');
+    }
+    _updateLibSelToolbar(items.length);
+  };
+
+  // Double-clic → ouvrir modal d'édition (changer catégorie)
+  grid.ondblclick = e => {
+    const item = e.target.closest('.lib-item');
+    if (!item || e.target.closest('.lib-item-del')) return;
+    openEditLibItem(parseInt(item.dataset.id));
+  };
+
+  _updateLibSelToolbar(items.length);
+}
+
+function _updateLibSelToolbar(total) {
+  const n   = _libSelected.size;
+  const bar = document.getElementById('lib-sel-toolbar');
+  const cnt = document.getElementById('lib-sel-count');
+  const btn = document.getElementById('lib-btn-selectall');
+  if (!bar) return;
+  bar.classList.toggle('visible', true); // toujours visible dès qu'il y a du contenu
+  if (cnt) cnt.textContent = n > 0 ? `${n} sélectionné(s)` : 'Cliquez pour sélectionner';
+  if (btn) btn.textContent = (n === total && total > 0) ? 'Désélectionner tout' : 'Tout sélectionner';
+  // Cacher si pas d'items
+  if (total === 0) bar.classList.remove('visible');
+}
+
+function libSelectAll() {
+  const allVisible = _libItems.filter(i => !i.filename?.startsWith('__cat_placeholder_'));
+  const items = _libCat === 'all' ? allVisible : allVisible.filter(i => i.category === _libCat);
+  if (_libSelected.size === items.length) {
+    // Tout est déjà sélectionné → désélectionner
+    _libSelected.clear();
+  } else {
+    items.forEach(i => _libSelected.add(i.id));
+  }
+  renderLibGrid();
+}
+
+function libDeselectAll() {
+  _libSelected.clear();
+  renderLibGrid();
+}
+
+async function libDeleteSelected() {
+  if (!_libSelected.size) return;
+  const n = _libSelected.size;
+  if (!confirm(`Supprimer ${n} image(s) sélectionnée(s) ? Cette action est irréversible.`)) return;
+  const ids = [..._libSelected];
+  let done = 0;
+  for (const id of ids) {
+    const r = await api(`/api/library/${id}`, { method: 'DELETE' });
+    if (r !== null) done++;
+  }
+  _libSelected.clear();
+  showToast(`🗑 ${done}/${n} image(s) supprimée(s)`);
+  await loadLibrary();
+}
+
+async function libChangeCatSelected() {
+  if (!_libSelected.size) return;
+  if (!_libCats.length) return showToast('⚠ Créez d\'abord une catégorie');
+  const opts = _libCats.map(c => `<option value="${c}">${c}</option>`).join('');
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay open';
+  modal.id = 'lib-cat-move-modal';
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width:340px" onclick="event.stopPropagation()">
+      <div class="modal-header"><div class="modal-title">📁 Changer de catégorie</div>
+        <button class="modal-close" onclick="document.getElementById('lib-cat-move-modal').remove()">×</button></div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:12px">
+        <div style="font-size:13px;color:var(--text2)">${_libSelected.size} image(s) sélectionnée(s)</div>
+        <select id="lib-move-cat-sel" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:9px 12px;color:var(--text);font-size:13px;outline:none">${opts}</select>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="document.getElementById('lib-cat-move-modal').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="_confirmLibMoveCat()">Appliquer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function _confirmLibMoveCat() {
+  const cat = document.getElementById('lib-move-cat-sel')?.value;
+  if (!cat) return;
+  const ids = [..._libSelected];
+  for (const id of ids) {
+    await api(`/api/library/${id}`, { method: 'PATCH', body: JSON.stringify({ category: cat }) });
+  }
+  document.getElementById('lib-cat-move-modal')?.remove();
+  _libSelected.clear();
+  showToast(`✅ ${ids.length} image(s) déplacée(s) vers "${cat}"`);
+  await loadLibrary();
+  filterLib(cat);
+}
+
+function openUploadModal() {
+  document.getElementById('upload-modal')?.remove();
+  _modalOpen();
+  const opts = _libCats.map(c => `<option value="${c}">${c}</option>`).join('');
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay open';
+  modal.id = 'upload-modal';
+  modal.addEventListener('mousedown', e => { if (e.target === modal) { modal.remove(); _modalClose(); } });
+  modal.innerHTML = `
+    <div class="modal-box" style="width:min(440px,94vw)">
+      <div class="modal-header">
+        <div class="modal-title">📤 Ajouter des images</div>
+        <button class="modal-close" onclick="document.getElementById('upload-modal').remove();_modalClose()">×</button>
+      </div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:14px">
+        <div>
+          <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">Catégorie de destination</label>
+          <select id="upload-cat-select" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:9px 12px;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;outline:none">
+            ${opts || '<option value="divers">Divers</option>'}
+          </select>
+        </div>
+        <div class="upload-zone" id="upload-modal-zone" style="margin:0;cursor:pointer">
+          <div style="font-size:24px;margin-bottom:6px">🖼</div>
+          <div style="font-size:13px;font-weight:500" id="upload-zone-label">Cliquez ou glissez vos images</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px">PNG, JPG, SVG, WEBP</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn" style="flex:1;justify-content:center;font-size:12px" onclick="event.stopPropagation();document.getElementById('lib-upload-file-input').click()">
+            🖼 Fichiers
+          </button>
+          <button class="btn" style="flex:1;justify-content:center;font-size:12px" onclick="event.stopPropagation();document.getElementById('lib-upload-folder-input').click()">
+            📁 Dossier entier
+          </button>
+        </div>
+
+        <!-- Compresseur intégré -->
+        <div class="compress-toggle-row">
+          <div>
+            <div class="label">🗜 Compression automatique</div>
+            <div class="sub">Réduit la taille avant upload (Canvas, 100% local)</div>
+          </div>
+          <label class="toggle-sw">
+            <input type="checkbox" id="compress-enabled" checked onchange="document.getElementById('compress-opts').style.display=this.checked?'flex':'none'">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div id="compress-opts" style="display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--bg3);border-radius:8px;border:1px solid var(--border)">
+          <span style="font-size:12px;color:var(--text2);white-space:nowrap">Résolution max</span>
+          <select id="compress-maxpx" style="flex:1;background:var(--bg4,var(--bg2));border:1px solid var(--border);border-radius:8px;padding:5px 10px;color:var(--text);font-size:12px;font-family:'DM Sans',sans-serif;outline:none">
+            <option value="1500">1500 px — Léger</option>
+            <option value="2000">2000 px — Standard</option>
+            <option value="3000" selected>3000 px — Haute qualité ✓</option>
+            <option value="0">Original — Sans limite</option>
+          </select>
+        </div>
+
+        <!-- Stats compression (apparaît après sélection) -->
+        <div class="compress-stats" id="compress-stats">
+          <div class="stat-row">
+            <span id="cs-orig" style="color:var(--text2)"></span>
+            <span style="color:var(--text3)">→</span>
+            <span id="cs-comp" style="color:#10b981;font-weight:600"></span>
+            <span class="saved-badge" id="cs-pct"></span>
+          </div>
+          <div class="compress-file-list" id="cs-file-list"></div>
+        </div>
+
+        <div id="upload-file-preview" style="display:none;font-size:12px;color:var(--text3);padding:6px 0"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="document.getElementById('upload-modal').remove();_modalClose();_uploadCompressedFiles=[]">Annuler</button>
+        <button class="btn btn-primary" id="upload-confirm-btn" disabled style="opacity:.4" onclick="confirmLibUpload()">
+          <span id="upload-confirm-label">Uploader</span>
+        </button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  // Input file statique — pas dans le modal, pas de propagation
+  const inp = document.getElementById('lib-upload-file-input');
+  inp.value = '';
+  // Connecter aussi l'input dossier
+  const folderInp = document.getElementById('lib-upload-folder-input');
+  folderInp.onchange = () => {
+    // Filtrer uniquement les images
+    const files = Array.from(folderInp.files).filter(f => f.type.startsWith('image/'));
+    if (!files.length) return;
+    // Créer un DataTransfer pour passer les fichiers à inp
+    const dt = new DataTransfer();
+    files.forEach(f => dt.items.add(f));
+    inp.files = dt.files;
+    inp.onchange();
+    folderInp.value = '';
+  };
+
+  inp.onchange = async () => {
+    const files = Array.from(inp.files);
+    if (!files.length) return;
+    const label = document.getElementById('upload-zone-label');
+    const preview = document.getElementById('upload-file-preview');
+    const btn = document.getElementById('upload-confirm-btn');
+    const confirmLabel = document.getElementById('upload-confirm-label');
+    label.textContent = files.length + ' fichier(s) sélectionné(s)';
+    preview.style.display = 'block';
+    preview.textContent = files.map(f => f.name).join(', ');
+    btn.disabled = true; btn.style.opacity = '.4';
+    if (confirmLabel) confirmLabel.textContent = '⏳ Compression…';
+
+    // Lancer la compression si activée
+    const enabled = document.getElementById('compress-enabled')?.checked;
+    const maxPx = parseInt(document.getElementById('compress-maxpx')?.value || '3000');
+    await _runCompression(files, enabled ? maxPx : 0);
+
+    btn.disabled = false; btn.style.opacity = '1';
+    if (confirmLabel) confirmLabel.textContent = 'Uploader';
+  };
+
+  // Click sur la zone → trigger l'input (appel direct depuis un geste utilisateur — pas de setTimeout)
+  const zone = document.getElementById('upload-modal-zone');
+  zone.onclick = e => { e.stopPropagation(); inp.click(); };
+  zone.addEventListener('dragover',  e => { e.preventDefault(); e.stopPropagation(); zone.classList.add('drag'); });
+  zone.addEventListener('dragleave', ()  => zone.classList.remove('drag'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); e.stopPropagation(); zone.classList.remove('drag');
+    const dt = new DataTransfer();
+    Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/')).forEach(f => dt.items.add(f));
+    inp.files = dt.files;
+    inp.onchange();
+  });
+}
+
+
+// ── Compresseur d'images côté client (Canvas API) ────────────────────────────
+let _uploadCompressedFiles = [];
+
+/** Compresse/redimensionne une image via Canvas. Retourne le File compressé (ou original si SVG/déjà plus petit). */
+async function compressImage(file, maxPx) {
+  if (file.type === 'image/svg+xml' || maxPx === 0) return file;
+  return new Promise(resolve => {
+    const img = new Image();
+    const objUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objUrl);
+      let w = img.naturalWidth, h = img.naturalHeight;
+      // Redimensionner si dépasse maxPx
+      if (maxPx > 0 && (w > maxPx || h > maxPx)) {
+        const s = Math.min(maxPx / w, maxPx / h);
+        w = Math.round(w * s); h = Math.round(h * s);
+      }
+      const cv = document.createElement('canvas');
+      cv.width = w; cv.height = h;
+      const ctx = cv.getContext('2d');
+      // Fond transparent pour PNG
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+      cv.toBlob(blob => {
+        if (!blob) { resolve(file); return; }
+        // Garder l'original si le résultat est plus lourd (ex: petite image déjà optimisée)
+        if (blob.size >= file.size) { resolve(file); return; }
+        const ext = file.name.match(/\.[^.]+$/)?.[0] || '.png';
+        const newName = file.name.replace(/\.[^.]+$/, '') + (ext.toLowerCase() === '.jpg' || ext.toLowerCase() === '.jpeg' ? ext : '.png');
+        resolve(new File([blob], newName, { type: blob.type }));
+      }, 'image/png');
+    };
+    img.onerror = () => { URL.revokeObjectURL(objUrl); resolve(file); };
+    img.src = objUrl;
+  });
+}
+
+/** Lance la compression sur tous les fichiers et met à jour l'UI avec les stats. */
+async function _runCompression(files, maxPx) {
+  _uploadCompressedFiles = [];
+  const statsEl  = document.getElementById('compress-stats');
+  const origEl   = document.getElementById('cs-orig');
+  const compEl   = document.getElementById('cs-comp');
+  const pctEl    = document.getElementById('cs-pct');
+  const listEl   = document.getElementById('cs-file-list');
+
+  if (statsEl) {
+    statsEl.style.display = 'block';
+    if (origEl) origEl.textContent = '⏳ Compression en cours…';
+    if (compEl) compEl.textContent = '';
+    if (pctEl)  pctEl.textContent  = '';
+    if (listEl) listEl.innerHTML   = '';
+  }
+
+  let totalOrig = 0, totalComp = 0;
+  const rows = [];
+
+  for (const file of files) {
+    const compressed = await compressImage(file, maxPx);
+    totalOrig += file.size;
+    totalComp += compressed.size;
+    rows.push({ name: file.name, orig: file.size, comp: compressed.size });
+    _uploadCompressedFiles.push(compressed);
+  }
+
+  if (statsEl) {
+    const pct      = Math.round((1 - totalComp / totalOrig) * 100);
+    const origMB   = (totalOrig / 1048576).toFixed(1);
+    const compMB   = (totalComp / 1048576).toFixed(1);
+    if (origEl) origEl.textContent = `Original : ${origMB} MB`;
+    if (compEl) compEl.textContent = `Compressé : ${compMB} MB`;
+    if (pctEl)  pctEl.textContent  = pct > 0 ? `-${pct}%` : '=';
+    if (listEl) listEl.innerHTML = rows.map(r => {
+      const rOrig = (r.orig / 1048576).toFixed(1);
+      const rComp = (r.comp / 1048576).toFixed(1);
+      const rPct  = Math.round((1 - r.comp / r.orig) * 100);
+      return `<div class="compress-file-row"><span>${r.name}</span><span style="color:${rPct>0?'#10b981':'var(--text3)'}">${rOrig}→${rComp} MB (${rPct>0?'-'+rPct+'%':'='})</span></div>`;
+    }).join('');
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function confirmLibUpload() {
+  const inp = document.getElementById('lib-upload-file-input');
+  const origFiles = Array.from(inp.files);
+  if (!origFiles.length) return showToast('⚠ Aucun fichier sélectionné');
+  // Utiliser les fichiers compressés si disponibles, sinon originaux
+  const files = (_uploadCompressedFiles.length === origFiles.length)
+    ? _uploadCompressedFiles
+    : origFiles;
+  const cat = document.getElementById('upload-cat-select')?.value || 'divers';
+  const btn = document.getElementById('upload-confirm-btn');
+  const confirmLabel = document.getElementById('upload-confirm-label');
+  if (btn) { btn.disabled = true; }
+  if (confirmLabel) confirmLabel.textContent = '⏳ Upload…';
+  let done = 0;
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    if (confirmLabel) confirmLabel.textContent = `⏳ ${i+1}/${files.length}…`;
+    const form = new FormData();
+    form.append('file', file);
+    form.append('category', cat);
+    try {
+      const res = await fetch(`${API_BASE}/api/library`, {
+        method: 'POST', body: form,
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) done++;
+    } catch {}
+  }
+  inp.value = '';
+  _uploadCompressedFiles = [];
+  document.getElementById('upload-modal')?.remove();
+  _modalClose();
+  showToast(`✅ ${done}/${files.length} image(s) ajoutée(s) dans "${cat}"`);
+  // Petit délai pour laisser le serveur finaliser l'écriture en base
+  await new Promise(r => setTimeout(r, 250));
+  await loadLibrary();
+  // Filtrer sur la catégorie uploadée pour montrer le résultat immédiatement
+  if (_libCats.includes(cat)) filterLib(cat);
+}
+
+
+function openCreateCatModal() {
+  _modalOpen();
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay open';
+  modal.id = 'create-cat-modal';
+  // Fermer sur clic fond
+  modal.addEventListener('click', e => { if(e.target === modal) modal.remove(); });
+  modal.innerHTML = `
+    <div class="modal-box" style="width:min(360px,94vw)" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title">+ Nouvelle catégorie</div>
+        <button class="modal-close" onclick="document.getElementById('create-cat-modal').remove();_modalClose()">×</button>
+      </div>
+      <div class="modal-body">
+        <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">Nom de la catégorie</label>
+        <input id="new-cat-name" type="text" placeholder="Ex: Streetwear, Noël, Sport…"
+          style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;outline:none"
+          onkeydown="if(event.key==='Enter') createCategory()">
+        <div style="font-size:11px;color:var(--text3);margin-top:8px">La catégorie sera visible immédiatement dans la bibliothèque et le studio.</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="document.getElementById('create-cat-modal').remove();_modalClose()">Annuler</button>
+        <button class="btn btn-primary" onclick="createCategory()">Créer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  setTimeout(() => document.getElementById('new-cat-name')?.focus(), 100);
+}
+
+async function createCategory() {
+  const name = document.getElementById('new-cat-name')?.value.trim();
+  if (!name) return showToast('⚠ Entrez un nom');
+  if (_libCats.includes(name)) { showToast('⚠ Cette catégorie existe déjà'); return; }
+  const btn = document.querySelector('#create-cat-modal .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  const result = await api('/api/library/categories', { method:'POST', body:JSON.stringify({name}) });
+  if (result === null) {
+    document.getElementById('create-cat-modal')?.remove();
+    await loadLibrary();
+    if (_libCats.includes(name)) { filterLib(name); showToast(`⚠ Catégorie "${name}" déjà existante`); }
+    else showToast('❌ Impossible de créer la catégorie');
+    return;
+  }
+  document.getElementById('create-cat-modal')?.remove();
+  _modalClose();
+  showToast(`✅ Catégorie "${name}" créée`);
+  await loadLibrary();
+  filterLib(name);
+}
+
+function openEditLibItem(id) {
+  _modalOpen();
+  const item = _libItems.find(i => i.id === id);
+  if (!item) return;
+  const opts = _libCats.map(c => `<option value="${c}" ${c===item.category?'selected':''}>${c}</option>`).join('');
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay open';
+  modal.id = 'edit-lib-modal';
+  modal.addEventListener('click', e => { if(e.target === modal) { modal.remove(); _modalClose(); } });
+  modal.innerHTML = `
+    <div class="modal-box" style="width:min(380px,94vw)" onclick="event.stopPropagation()">
+      <div class="modal-header"><div class="modal-title">✏ Modifier le visuel</div><button class="modal-close" onclick="document.getElementById('edit-lib-modal').remove();_modalClose()">×</button></div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:14px;align-items:center">
+        <img src="${API_BASE}${item.url}" style="max-height:160px;max-width:100%;border-radius:10px;object-fit:contain;background:var(--bg3);padding:8px">
+        <div style="width:100%">
+          <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">Catégorie</label>
+          <select id="edit-cat-select" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:9px 12px;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;outline:none">${opts}</select>
+        </div>
+        <div style="font-size:11px;color:var(--text3);align-self:flex-start">${item.filename}</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-danger" onclick="deleteLibItem(${id},true)">🗑 Supprimer</button>
+        <button class="btn" onclick="document.getElementById('edit-lib-modal').remove();_modalClose()">Annuler</button>
+        <button class="btn btn-primary" onclick="saveLibItemCategory(${id})">Enregistrer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function saveLibItemCategory(id) {
+  const cat = document.getElementById('edit-cat-select')?.value;
+  if (!cat) return;
+  await api(`/api/library/${id}`, {method:'PATCH', body:JSON.stringify({category:cat})});
+  document.getElementById('edit-lib-modal')?.remove();
+  _modalClose();
+  showToast('✅ Catégorie mise à jour');
+  loadLibrary();
+}
+
+async function deleteLibItem(id, fromModal=false) {
+  if (!confirm('Supprimer cette image ?')) return;
+  await api(`/api/library/${id}`, {method:'DELETE'});
+  if (fromModal) { document.getElementById('edit-lib-modal')?.remove(); _modalClose(); }
+  showToast('🗑 Image supprimée');
+  loadLibrary();
+}
+
+// Drag & drop on main zone
+const dropZone = document.getElementById('lib-drop-zone');
+dropZone.addEventListener('click', () => {
+  if (!document.body.classList.contains('modal-open')) openUploadModal();
+});
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag');
+  const droppedFiles = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+  if (!droppedFiles.length) return;
+  // Ouvrir le modal upload, puis injecter les fichiers dans l'input pour déclencher la compression
+  openUploadModal();
+  requestAnimationFrame(() => {
+    const inp = document.getElementById('lib-upload-file-input');
+    if (!inp) return;
+    const dt = new DataTransfer();
+    droppedFiles.forEach(f => dt.items.add(f));
+    inp.files = dt.files;
+    // Déclencher onchange pour lancer la compression et activer le bouton
+    if (typeof inp.onchange === 'function') inp.onchange();
+  });
+});
+
+// ============================================
+// MOCKUPS
+// ============================================
+async function loadMockupsView() {
+  const content = document.getElementById('mockups-content');
+  content.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:40vh;flex-direction:column;gap:12px;color:var(--text3)"><div style="width:28px;height:28px;border:2px solid var(--border);border-top-color:var(--amber);border-radius:50%;animation:spin .7s linear infinite"></div><div style="font-size:12px;font-family:'DM Mono',monospace">Chargement…</div></div>`;
+  const data = await api('/api/mockups');
+  if (data && Array.isArray(data)) {
+    MOCKUPS = data.map(m => ({...m, views: m.views || [], _fromAPI:true}));
+    _apiAvailable = true;
+    try { localStorage.setItem('tl_mockups', JSON.stringify(MOCKUPS)); } catch{}
+  } else {
+    MOCKUPS = JSON.parse(localStorage.getItem('tl_mockups') || '[]');
+    _apiAvailable = false;
+  }
+  renderMockupsGrid();
+}
+
+function renderMockupsGrid() {
+  const content = document.getElementById('mockups-content');
+  const tabs = `
+    <div class="product-tabs" id="product-tabs">
+      <div class="ptab active" data-filter="all" onclick="filterByProduct('all')">
+        <span>📦</span> Tous <span class="ptab-count" id="count-all">${MOCKUPS.length}</span>
+      </div>
+      ${Object.entries(PRODUCTS_META).map(([k,v]) => `
+        <div class="ptab" data-filter="${k}" onclick="filterByProduct('${k}')">
+          <span>${v.emoji}</span> ${v.name}
+          <span class="ptab-count" id="count-${k}">${MOCKUPS.filter(m=>m.product===k).length}</span>
+        </div>`).join('')}
+    </div>
+    <div class="mockup-grid" id="mockup-grid"></div>`;
+  content.innerHTML = tabs;
+  renderMockupCards();
+}
+
+function filterByProduct(key) {
+  currentProductFilter = key;
+  document.querySelectorAll('.ptab').forEach(t => t.classList.toggle('active', t.dataset.filter === key));
+  renderMockupCards();
+}
+
+function renderMockupCards() {
+  const grid = document.getElementById('mockup-grid');
+  const list = currentProductFilter === 'all' ? MOCKUPS : MOCKUPS.filter(m => m.product === currentProductFilter);
+  const cards = list.map(m => {
+    const p = PRODUCTS_META[m.product] || { name: m.product, emoji: '📦' };
+    const frontView = m.views[0];
+    const hasImg = frontView?.imageData;
+    const viewChips = m.views.map(v => `<span class="view-chip ${v.imageData?'has-img':''}">${v.name}</span>`).join('');
+    let overlay = '';
+    if (hasImg && frontView.zones?.A4) {
+      const z = frontView.zones.A4;
+      const iw = frontView.previewW||200, ih = frontView.previewH||200;
+      overlay = `<div class="zone-overlay" data-label="Zone A4" style="left:${(z.x/iw*100).toFixed(1)}%;top:${(z.y/ih*100).toFixed(1)}%;width:${(z.w/iw*100).toFixed(1)}%;height:${(z.h/ih*100).toFixed(1)}%"></div>`;
+    }
+    return `
+      <div class="mockup-card">
+        <div class="mockup-card-thumb">
+          ${hasImg ? `<img src="${frontView.imageData}" alt="${m.name}">` : `<div class="no-img"><span>${p.emoji}</span>Aucun visuel</div>`}
+          ${overlay}
+        </div>
+        <div class="mockup-card-body">
+          <div class="mockup-card-name">${p.emoji} ${m.name}</div>
+          <div class="mockup-card-meta">${m.views.length} vue(s)</div>
+          <div class="mockup-card-views">${viewChips}</div>
+          <div style="display:flex;gap:6px;margin-top:10px">
+            <button class="btn btn-sm btn-ghost" style="flex:1" onclick="editMockup('${m.id}')">✏️ Éditer</button>
+            <button class="btn btn-sm btn-danger btn-icon" onclick="deleteMockup('${m.id}')">🗑</button>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+  grid.innerHTML = cards + `<div class="mockup-add-card" onclick="openNewMockup()"><div style="font-size:28px">+</div><div style="font-size:13px;font-weight:500">Nouveau mockup</div></div>`;
+}
+
+function openNewMockup() {
+  ED = {id:null,_apiId:null,name:'',product:'tshirt',views:[],file3d:null,activeViewIdx:0};
+  addView('Face avant');
+  populateMockupModal();
+  openMockupModal('Nouveau mockup');
+}
+
+function editMockup(id) {
+  const m = MOCKUPS.find(x => x.id === id || x.id === Number(id));
+  if (!m) return;
+  ED = JSON.parse(JSON.stringify(m));
+  ED._apiId = m.id && typeof m.id === 'number' ? m.id : (m._apiId || null);
+  ED._existingGlbUrl  = m.file3d_url  || '';
+  ED._existingGlbName = m.file3d_name || '';
+  ED.file3d = null; // reset — nouveau fichier requis pour remplacer
+  ED.activeViewIdx = 0;
+  populateMockupModal();
+  openMockupModal('Éditer : ' + m.name);
+}
+
+function openMockupModal(title) {
+  document.getElementById('mockup-modal-title').textContent = title;
+  document.getElementById('mockup-modal-backdrop').classList.add('open');
+  document.getElementById('mockup-modal-editor').classList.add('open');
+  requestAnimationFrame(() => { initZoneCanvas(); loadZoneCanvas(ED.activeViewIdx); });
+}
+
+function closeMockupModal() {
+  if (zoneRafId) { cancelAnimationFrame(zoneRafId); zoneRafId = null; }
+  document.getElementById('mockup-modal-backdrop').classList.remove('open');
+  document.getElementById('mockup-modal-editor').classList.remove('open');
+}
+
+function _populateProductSelect(selectedKey) {
+  const sel = document.getElementById('m-product');
+  if (!sel) return;
+  sel.innerHTML = Object.entries(PRODUCTS_META)
+    .map(([k, v]) => `<option value="${k}" ${k === selectedKey ? 'selected' : ''}>${v.emoji} ${v.name}</option>`)
+    .join('');
+}
+
+function populateMockupModal() {
+  document.getElementById('m-name').value = ED.name;
+  _populateProductSelect(ED.product);
+  // Afficher le nom du GLB existant s'il y en a un
+  const glbEl = document.getElementById('file-3d-label');
+  if (glbEl) {
+    if (ED.file3d?.name) {
+      glbEl.textContent = `✓ ${ED.file3d.name}`;
+      glbEl.style.color = 'var(--success)';
+    } else if (ED._existingGlbUrl) {
+      const fname = ED._existingGlbUrl.split('/').pop();
+      glbEl.innerHTML = `✓ <span style="color:var(--success)">${fname}</span><br><span style="font-size:10px;color:var(--text3)">Déjà en base — charger un nouveau fichier pour remplacer</span>`;
+    } else {
+      glbEl.textContent = 'Glissez ou cliquez pour importer';
+      glbEl.style.color = 'var(--text2)';
+    }
+  }
+  renderViewsList(); renderViewSelector(); loadZoneCanvas(ED.activeViewIdx);
+}
+
+function addView(defaultName) {
+  const name = defaultName || `Vue ${ED.views.length+1}`;
+  ED.views.push({id:'v'+Date.now()+Math.random(),name,imageData:null,previewW:0,previewH:0,zone:null});
+  renderViewsList(); renderViewSelector();
+  ED.activeViewIdx = ED.views.length-1;
+  loadZoneCanvas(ED.activeViewIdx);
+}
+
+function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+
+function renderViewsList() {
+  const el = document.getElementById('views-list');
+  el.innerHTML = ED.views.map((v,i) => `
+    <div class="view-row ${i===ED.activeViewIdx?'active-view':''}" onclick="switchView(${i})">
+      <div class="view-thumb" onclick="event.stopPropagation();switchView(${i});setTimeout(()=>triggerViewUpload(${i}),50)">
+        ${v.imageData?`<img src="${v.imageData}">`:'<span style="font-size:18px;color:var(--text3)">🖼</span>'}
+        <div class="upload-hint">📤</div>
+      </div>
+      <input class="view-name-input" value="${escHtml(v.name)}" placeholder="Nom de la vue"
+        oninput="ED.views[${i}].name=this.value;renderViewSelector()" onclick="event.stopPropagation()">
+      <div style="display:flex;gap:4px;align-items:center;flex-shrink:0">
+        <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:4px 8px"
+          onclick="event.stopPropagation();switchView(${i});setTimeout(()=>triggerViewUpload(${i}),50)">
+          ${v.imageData?'🔄':'📤'}
+        </button>
+        <span class="view-status ${v.imageData?'ok':'empty'}">${v.imageData?'✓':'Vide'}</span>
+        ${ED.views.length>1?`<button class="btn btn-danger btn-icon btn-sm" onclick="event.stopPropagation();removeView(${i})">✕</button>`:''}
+      </div>
+    </div>`).join('');
+}
+
+function renderViewSelector() {
+  const el = document.getElementById('view-selector');
+  el.innerHTML = ED.views.map((v,i) => `
+    <button class="vs-btn ${i===ED.activeViewIdx?'active':''} ${v.imageData?'has-img':''}" onclick="switchView(${i})">
+      <div class="vs-dot"></div>${escHtml(v.name)}
+    </button>`).join('');
+}
+
+function switchView(i) { saveCurrentZone(); ED.activeViewIdx=i; renderViewsList(); renderViewSelector(); loadZoneCanvas(i); }
+function removeView(i) {
+  if(ED.views.length<=1){showToast('Au moins une vue requise');return;}
+  ED.views.splice(i,1);
+  ED.activeViewIdx=Math.max(0,Math.min(ED.activeViewIdx,ED.views.length-1));
+  renderViewsList(); renderViewSelector(); loadZoneCanvas(ED.activeViewIdx);
+}
+
+let _uploadTargetIdx=0;
+function triggerViewUpload(i) {
+  _uploadTargetIdx=i;
+  const inp=document.getElementById('global-view-file-input');
+  inp.value=''; inp.click();
+}
+
+function handleViewImage(e) {
+  const i=_uploadTargetIdx, file=e.target.files[0];
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    const img=new Image();
+    img.onload=()=>{
+      ED.views[i].imageData=ev.target.result;
+      ED.views[i].previewW=img.naturalWidth;
+      ED.views[i].previewH=img.naturalHeight;
+      renderViewsList(); renderViewSelector();
+      if(i===ED.activeViewIdx) loadZoneCanvas(i);
+      showToast('Image chargée ✓');
+    };
+    img.src=ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// Zone Canvas
+function initZoneCanvas() {
+  const cvs=document.getElementById('zone-canvas');
+  const fresh=cvs.cloneNode(true);
+  cvs.parentNode.replaceChild(fresh,cvs);
+  zCtx=fresh.getContext('2d');
+  fresh.addEventListener('mousedown',onZoneMD);
+  fresh.addEventListener('mousemove',onZoneMM);
+  fresh.addEventListener('mouseup',onZoneMU);
+  fresh.addEventListener('mouseleave',onZoneMU);
+  fresh.addEventListener('touchstart',onZoneTD,{passive:false});
+  fresh.addEventListener('touchmove',onZoneTM,{passive:false});
+  fresh.addEventListener('touchend',onZoneMU);
+}
+
+function loadZoneCanvas(viewIdx) {
+  if(zoneRafId){cancelAnimationFrame(zoneRafId);zoneRafId=null;}
+  const v=ED.views[viewIdx];
+  const noImg=document.getElementById('zone-no-img');
+  if(noImg) noImg.style.display=v?.imageData?'none':'flex';
+  const savedZone=v?.zone || v?.zones?.A3 || v?.zones?.A4; // compat ancienne structure
+  if(savedZone){zone={...savedZone};}else{centerZoneDefault();}
+  zImg=null;
+  if(v?.imageData){const img=new Image();img.onload=()=>{zImg=img;startZoneLoop();};img.src=v.imageData;}
+  else{startZoneLoop();}
+}
+
+function startZoneLoop(){if(zoneRafId)cancelAnimationFrame(zoneRafId);drawZone();}
+
+function centerZoneDefault(){
+  const ratio = 297/420; // Zone pleine hauteur par défaut
+  const zw=Math.round(CANVAS_W*0.42),zh=Math.round(zw/ratio);
+  zone={x:Math.round((CANVAS_W-zw)/2),y:Math.round((CANVAS_H-zh)/2),w:zw,h:zh};
+  updateZoneReadout();
+}
+
+function drawZone(){
+  if(!zCtx)return;
+  zCtx.clearRect(0,0,CANVAS_W,CANVAS_H);
+  zCtx.fillStyle='#18181f';zCtx.fillRect(0,0,CANVAS_W,CANVAS_H);
+  if(zImg){
+    const scale=Math.min(CANVAS_W/zImg.naturalWidth,CANVAS_H/zImg.naturalHeight);
+    const dw=zImg.naturalWidth*scale,dh=zImg.naturalHeight*scale;
+    zCtx.drawImage(zImg,(CANVAS_W-dw)/2,(CANVAS_H-dh)/2,dw,dh);
+  }
+  const dash=(performance.now()/50)%12;
+  zCtx.save();zCtx.strokeStyle='rgba(245,158,11,0.9)';zCtx.lineWidth=1.5;zCtx.setLineDash([6,3]);zCtx.lineDashOffset=-dash;
+  zCtx.strokeRect(zone.x+.5,zone.y+.5,zone.w,zone.h);zCtx.restore();
+  zCtx.fillStyle='rgba(245,158,11,0.07)';zCtx.fillRect(zone.x,zone.y,zone.w,zone.h);
+  const blen=14,bthick=2;
+  [[zone.x,zone.y,1,1],[zone.x+zone.w,zone.y,-1,1],[zone.x,zone.y+zone.h,1,-1],[zone.x+zone.w,zone.y+zone.h,-1,-1]].forEach(([cx,cy,dx,dy])=>{
+    zCtx.fillStyle='rgba(245,158,11,0.95)';
+    zCtx.fillRect(cx,cy-(dy<0?bthick:0),blen*dx,bthick);
+    zCtx.fillRect(cx-(dx<0?bthick:0),cy,bthick,blen*dy);
+  });
+  [zone.x+zone.w,zone.y+zone.h,zone.x,zone.y,zone.x+zone.w,zone.y,zone.x,zone.y+zone.h].reduce((acc,v,i,arr)=>{if(i%2===0)acc.push([arr[i],arr[i+1]]);return acc;},[]).forEach(([hx,hy])=>drawHandle(hx,hy));
+  zCtx.fillStyle='rgba(245,158,11,1)';zCtx.font='bold 11px monospace';
+  zCtx.fillText('Zone impression',zone.x+4,zone.y>14?zone.y-5:zone.y+14);
+  zoneRafId=requestAnimationFrame(drawZone);
+}
+
+function drawHandle(x,y){zCtx.fillStyle='#F59E0B';zCtx.strokeStyle='#000';zCtx.lineWidth=1;zCtx.beginPath();zCtx.arc(x,y,HANDLE_SIZE/2,0,Math.PI*2);zCtx.fill();zCtx.stroke();}
+function getEventPos(e){const cvs=document.getElementById('zone-canvas');const rect=cvs.getBoundingClientRect();const scaleX=CANVAS_W/rect.width,scaleY=CANVAS_H/rect.height;const src=e.touches?e.touches[0]:e;return{x:(src.clientX-rect.left)*scaleX,y:(src.clientY-rect.top)*scaleY};}
+function hitHandle(px,py,hx,hy){return Math.abs(px-hx)<=HANDLE_SIZE&&Math.abs(py-hy)<=HANDLE_SIZE;}
+function getResizeDir(px,py){if(hitHandle(px,py,zone.x+zone.w,zone.y+zone.h))return 'SE';if(hitHandle(px,py,zone.x,zone.y))return 'NW';if(hitHandle(px,py,zone.x+zone.w,zone.y))return 'NE';if(hitHandle(px,py,zone.x,zone.y+zone.h))return 'SW';return '';}
+function insideZone(px,py){return px>=zone.x&&px<=zone.x+zone.w&&py>=zone.y&&py<=zone.y+zone.h;}
+function onZoneMD(e){handleDown(getEventPos(e));}
+function onZoneTD(e){e.preventDefault();handleDown(getEventPos(e));}
+function handleDown(p){const dir=getResizeDir(p.x,p.y);if(dir){resizing=true;resizeDir=dir;return;}if(insideZone(p.x,p.y)){dragging=true;dragOff={x:p.x-zone.x,y:p.y-zone.y};}}
+function onZoneMM(e){handleMove(getEventPos(e));}
+function onZoneTM(e){e.preventDefault();handleMove(getEventPos(e));}
+function handleMove(p){
+  const cvs=document.getElementById('zone-canvas');
+  const dir=getResizeDir(p.x,p.y);
+  if(!dragging&&!resizing)cvs.style.cursor=dir?'nwse-resize':insideZone(p.x,p.y)?'move':'default';
+  if(dragging){zone.x=Math.max(0,Math.min(CANVAS_W-zone.w,p.x-dragOff.x));zone.y=Math.max(0,Math.min(CANVAS_H-zone.h,p.y-dragOff.y));updateZoneReadout();}
+  if(resizing){
+    const minW=40,minH=40;
+    if(resizeDir==='SE'){zone.w=Math.max(minW,Math.min(CANVAS_W-zone.x,p.x-zone.x));zone.h=Math.max(minH,Math.min(CANVAS_H-zone.y,p.y-zone.y));}
+    else if(resizeDir==='NW'){const nx=Math.min(zone.x+zone.w-minW,p.x),ny=Math.min(zone.y+zone.h-minH,p.y);zone.w+=zone.x-nx;zone.x=nx;zone.h+=zone.y-ny;zone.y=ny;}
+    else if(resizeDir==='NE'){zone.w=Math.max(minW,Math.min(CANVAS_W-zone.x,p.x-zone.x));const ny=Math.min(zone.y+zone.h-minH,p.y);zone.h+=zone.y-ny;zone.y=ny;}
+    else if(resizeDir==='SW'){const nx=Math.min(zone.x+zone.w-minW,p.x);zone.w+=zone.x-nx;zone.x=nx;zone.h=Math.max(minH,Math.min(CANVAS_H-zone.y,p.y-zone.y));}
+    updateZoneReadout();
+  }
+}
+function onZoneMU(){dragging=false;resizing=false;saveCurrentZone();}
+function updateZoneReadout(){document.getElementById('zc-x').textContent=Math.round(zone.x);document.getElementById('zc-y').textContent=Math.round(zone.y);document.getElementById('zc-w').textContent=Math.round(zone.w);document.getElementById('zc-h').textContent=Math.round(zone.h);}
+function saveCurrentZone(){const v=ED.views[ED.activeViewIdx];if(!v)return;v.zone={...zone};}
+function selectZoneFormat(fmt){} // supprimé — une seule zone par vue
+function resetZone(){centerZoneDefault();saveCurrentZone();}
+function centerZone(){centerZoneDefault();saveCurrentZone();}
+
+function handle3DUpload(e){
+  const file=e.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    ED.file3d={
+      name: file.name,
+      data: ev.target.result,
+      rawFile: file,  // conservé pour l'upload multipart
+      type: file.name.endsWith('.glb')?'glb':'obj'
+    };
+    document.getElementById('file-3d-label').textContent=`✓ ${file.name} (${(file.size/1024/1024).toFixed(1)} Mo)`;
+    showToast('Fichier 3D chargé ✓ — sera uploadé à la sauvegarde');
+  };
+  reader.readAsDataURL(file);
+}
+
+async function saveMockup() {
+  const name=document.getElementById('m-name').value.trim();
+  if(!name){showToast('Entrez un nom de mockup');return;}
+  saveCurrentZone();
+  ED.name=name; ED.product=document.getElementById('m-product').value;
+  const btn=document.querySelector('[onclick="saveMockup()"]');
+  if(btn){btn.disabled=true;btn.textContent='⏳ Sauvegarde…';}
+
+  // Payload JSON sans le blob GLB (trop gros)
+  const payload={name:ED.name, product:ED.product, views:ED.views,
+    file3d_name: ED.file3d?.name||'', file3d_url: ED._existingGlbUrl||''};
+
+  let saved=null;
+  if(_apiAvailable){
+    if(ED._apiId){saved=await api(`/api/mockups/${ED._apiId}`,{method:'PUT',body:JSON.stringify(payload)});}
+    else{saved=await api('/api/mockups',{method:'POST',body:JSON.stringify(payload)});}
+  }
+
+  if(saved){
+    ED._apiId=saved.id;
+
+    // ── Upload GLB si un nouveau fichier a été chargé en mémoire ──
+    if(ED.file3d?.data && ED.file3d?.rawFile){
+      if(btn) btn.textContent='⏳ Upload GLB…';
+      try {
+        const fd=new FormData();
+        fd.append('file', ED.file3d.rawFile);
+        const res=await fetch(`${API_BASE}/api/mockups/${ED._apiId}/upload-glb`,{
+          method:'POST',
+          headers:{'Authorization':`Bearer ${token}`},
+          body:fd,
+        });
+        if(res.ok){
+          const glbData=await res.json();
+          ED._existingGlbUrl=glbData.file3d_url||'';
+          showToast('✅ Mockup + GLB sauvegardés');
+        } else {
+          showToast('✅ Mockup sauvegardé (erreur upload GLB)');
+        }
+      } catch(e){
+        console.error('GLB upload error:', e);
+        showToast('✅ Mockup sauvegardé (erreur upload GLB)');
+      }
+    } else {
+      showToast('✅ Mockup sauvegardé');
+    }
+    await loadMockupsView();
+  } else {
+    // Fallback localStorage
+    const clone=JSON.parse(JSON.stringify(ED));
+    if(!clone.id)clone.id='m'+Date.now();
+    const idx=MOCKUPS.findIndex(m=>m.id===clone.id||m._apiId===clone._apiId);
+    if(idx>-1)MOCKUPS[idx]=clone;else MOCKUPS.push(clone);
+    try{localStorage.setItem('tl_mockups',JSON.stringify(MOCKUPS));}catch{}
+    showToast(_apiAvailable?'⚠ Sauvegardé localement':'⚠ Mode hors-ligne');
+  }
+
+  if(btn){btn.disabled=false;btn.textContent='💾 Enregistrer le mockup';}
+  closeMockupModal();
+  renderMockupsGrid();
+}
+
+async function deleteMockup(id) {
+  if(!confirm('Supprimer ce mockup ?'))return;
+  const mockup=MOCKUPS.find(m=>m.id===id||m.id===Number(id));
+  const apiId=mockup?._apiId||(typeof id==='number'?id:null);
+  if(_apiAvailable&&apiId){
+    const res=await api(`/api/mockups/${apiId}`,{method:'DELETE'});
+    if(res?.deleted){await loadMockupsView();showToast('Mockup supprimé ✓');return;}
+  }
+  MOCKUPS=MOCKUPS.filter(m=>m.id!==id&&m._apiId!==id);
+  try{localStorage.setItem('tl_mockups',JSON.stringify(MOCKUPS));}catch{}
+  renderMockupsGrid();
+  showToast('Mockup supprimé');
+}
+
+// ============================================
+// PRODUCT LINKS (Shopify ↔ Mockup)
+// ============================================
+let _plMockups    = [];   // cache mockups
+let _plProducts   = [];   // cache produits Shopify
+let _plLinks      = {};   // { shopify_product_id: mockup_id }
+
+async function loadProductLinks() {
+  // Charger mockups + produits Shopify + liaisons existantes en parallèle
+  const [mockupsRaw, shopifyResult, linksRaw] = await Promise.all([
+    api('/api/mockups'),
+    _fetchShopifyProducts(),
+    api('/api/product-links'),
+  ]);
+
+  _plMockups  = Array.isArray(mockupsRaw) ? mockupsRaw : [];
+  _plProducts = shopifyResult.products || [];
+  _plLinks    = {};
+  if (Array.isArray(linksRaw)) {
+    linksRaw.forEach(l => { _plLinks[l.shopify_product_id] = l.mockup_id; });
+  }
+
+  _renderShopifyStatus(shopifyResult.configured, shopifyResult.error);
+  _renderProductLinks();
+}
+
+async function _fetchShopifyProducts() {
+  try {
+    const data = await api('/api/shopify/products');
+    if (Array.isArray(data)) return { configured: true, products: data };
+    if (data?.error)        return { configured: false, error: data.error, products: [] };
+    return { configured: false, products: [] };
+  } catch {
+    return { configured: false, error: 'Impossible de contacter Shopify', products: [] };
+  }
+}
+
+function _renderShopifyStatus(configured, error) {
+  const badge = document.getElementById('shopify-status-badge');
+  if (!badge) return;
+  if (configured) {
+    badge.className = 'pl-badge-ok';
+    badge.textContent = '✓ Shopify connecté — ' + _plProducts.length + ' produit(s)';
+  } else {
+    badge.className = 'pl-badge-warn';
+    badge.textContent = '⚠ Shopify non configuré';
+  }
+}
+
+function _renderProductLinks() {
+  const container = document.getElementById('product-links-container');
+  if (!container) return;
+
+  // Si pas de produits Shopify configurés
+  if (!_plProducts.length) {
+    container.innerHTML = `
+      <div class="pl-empty">
+        <div style="font-size:28px;margin-bottom:8px">🔌</div>
+        <div style="font-weight:600;margin-bottom:6px">Shopify non configuré</div>
+        <div style="font-size:12px;line-height:1.6;color:var(--text3);max-width:380px;margin:0 auto">
+          Définissez <code style="color:var(--amber)">SHOPIFY_STORE_DOMAIN</code> et
+          <code style="color:var(--amber)">SHOPIFY_STOREFRONT_TOKEN</code> dans votre fichier
+          <code style="color:var(--amber)">.env</code> pour récupérer automatiquement vos produits.
+        </div>
+        <div style="margin-top:16px">
+          <button class="btn btn-sm" onclick="showView('settings')">⚙ Aller aux Paramètres</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  // Construire les options mockup une seule fois
+  const mockupOpts = `<option value="">— Aucun mockup —</option>` +
+    _plMockups.map(m => {
+      const catInfo = PRODUCTS_META[m.product] || { emoji:'📦', name: m.product };
+      return `<option value="${m.id}">${catInfo.emoji} ${m.name}</option>`;
+    }).join('');
+
+  container.innerHTML = `
+    <table class="pl-table">
+      <thead>
+        <tr>
+          <th style="width:40%">Produit Shopify</th>
+          <th style="width:45%">Mockup associé</th>
+          <th style="width:15%">Statut</th>
+        </tr>
+      </thead>
+      <tbody id="pl-tbody"></tbody>
+    </table>`;
+
+  const tbody = document.getElementById('pl-tbody');
+  tbody.innerHTML = _plProducts.map(p => {
+    const pid      = p.id;
+    const linked   = _plLinks[pid];
+    const mock     = linked ? _plMockups.find(m => m.id === linked) : null;
+    const statusHtml = mock
+      ? `<span class="pl-linked">✓ Lié</span>`
+      : `<span class="pl-unlinked">Non lié</span>`;
+    return `
+      <tr>
+        <td>
+          <div class="pl-prod-name">${_esc(p.title)}</div>
+          <div class="pl-prod-handle">${p.handle}</div>
+        </td>
+        <td>
+          <div style="display:flex;align-items:center;gap:8px">
+            <select class="pl-mockup-select" data-pid="${_esc(pid)}"
+              data-handle="${_esc(p.handle)}" data-title="${_esc(p.title)}"
+              onchange="_onPlChange(this)">
+              ${mockupOpts}
+            </select>
+            <span class="pl-save-indicator" id="pl-ind-${_pid2id(pid)}">✓</span>
+          </div>
+        </td>
+        <td id="pl-status-${_pid2id(pid)}">${statusHtml}</td>
+      </tr>`;
+  }).join('');
+
+  // Pré-sélectionner les valeurs existantes
+  _plProducts.forEach(p => {
+    const sel = tbody.querySelector(`select[data-pid="${CSS.escape(p.id)}"]`);
+    if (sel && _plLinks[p.id]) sel.value = _plLinks[p.id];
+  });
+}
+
+function _esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function _pid2id(pid) {
+  // Transforme un GID Shopify en un ID CSS safe: "gid://shopify/Product/123" → "sp_123"
+  return 'sp_' + String(pid).replace(/[^a-zA-Z0-9]/g, '_');
+}
+
+async function _onPlChange(sel) {
+  const pid    = sel.dataset.pid;
+  const handle = sel.dataset.handle;
+  const title  = sel.dataset.title;
+  const mid    = sel.value || null;
+  const safeId = _pid2id(pid);
+
+  const r = await api('/api/product-links/' + encodeURIComponent(pid), {
+    method: 'PUT',
+    body: JSON.stringify({
+      mockup_id: mid ? parseInt(mid) : null,
+      shopify_product_handle: handle,
+      shopify_product_title:  title,
+    }),
+  });
+
+  if (r?.ok !== false) {
+    _plLinks[pid] = mid ? parseInt(mid) : null;
+    // Indicateur visuel
+    const ind = document.getElementById('pl-ind-' + safeId);
+    if (ind) { ind.classList.add('show'); setTimeout(() => ind.classList.remove('show'), 2000); }
+    // Statut
+    const stEl = document.getElementById('pl-status-' + safeId);
+    if (stEl) {
+      const mock = mid ? _plMockups.find(m => m.id === parseInt(mid)) : null;
+      stEl.innerHTML = mock
+        ? `<span class="pl-linked">✓ Lié</span>`
+        : `<span class="pl-unlinked">Non lié</span>`;
+    }
+  } else {
+    showToast('⚠ Erreur lors de la sauvegarde');
+  }
+}
+
+async function refreshShopifyProducts() {
+  const btn = document.getElementById('btn-refresh-shopify');
+  if (btn) { btn.textContent = '⏳…'; btn.disabled = true; }
+  await loadProductLinks();
+  if (btn) { btn.textContent = '↺ Shopify'; btn.disabled = false; }
+  showToast('✅ Produits Shopify rechargés');
+}
+
+// ============================================
+// PRICING
+// ============================================
+async function loadPricingEditor() {
+  const data = await api('/api/pricing');
+  _pricingData = data;
+  const grid = document.getElementById('products-grid');
+  if (!grid || !data) { grid.innerHTML = '<div style="color:var(--text3)">Impossible de charger les tarifs</div>'; return; }
+  const products = data.products || {}, formats = data.formats || {};
+  grid.innerHTML = Object.entries(products).map(([key,val]) => `
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:14px;padding:18px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <span style="font-size:28px">${PRODUCTS_META[key]?.emoji||'📦'}</span>
+        <div><div style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px">${PRODUCTS_META[key]?.name||key}</div>
+        <div style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace">${key.toUpperCase()}</div></div>
+      </div>
+      <label style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px">Prix de base</label>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="number" step="0.01" min="0" id="price-${key}" value="${parseFloat(val.base||val).toFixed(2)}"
+          style="flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;color:var(--text);font-family:'DM Mono',monospace;font-size:14px;font-weight:700;outline:none">
+        <span style="color:var(--amber);font-family:'DM Mono',monospace;font-weight:700">€</span>
+      </div>
+    </div>`).join('') + `
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:14px;padding:18px;grid-column:1/-1">
+      <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:14px">🖨 Surcharges d'impression</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+        ${Object.entries(formats).map(([fmt,val]) => `
+          <div>
+            <label style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px">${fmt}</label>
+            <div style="display:flex;align-items:center;gap:6px">
+              <input type="number" step="0.01" min="0" id="format-${fmt}" value="${parseFloat(val.extra||val).toFixed(2)}"
+                style="width:70px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:13px;outline:none">
+              <span style="color:var(--text3);font-size:12px">€</span>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+async function saveProductPricing() {
+  if (!_pricingData) return;
+  const products = {}, formats = {};
+  Object.keys(_pricingData.products||{}).forEach(key => { const el=document.getElementById(`price-${key}`); if(el) products[key]={base:parseFloat(el.value)||0}; });
+  Object.keys(_pricingData.formats||{}).forEach(fmt => { const el=document.getElementById(`format-${fmt}`); if(el) formats[fmt]={extra:parseFloat(el.value)||0}; });
+  const res = await api('/api/pricing', {method:'PUT', body:JSON.stringify({products,formats})});
+  if (res?.products||res?.ok) { _pricingData=res; showToast('✅ Tarifs enregistrés'); }
+  else showToast('⚠ Erreur lors de l\'enregistrement');
+}
+
+
+// ============================================
+// SETTINGS
+// ============================================
+async function loadSettingsInfo() {
+  const urlEl = document.getElementById('api-url-display');
+  if (urlEl) urlEl.textContent = API_BASE || window.location.origin;
+  testAPIConnection();
+  loadAIKeyStatus();
+  const [aiStatus, shopStatus] = await Promise.all([api('/api/ai/status'), api('/api/shopify/status')]);
+  const svcEl = document.getElementById('services-status');
+  if (svcEl) {
+    const badge = (ok,label) => `<div style="display:flex;align-items:center;gap:8px"><span style="width:7px;height:7px;border-radius:50%;background:${ok?'var(--success)':'var(--text3)'};flex-shrink:0"></span><span style="color:${ok?'var(--text)':'var(--text3)'}">${label}</span></div>`;
+    svcEl.innerHTML = [
+      badge(aiStatus?.dalle, 'GPT Image (OpenAI)'),
+      badge(shopStatus?.connected, 'Shopify Storefront'),
+      badge(true, 'SQLite Database'),
+    ].join('');
+  }
+}
+
+// ── IA Key management ─────────────────────────────────────────────────
+async function loadAIKeyStatus() {
+  const dot    = document.getElementById('ai-key-dot');
+  const label  = document.getElementById('ai-key-label');
+  const masked = document.getElementById('ai-key-masked');
+  if (!dot) return;
+  const data = await api('/api/ai/settings');
+  if (data?.openai_configured) {
+    dot.style.background   = 'var(--success)';
+    label.style.color      = 'var(--success)';
+    label.textContent      = `✅ Clé configurée (source : ${data.source})`;
+    masked.textContent     = data.openai_key_masked || '';
+  } else {
+    dot.style.background   = 'var(--danger)';
+    label.style.color      = 'var(--danger)';
+    label.textContent      = '❌ Aucune clé OpenAI configurée — les fonctions IA sont désactivées';
+    masked.textContent     = '';
+  }
+}
+
+async function saveAIKey() {
+  const key    = document.getElementById('ai-key-input')?.value?.trim();
+  const result = document.getElementById('ai-key-result');
+  if (!key) return;
+  result.textContent = '⏳ Test + sauvegarde en cours…';
+  result.style.color = 'var(--text3)';
+  const data = await api('/api/ai/settings', { method: 'POST', body: JSON.stringify({ openai_api_key: key }) });
+  if (data?.ok) {
+    result.textContent = `✅ Clé sauvegardée (${data.masked})`;
+    result.style.color = 'var(--success)';
+    document.getElementById('ai-key-input').value = '';
+    document.getElementById('ai-key-save-btn').disabled = true;
+    loadAIKeyStatus();
+    loadSettingsInfo(); // rafraîchir le badge Services
+  } else {
+    result.textContent = '❌ ' + (data?.error || 'Erreur inconnue');
+    result.style.color = 'var(--danger)';
+  }
+}
+
+async function testAIKey() {
+  const result = document.getElementById('ai-key-result');
+  result.textContent = '⏳ Test en cours…';
+  result.style.color = 'var(--text3)';
+  const data = await api('/api/ai/status');
+  if (data?.configured) {
+    result.textContent = '✅ Clé opérationnelle — GPT Image prêt';
+    result.style.color = 'var(--success)';
+  } else {
+    result.textContent = '❌ Clé absente ou invalide';
+    result.style.color = 'var(--danger)';
+  }
+}
+
+async function deleteAIKey() {
+  if (!confirm('Supprimer la clé OpenAI stockée ?')) return;
+  const result = document.getElementById('ai-key-result');
+  await api('/api/ai/settings/openai', { method: 'DELETE' });
+  result.textContent = '🗑 Clé supprimée de la base de données';
+  result.style.color = 'var(--text3)';
+  loadAIKeyStatus();
+}
+
+function toggleAIKeyVisibility() {
+  const input = document.getElementById('ai-key-input');
+  if (input) input.type = input.type === 'password' ? 'text' : 'password';
+}
+
+async function testAPIConnection() {
+  const el = document.getElementById('api-test-result');
+  if (el) el.textContent = '⏳ Test en cours…';
+  const res = await fetch(API_BASE + '/health').then(r=>r.json()).catch(()=>null);
+  if (el) el.textContent = res?.ok ? '✅ Connecté' : '❌ Hors ligne';
+}
+
+async function changePassword() {
+  const oldPw = document.getElementById('pw-old')?.value;
+  const newPw = document.getElementById('pw-new')?.value;
+  if (!oldPw || !newPw) { showToast('⚠ Remplissez les deux champs'); return; }
+  const res = await api('/api/auth/change-password', {method:'POST', body:JSON.stringify({oldPassword:oldPw,newPassword:newPw})});
+  if (res?.ok) { showToast('✅ Mot de passe changé'); document.getElementById('pw-old').value=''; document.getElementById('pw-new').value=''; }
+  else showToast('❌ Erreur : ' + (res?.error||'Mot de passe incorrect'));
+}
+
+// ============================================
+// MODALS
+// ============================================
+function closeModal(id) { document.getElementById(id)?.classList.remove('open'); }
+
+// ============================================
+// TOAST
+// ============================================
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+async function refreshAll() { await loadDashboard(); showToast('↻ Dashboard actualisé'); }
+
+// ============================================
+// CATEGORIES PRODUITS
+// ============================================
+let _editingCatId = null;
+
+async function loadCategoriesView() {
+  await loadProductCategories();
+  const cats = await api('/api/product-categories');
+  const list = document.getElementById('categories-list');
+  if (!list) return;
+  if (!cats || !cats.length) {
+    list.innerHTML = '<div style="color:var(--text3);font-size:13px">Aucune catégorie</div>';
+    return;
+  }
+  list.innerHTML = cats.map(c => `
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:14px;padding:16px 20px;display:flex;align-items:center;gap:14px" id="cat-row-${c.id}">
+      <span style="font-size:28px;flex-shrink:0">${c.emoji}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px">${c.name}</div>
+        <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text3);margin-top:2px">clé : ${c.key}</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-shrink:0">
+        <button class="btn btn-sm btn-ghost" onclick="openEditCategoryModal(${c.id},'${c.name.replace(/'/g,"\\'")}','${c.emoji}')">✏️ Renommer</button>
+        <button class="btn btn-sm btn-danger btn-icon" onclick="deleteCategory(${c.id},'${c.name.replace(/'/g,"\\'")}')">🗑</button>
+      </div>
+    </div>`).join('');
+}
+
+function openAddCategoryModal() {
+  _editingCatId = null;
+  document.getElementById('modal-cat-title').textContent = 'Nouvelle catégorie';
+  document.getElementById('cat-emoji').value = '📦';
+  document.getElementById('cat-name').value  = '';
+  document.getElementById('cat-key-preview').textContent = '';
+  document.getElementById('modal-cat').classList.add('open');
+  // Liaison live preview de la clé
+  const nameInput = document.getElementById('cat-name');
+  nameInput.oninput = () => {
+    const k = nameInput.value.trim().toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+      .replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+    document.getElementById('cat-key-preview').textContent = k ? `→ clé générée : ${k}` : '';
+  };
+  setTimeout(() => document.getElementById('cat-name').focus(), 100);
+}
+
+function openEditCategoryModal(id, name, emoji) {
+  _editingCatId = id;
+  document.getElementById('modal-cat-title').textContent = 'Renommer la catégorie';
+  document.getElementById('cat-emoji').value = emoji || '📦';
+  document.getElementById('cat-name').value  = name || '';
+  document.getElementById('cat-key-preview').textContent = '(la clé ne change pas)';
+  document.getElementById('cat-name').oninput = null;
+  document.getElementById('modal-cat').classList.add('open');
+  setTimeout(() => document.getElementById('cat-name').focus(), 100);
+}
+
+function closeCatModal() {
+  document.getElementById('modal-cat').classList.remove('open');
+  _editingCatId = null;
+}
+
+async function saveCategoryModal() {
+  const name  = document.getElementById('cat-name').value.trim();
+  const emoji = document.getElementById('cat-emoji').value.trim() || '📦';
+  if (!name) { showToast('⚠ Le nom est obligatoire'); return; }
+
+  let res;
+  if (_editingCatId) {
+    res = await api(`/api/product-categories/${_editingCatId}`, {
+      method: 'PUT', body: JSON.stringify({ name, emoji })
+    });
+  } else {
+    res = await api('/api/product-categories', {
+      method: 'POST', body: JSON.stringify({ name, emoji })
+    });
+  }
+
+  if (res === null || res?.error) { showToast('❌ ' + (res?.error || 'Erreur serveur — vérifiez que vous êtes bien connecté')); return; }
+  showToast(_editingCatId ? `✅ Catégorie renommée` : `✅ Catégorie "${name}" créée`);
+  closeCatModal();
+  await loadProductCategories(); // Rafraîchir PRODUCTS_META
+  loadCategoriesView();
+}
+
+async function deleteCategory(id, name) {
+  if (!confirm(`Supprimer la catégorie "${name}" ?\n\nAttention : impossible si des mockups l'utilisent encore.`)) return;
+  const res = await api(`/api/product-categories/${id}`, { method: 'DELETE' });
+  if (res === null || res?.error) { showToast('❌ ' + (res?.error || 'Erreur serveur')); return; }
+  showToast(`🗑 Catégorie supprimée`);
+  await loadProductCategories();
+  loadCategoriesView();
+}
+
+// ============================================
+// INIT
+// ============================================
+document.getElementById('dash-date').textContent = new Date().toLocaleDateString('fr-FR',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+// Charger les catégories en premier, puis le dashboard
+loadProductCategories().then(() => loadDashboard());
+</script>
+</body>
+</html>

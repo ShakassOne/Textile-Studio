@@ -1,0 +1,30 @@
+# Fichiers exclus du déploiement Railway
+# (similaire à .dockerignore mais spécifique Railway)
+
+# Base SQLite locale (Railway utilise un volume persistant)
+textilelab.db
+textilelab.db-shm
+textilelab.db-wal
+
+# Uploads locaux (Railway utilise un volume persistant)
+uploads/
+
+# Dépendances (réinstallées lors du build)
+node_modules/
+
+# Fichiers de dev
+.env
+*.zip
+Archive.zip
+
+# Logs
+*.log
+npm-debug.log*
+
+# Git
+.git/
+.gitignore
+
+# Docker (inutile dans Railway)
+docker-compose.yml
+nginx.conf

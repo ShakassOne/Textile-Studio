@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Politique de confidentialité — TextileLab Studio</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --accent:  #5c6ac4;
+      --text:    #1a1a2e;
+      --muted:   #6b7280;
+      --border:  #e5e7eb;
+      --bg:      #f9fafb;
+      --card:    #ffffff;
+      --radius:  10px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      font-size: 16px;
+    }
+
+    header {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 20px 0;
+    }
+
+    header .inner {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .logo {
+      width: 40px;
+      height: 40px;
+      background: var(--accent);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-weight: 800;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+
+    header h1 {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    header p {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    main {
+      max-width: 800px;
+      margin: 48px auto;
+      padding: 0 24px 80px;
+    }
+
+    .meta {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 36px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    section {
+      margin-bottom: 40px;
+    }
+
+    h2 {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 14px;
+      padding-left: 14px;
+      border-left: 4px solid var(--accent);
+    }
+
+    h3 {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+      margin: 20px 0 8px;
+    }
+
+    p {
+      color: #374151;
+      margin-bottom: 12px;
+    }
+
+    ul {
+      list-style: none;
+      padding: 0;
+      margin-bottom: 14px;
+    }
+
+    ul li {
+      padding: 6px 0 6px 22px;
+      position: relative;
+      color: #374151;
+    }
+
+    ul li::before {
+      content: '•';
+      color: var(--accent);
+      position: absolute;
+      left: 6px;
+      font-weight: bold;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px 28px;
+      margin-bottom: 16px;
+    }
+
+    .card.highlight {
+      border-color: var(--accent);
+      background: #f0f0fd;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+
+    th {
+      background: #f3f4f6;
+      text-align: left;
+      padding: 10px 14px;
+      font-weight: 600;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    td {
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      color: #374151;
+      vertical-align: top;
+    }
+
+    tr:nth-child(even) td { background: #f9fafb; }
+
+    .badge {
+      display: inline-block;
+      background: #dbeafe;
+      color: #1d4ed8;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 2px 10px;
+      border-radius: 20px;
+    }
+
+    .badge.green { background: #dcfce7; color: #166534; }
+    .badge.red   { background: #fee2e2; color: #991b1b; }
+
+    .contact-box {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px 28px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+
+    .contact-item strong {
+      display: block;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .contact-item a { color: var(--accent); text-decoration: none; }
+    .contact-item a:hover { text-decoration: underline; }
+
+    footer {
+      text-align: center;
+      font-size: 13px;
+      color: var(--muted);
+      padding: 32px 24px;
+      border-top: 1px solid var(--border);
+    }
+
+    @media (max-width: 600px) {
+      main { margin: 24px auto; }
+      h2   { font-size: 17px; }
+      table { font-size: 13px; }
+      th, td { padding: 8px 10px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="inner">
+    <div class="logo">T</div>
+    <div>
+      <h1>TextileLab Studio</h1>
+      <p>Application Shopify — Éditeur de marquage textile</p>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <div class="meta">
+    <strong>Politique de confidentialité</strong> &nbsp;·&nbsp;
+    Dernière mise à jour : <span id="date-update">Mars 2025</span> &nbsp;·&nbsp;
+    Version 1.0
+  </div>
+
+  <!-- 1. Présentation -->
+  <section>
+    <h2>1. Qui sommes-nous ?</h2>
+    <p>
+      <strong>TextileLab Studio</strong> est une application Shopify qui permet aux marchands
+      de créer et personnaliser des designs textiles directement depuis leur interface
+      d'administration Shopify. L'application est éditée par :
+    </p>
+    <div class="contact-box" style="margin-top:16px">
+      <div class="contact-item">
+        <strong>Société</strong>
+        TextileLab Studio
+      </div>
+      <div class="contact-item">
+        <strong>Email</strong>
+        <a href="mailto:privacy@textilelab.studio">privacy@textilelab.studio</a>
+      </div>
+      <div class="contact-item">
+        <strong>Site</strong>
+        <a href="https://textilelab.studio" target="_blank">textilelab.studio</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. Données collectées -->
+  <section>
+    <h2>2. Données collectées</h2>
+    <p>Dans le cadre de l'utilisation de TextileLab Studio, nous collectons les données suivantes :</p>
+
+    <h3>2.1 Données du marchand (boutique Shopify)</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Donnée</th>
+          <th>Finalité</th>
+          <th>Base légale</th>
+          <th>Durée</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Domaine de la boutique<br/><small>(ex : ma-boutique.myshopify.com)</small></td>
+          <td>Identification de l'installation</td>
+          <td><span class="badge">Contrat</span></td>
+          <td>Jusqu'à désinstallation + 90 j</td>
+        </tr>
+        <tr>
+          <td>Access token Shopify</td>
+          <td>Appels API Shopify (produits, commandes)</td>
+          <td><span class="badge">Contrat</span></td>
+          <td>Jusqu'à désinstallation</td>
+        </tr>
+        <tr>
+          <td>Scopes OAuth accordés</td>
+          <td>Journalisation des permissions</td>
+          <td><span class="badge">Intérêt légitime</span></td>
+          <td>Jusqu'à désinstallation + 90 j</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>2.2 Données des clients finaux (clients de la boutique)</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Donnée</th>
+          <th>Finalité</th>
+          <th>Base légale</th>
+          <th>Durée</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Nom du client</td>
+          <td>Gestion des commandes</td>
+          <td><span class="badge">Contrat</span></td>
+          <td>3 ans après la commande</td>
+        </tr>
+        <tr>
+          <td>Email du client</td>
+          <td>Confirmation de commande, SAV</td>
+          <td><span class="badge">Contrat</span></td>
+          <td>3 ans après la commande</td>
+        </tr>
+        <tr>
+          <td>Détails de commande<br/><small>(produit, format, couleur, quantité, prix)</small></td>
+          <td>Traitement et facturation</td>
+          <td><span class="badge">Contrat</span></td>
+          <td>10 ans (obligation comptable)</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>2.3 Données que nous ne collectons PAS</h3>
+    <ul>
+      <li>Aucune donnée de carte bancaire</li>
+      <li>Aucun mot de passe ou credential personnel</li>
+      <li>Aucune donnée de localisation ou de navigation</li>
+      <li>Aucun cookie de tracking publicitaire</li>
+      <li>Aucune donnée biométrique</li>
+    </ul>
+  </section>
+
+  <!-- 3. Utilisation -->
+  <section>
+    <h2>3. Comment utilisons-nous vos données ?</h2>
+    <div class="card">
+      <ul>
+        <li>Authentification et autorisation de l'accès à l'application (OAuth 2.0 Shopify)</li>
+        <li>Affichage et gestion des designs textiles créés par le marchand</li>
+        <li>Traitement des commandes transmises via Shopify Checkout</li>
+        <li>Envoi des emails de confirmation de commande au client final</li>
+        <li>Génération des fichiers de rendu HD pour l'impression</li>
+        <li>Maintenance, débogage et amélioration de l'application</li>
+      </ul>
+    </div>
+    <p>
+      Nous n'utilisons pas vos données à des fins de publicité, de profilage ou de vente
+      à des tiers. Aucune donnée n'est revendue.
+    </p>
+  </section>
+
+  <!-- 4. Partage -->
+  <section>
+    <h2>4. Partage des données avec des tiers</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Tiers</th>
+          <th>Données transmises</th>
+          <th>Finalité</th>
+          <th>Localisation</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Shopify Inc.</strong></td>
+          <td>Token OAuth, données commandes</td>
+          <td>Plateforme e-commerce partenaire</td>
+          <td>Canada / USA</td>
+        </tr>
+        <tr>
+          <td><strong>Railway</strong> (hébergeur)</td>
+          <td>Données applicatives</td>
+          <td>Hébergement du backend</td>
+          <td>USA (AWS us-east-1)</td>
+        </tr>
+        <tr>
+          <td><strong>OpenAI</strong> (optionnel)</td>
+          <td>Prompts IA envoyés par le marchand</td>
+          <td>Génération d'images IA (GPT-Image-1)</td>
+          <td>USA</td>
+        </tr>
+        <tr>
+          <td><strong>Resend / SendGrid</strong></td>
+          <td>Nom + email client final</td>
+          <td>Envoi emails transactionnels</td>
+          <td>USA</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      Ces prestataires agissent en tant que sous-traitants et sont liés par des contrats
+      garantissant un niveau de protection adéquat des données (clauses contractuelles types
+      ou décision d'adéquation de la Commission européenne).
+    </p>
+  </section>
+
+  <!-- 5. Sécurité -->
+  <section>
+    <h2>5. Sécurité des données</h2>
+    <div class="card">
+      <ul>
+        <li>Toutes les communications sont chiffrées en TLS 1.2+ (HTTPS)</li>
+        <li>Les access tokens Shopify sont stockés en base de données SQLite avec accès restreint</li>
+        <li>Vérification HMAC sur tous les webhooks entrants (SHA-256)</li>
+        <li>Tokens anti-CSRF sur le flux OAuth (nonce à usage unique, TTL 10 min)</li>
+        <li>Aucune donnée sensible n'est enregistrée dans les logs</li>
+        <li>Accès à l'infrastructure limité aux administrateurs autorisés</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 6. Droits RGPD -->
+  <section>
+    <h2>6. Vos droits (RGPD)</h2>
+    <p>
+      Conformément au Règlement Général sur la Protection des Données (RGPD — UE 2016/679),
+      vous disposez des droits suivants :
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Droit</th>
+          <th>Description</th>
+          <th>Délai de réponse</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="badge green">Accès</span></td>
+          <td>Obtenir une copie des données vous concernant</td>
+          <td>30 jours</td>
+        </tr>
+        <tr>
+          <td><span class="badge green">Rectification</span></td>
+          <td>Faire corriger des données inexactes</td>
+          <td>30 jours</td>
+        </tr>
+        <tr>
+          <td><span class="badge red">Effacement</span></td>
+          <td>Demander la suppression de vos données ("droit à l'oubli")</td>
+          <td>30 jours</td>
+        </tr>
+        <tr>
+          <td><span class="badge">Portabilité</span></td>
+          <td>Recevoir vos données dans un format structuré (JSON/CSV)</td>
+          <td>30 jours</td>
+        </tr>
+        <tr>
+          <td><span class="badge">Opposition</span></td>
+          <td>Vous opposer à un traitement basé sur l'intérêt légitime</td>
+          <td>30 jours</td>
+        </tr>
+        <tr>
+          <td><span class="badge">Limitation</span></td>
+          <td>Demander la suspension temporaire d'un traitement</td>
+          <td>30 jours</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      Pour exercer vos droits, envoyez un email à
+      <a href="mailto:privacy@textilelab.studio" style="color: var(--accent)">privacy@textilelab.studio</a>
+      en précisant votre identité et la nature de votre demande.
+    </p>
+
+    <h3>Conformité Shopify GDPR</h3>
+    <p>
+      TextileLab Studio est conforme aux exigences RGPD de Shopify. En cas de demande de
+      suppression de données via Shopify, nous traitons automatiquement les webhooks
+      <code style="background:#f3f4f6;padding:2px 6px;border-radius:4px">customers/redact</code>
+      et
+      <code style="background:#f3f4f6;padding:2px 6px;border-radius:4px">shop/redact</code>
+      dans un délai de 30 jours.
+    </p>
+  </section>
+
+  <!-- 7. Cookies -->
+  <section>
+    <h2>7. Cookies et traceurs</h2>
+    <div class="card highlight">
+      <p>
+        <strong>TextileLab Studio n'utilise aucun cookie de tracking ou publicitaire.</strong>
+      </p>
+      <p>
+        L'application fonctionne dans l'administration Shopify via App Bridge. Shopify peut
+        déposer ses propres cookies dans le cadre de l'administration — ceux-ci sont régis
+        par la
+        <a href="https://www.shopify.com/legal/privacy" target="_blank" rel="noopener"
+           style="color:var(--accent)">politique de confidentialité de Shopify</a>.
+      </p>
+    </div>
+  </section>
+
+  <!-- 8. Rétention -->
+  <section>
+    <h2>8. Durée de conservation</h2>
+    <ul>
+      <li><strong>Données boutique (shop domain, token) :</strong> supprimées dans les 90 jours suivant la désinstallation de l'app</li>
+      <li><strong>Commandes :</strong> conservées 10 ans (obligation légale comptable française)</li>
+      <li><strong>Emails de contact :</strong> supprimés dans les 3 ans suivant la dernière interaction</li>
+      <li><strong>Logs serveur :</strong> rotation automatique à 30 jours</li>
+    </ul>
+  </section>
+
+  <!-- 9. Transferts internationaux -->
+  <section>
+    <h2>9. Transferts hors Union européenne</h2>
+    <p>
+      Certains de nos sous-traitants sont établis aux États-Unis (Railway, OpenAI, Resend).
+      Ces transferts s'effectuent dans le cadre de garanties appropriées :
+    </p>
+    <ul>
+      <li>Clauses contractuelles types (CCT) adoptées par la Commission européenne</li>
+      <li>Certification DPF (Data Privacy Framework) pour les entités éligibles</li>
+    </ul>
+  </section>
+
+  <!-- 10. Modifications -->
+  <section>
+    <h2>10. Modifications de cette politique</h2>
+    <p>
+      Nous nous réservons le droit de modifier cette politique de confidentialité à tout moment.
+      En cas de changement substantiel, vous en serez informé par email ou via une notification
+      dans l'interface de l'app au moins 30 jours avant l'entrée en vigueur.
+    </p>
+    <p>
+      La version en vigueur est toujours disponible à l'adresse :
+      <strong>https://textilelab.up.railway.app/privacy</strong>
+    </p>
+  </section>
+
+  <!-- 11. Contact -->
+  <section>
+    <h2>11. Contact et réclamations</h2>
+    <div class="contact-box">
+      <div class="contact-item">
+        <strong>Email confidentialité</strong>
+        <a href="mailto:privacy@textilelab.studio">privacy@textilelab.studio</a>
+      </div>
+      <div class="contact-item">
+        <strong>Support général</strong>
+        <a href="mailto:support@textilelab.studio">support@textilelab.studio</a>
+      </div>
+      <div class="contact-item">
+        <strong>Autorité de contrôle (FR)</strong>
+        <a href="https://www.cnil.fr" target="_blank" rel="noopener">CNIL — cnil.fr</a>
+      </div>
+    </div>
+    <p style="margin-top:16px">
+      Si vous estimez que vos droits ne sont pas respectés, vous pouvez introduire une
+      réclamation auprès de la Commission Nationale de l'Informatique et des Libertés (CNIL)
+      ou de toute autre autorité de protection des données compétente dans votre pays.
+    </p>
+  </section>
+
+</main>
+
+<footer>
+  &copy; 2025 TextileLab Studio &nbsp;·&nbsp;
+  Politique de confidentialité &nbsp;·&nbsp;
+  <a href="mailto:privacy@textilelab.studio" style="color:var(--accent)">privacy@textilelab.studio</a>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,10 @@
+node_modules/
+uploads/
+.env
+*.log
+*.db
+*.db-shm
+*.db-wal
+*.bak
+.DS_Store
+.fuse_hidden*

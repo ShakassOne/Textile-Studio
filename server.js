@@ -1,0 +1,142 @@
+'use strict';
+const express    = require('express');
+const cors       = require('cors');
+const path       = require('path');
+const fs         = require('fs');
+const { initDB } = require('./db/database');
+
+// ── Répertoire de données (Railway : /data, local : dossier projet) ──────────
+// Railway → configurer un Volume avec Mount path = /data dans le dashboard
+const DATA_DIR    = process.env.DATA_DIR || __dirname;
+const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
+
+// Créer les sous-dossiers uploads si absents (volume vide au premier démarrage)
+['', 'library', 'renders', 'models3d'].forEach(sub => {
+  fs.mkdirSync(path.join(UPLOADS_DIR, sub), { recursive: true });
+});
+
+// ── Vérification des variables d'env critiques ────────────────────────
+if (!process.env.OPENAI_API_KEY) {
+  console.warn('⚠️  OPENAI_API_KEY non définie dans .env — les fonctions IA seront désactivées.');
+}
+
+const app  = express();
+const PORT = process.env.PORT || 3001;
+
+// ── CORS — Origines autorisées (configurer ALLOWED_ORIGIN dans .env) ──
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGIN || '')
+  .split(',')
+  .map(o => o.trim())
+  .filter(Boolean);
+
+app.use(cors({
+  origin: (origin, cb) => {
+    // Autoriser les requêtes sans origin (curl, Postman, server-to-server)
+    if (!origin) return cb(null, true);
+    // En développement, autoriser localhost
+    if (process.env.NODE_ENV !== 'production') return cb(null, true);
+    // En production : vérifier la whitelist
+    if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    cb(new Error(`CORS: origine non autorisée — ${origin}`));
+  },
+  credentials: true,
+}));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use('/uploads', express.static(UPLOADS_DIR));
+// Servir les fichiers PWA et pages HTML depuis la racine du backend
+// Les fichiers HTML ne sont JAMAIS mis en cache (toujours servis frais)
+// Les assets statiques (JS, CSS, images) sont cachés 1h
+app.use(express.static(path.join(__dirname, 'public'), {
+  maxAge: '1h',
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+  },
+}));
+// manifest.json à la racine ; sw.js servi depuis public/ avec en-têtes PWA corrects
+app.get('/manifest.json', (_req, res) => res.sendFile(path.join(__dirname, 'manifest.json')));
+app.get('/sw.js', (_req, res) => {
+  res.setHeader('Service-Worker-Allowed', '/');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(path.join(__dirname, 'public', 'sw.js'));
+});
+
+// ── Politique de confidentialité (obligatoire App Store Shopify) ───────────
+// URL à déclarer dans Partners Dashboard → App setup → Privacy policy URL
+app.get('/privacy', (_req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=86400'); // cache 24h
+  res.sendFile(path.join(__dirname, 'public', 'privacy.html'));
+});
+
+// ── App Bridge 4 — Point d'entrée Shopify embed ────────────────────────────
+// URL à déclarer dans Partners Dashboard → App setup → App URL
+// Shopify ouvrira : https://your-app.railway.app/?shop=xxx&host=<base64>
+// La page injecte SHOPIFY_API_KEY et initialise App Bridge 4
+app.get('/', (req, res) => {
+  // Si pas de paramètres Shopify → rediriger vers l'admin standalone
+  if (!req.query.shop && !req.query.host) {
+    return res.redirect('/textilelab-admin.html');
+  }
+  // Injecter la clé API dans le HTML (côté serveur, pas besoin de .env côté client)
+  const htmlPath = path.join(__dirname, 'public', 'shopify-embed.html');
+  fs.readFile(htmlPath, 'utf8', (err, html) => {
+    if (err) return res.status(500).send('Erreur de lecture du fichier embed.');
+    const apiKey = process.env.SHOPIFY_API_KEY || '';
+    const injected = html.replace("'{{SHOPIFY_API_KEY}}'", JSON.stringify(apiKey));
+    res.setHeader('Content-Type', 'text/html');
+    res.setHeader('Cache-Control', 'no-store'); // pas de cache — token dans l'URL
+    res.send(injected);
+  });
+});
+
+// ── Init DB ────────────────────────────────────────────────────────────
+initDB();
+
+// ── Routes ─────────────────────────────────────────────────────────────
+app.use('/api/auth',       require('./routes/auth'));
+app.use('/api/designs',    require('./routes/designs'));
+app.use('/api/orders',     require('./routes/orders'));
+app.use('/api/render',     require('./routes/render'));
+app.use('/api/library',    require('./routes/library'));
+app.use('/api/pricing',    require('./routes/pricing'));
+app.use('/api/mockups',             require('./routes/mockups'));
+app.use('/api/product-categories', require('./routes/product-categories'));
+app.use('/api/product-links',      require('./routes/product-links'));
+app.use('/api/email',              require('./routes/email'));
+app.use('/api/shopify',    require('./routes/storefront'));
+app.use('/api/ai',         require('./routes/ai'));
+app.use('/api/models3d',   require('./routes/models3d'));
+app.use('/shopify',              require('./routes/shopify'));
+app.use('/oauth',               require('./routes/oauth'));
+app.use('/api/shopify-session', require('./routes/shopify-session'));
+app.use('/api/admin',          require('./routes/admin-graphql'));
+app.use('/proxy',             require('./routes/app-proxy'));
+
+// ── Stats (admin) ──────────────────────────────────────────────────────
+const { requireAuth } = require('./routes/auth');
+app.get('/api/stats', requireAuth, (req, res) => {
+  const db = require('./db/database').getDB();
+  const orders   = db.prepare('SELECT COUNT(*) as count, COALESCE(SUM(total_price),0) as revenue FROM orders').get();
+  const designs  = db.prepare('SELECT COUNT(*) as count FROM designs').get();
+  const byProduct = db.prepare(`
+    SELECT product, COUNT(*) as count, COALESCE(SUM(total_price),0) as revenue
+    FROM orders GROUP BY product
+  `).all();
+  const pending  = db.prepare("SELECT COUNT(*) as count FROM orders WHERE status='pending'").get();
+  const recent   = db.prepare('SELECT * FROM orders ORDER BY created_at DESC LIMIT 5').all();
+  res.json({ orders, designs, byProduct, pending, recent });
+});
+
+// ── Health ─────────────────────────────────────────────────────────────
+app.get('/health', (_req, res) => res.json({ ok: true, version: '1.0.0', ts: new Date().toISOString() }));
+
+// ── Start ──────────────────────────────────────────────────────────────
+app.listen(PORT, () => {
+  console.log(`\n✅  TextileLab Backend running on http://localhost:${PORT}`);
+  console.log(`📦  Database : textilelab.db`);
+  console.log(`📁  Uploads  : ./uploads\n`);
+});

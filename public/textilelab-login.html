@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TextileLab — Connexion Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Sans:wght@400;500&family=DM+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0c; --bg2: #111116; --bg3: #18181f;
+    --amber: #F59E0B; --amber2: #FCD34D; --amber-dim: rgba(245,158,11,0.12);
+    --border: rgba(255,255,255,0.08); --text: #f0f0f5; --text2: #9090a8; --text3: #5a5a72;
+    --danger: #EF4444;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%; background: var(--bg); color: var(--text);
+    font-family: 'DM Sans', sans-serif; font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* Background grid */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0;
+    background-image:
+      linear-gradient(rgba(245,158,11,.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(245,158,11,.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  /* Glow */
+  .glow {
+    position: fixed;
+    width: 600px; height: 600px;
+    background: radial-gradient(circle, rgba(245,158,11,.06) 0%, transparent 70%);
+    top: 50%; left: 50%; transform: translate(-50%, -60%);
+    pointer-events: none; z-index: 0;
+  }
+
+  .login-box {
+    position: relative; z-index: 1;
+    width: min(420px, 92vw);
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 40px;
+    box-shadow: 0 32px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.03);
+  }
+
+  .logo {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 22px;
+    margin-bottom: 4px;
+  }
+  .logo span { color: var(--amber); }
+  .logo-sub {
+    font-size: 11px;
+    color: var(--text3);
+    font-family: 'DM Mono', monospace;
+    margin-bottom: 36px;
+  }
+
+  h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .subtitle {
+    font-size: 12px;
+    color: var(--text2);
+    margin-bottom: 28px;
+  }
+
+  .field {
+    margin-bottom: 16px;
+  }
+  .field label {
+    display: block;
+    font-size: 11px;
+    color: var(--text2);
+    font-family: 'DM Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+  .field input {
+    width: 100%;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 16px;
+    color: var(--text);
+    font-size: 14px;
+    font-family: 'DM Sans', sans-serif;
+    outline: none;
+    transition: border-color .2s;
+  }
+  .field input:focus { border-color: var(--amber); }
+  .field input::placeholder { color: var(--text3); }
+
+  .btn-login {
+    width: 100%;
+    padding: 14px;
+    background: var(--amber);
+    border: none;
+    border-radius: 12px;
+    color: #000;
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 14px;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: all .2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .btn-login:hover { background: var(--amber2); transform: translateY(-1px); box-shadow: 0 8px 20px rgba(245,158,11,.25); }
+  .btn-login:active { transform: none; }
+  .btn-login:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+
+  .error-msg {
+    display: none;
+    background: rgba(239,68,68,.1);
+    border: 1px solid rgba(239,68,68,.25);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: var(--danger);
+    margin-bottom: 16px;
+    align-items: center;
+    gap: 8px;
+  }
+  .error-msg.show { display: flex; }
+
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 28px 0;
+  }
+
+  .link-front {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    color: var(--text3);
+    font-size: 12px;
+    text-decoration: none;
+    transition: color .15s;
+  }
+  .link-front:hover { color: var(--text2); }
+
+  .spinner {
+    width: 16px; height: 16px;
+    border: 2px solid rgba(0,0,0,.2);
+    border-top-color: #000;
+    border-radius: 50%;
+    animation: spin .6s linear infinite;
+    display: none;
+  }
+  .btn-login.loading .spinner { display: block; }
+  .btn-login.loading .btn-text { display: none; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="glow"></div>
+
+<div class="login-box">
+  <div class="logo">Textile<span>Lab</span></div>
+  <div class="logo-sub">ADMIN — BACKOFFICE</div>
+
+  <h1>Connexion</h1>
+  <p class="subtitle">Accès réservé aux administrateurs</p>
+
+  <div class="error-msg" id="error-msg">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <span id="error-text">Identifiants incorrects</span>
+  </div>
+
+  <div class="field">
+    <label>Identifiant</label>
+    <input type="text" id="username" placeholder="admin" autocomplete="username" autofocus>
+  </div>
+  <div class="field">
+    <label>Mot de passe</label>
+    <input type="password" id="password" placeholder="••••••••" autocomplete="current-password">
+  </div>
+
+  <button class="btn-login" id="login-btn" onclick="doLogin()">
+    <div class="spinner"></div>
+    <span class="btn-text">Accéder au backoffice →</span>
+  </button>
+
+  <div class="divider"></div>
+
+  <a href="textilelab-studio.html" class="link-front">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="m15 18-6-6 6-6"/></svg>
+    Retour à l'éditeur client
+  </a>
+</div>
+
+<script>
+const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  ? 'http://localhost:3001' : '';
+
+// Si déjà connecté → redirect
+if (sessionStorage.getItem('tl_admin_token')) {
+  window.location.href = 'textilelab-admin.html';
+}
+
+document.getElementById('password').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doLogin();
+});
+document.getElementById('username').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('password').focus();
+});
+
+async function doLogin() {
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
+  const btn = document.getElementById('login-btn');
+  const err = document.getElementById('error-msg');
+
+  if (!username || !password) {
+    showError('Veuillez remplir tous les champs');
+    return;
+  }
+
+  btn.classList.add('loading');
+  btn.disabled = true;
+  err.classList.remove('show');
+
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      sessionStorage.setItem('tl_admin_token', data.token);
+      sessionStorage.setItem('tl_admin_user', username);
+      window.location.href = 'textilelab-admin.html';
+    } else {
+      // Fallback : login local si API hors-ligne
+      if (username === 'admin' && password === 'admin1234') {
+        sessionStorage.setItem('tl_admin_token', 'local_token');
+        sessionStorage.setItem('tl_admin_user', username);
+        window.location.href = 'textilelab-admin.html';
+      } else {
+        showError('Identifiants incorrects');
+      }
+    }
+  } catch {
+    // API hors-ligne : fallback local
+    if (username === 'admin' && password === 'admin1234') {
+      sessionStorage.setItem('tl_admin_token', 'local_token');
+      sessionStorage.setItem('tl_admin_user', username);
+      window.location.href = 'textilelab-admin.html';
+    } else {
+      showError('Impossible de contacter le serveur — vérifiez que le backend est lancé');
+    }
+  }
+
+  btn.classList.remove('loading');
+  btn.disabled = false;
+}
+
+function showError(msg) {
+  document.getElementById('error-text').textContent = msg;
+  document.getElementById('error-msg').classList.add('show');
+  document.getElementById('password').value = '';
+  document.getElementById('password').focus();
+}
+</script>
+</body>
+</html>

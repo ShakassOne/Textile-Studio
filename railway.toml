@@ -1,0 +1,25 @@
+# ── TextileLab Studio — Railway deployment config ──────────────────────────
+# Docs : https://docs.railway.app/reference/config-as-code
+# Deploy : connecter ce repo GitHub sur https://railway.app
+# ---------------------------------------------------------------------------
+
+[build]
+# Railway détecte le Dockerfile automatiquement
+# Forcer Dockerfile si Nixpacks est détecté à tort :
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# Commande de démarrage (override du CMD Dockerfile si besoin)
+startCommand = "node server.js"
+
+# Health check — Railway redémarre le service si /health ne répond pas
+healthcheckPath    = "/health"
+healthcheckTimeout = 30          # secondes
+
+# Redémarrage automatique en cas de crash
+restartPolicyType  = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+
+# Nombre de réplicas (1 seul pour SQLite — pas de multi-instance avec SQLite)
+numReplicas = 1

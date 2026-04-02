@@ -1,0 +1,36 @@
+# ── .dockerignore — TextileLab Studio ───────────────────────────────────────
+# Exclut les données locales du build Docker (volumes = persistance en prod)
+
+# Données locales (montées en volumes en prod)
+uploads/
+db/
+textilelab.db
+textilelab.db-shm
+textilelab.db-wal
+
+# Dépendances (réinstallées dans le build)
+node_modules/
+
+# Fichiers d'environnement (injectés par Railway/docker-compose)
+.env
+.env.*
+
+# Archives et fichiers inutiles
+*.zip
+Archive.zip
+*.log
+npm-debug.log*
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# CI/CD
+.github/

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TextileLab Studio</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f6f6f7;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      color: #202223;
+    }
+    .loader {
+      text-align: center;
+    }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #e0e0e0;
+      border-top-color: #5c6ac4;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loader p { font-size: 14px; color: #6d7175; }
+    .error-box {
+      display: none;
+      background: #fff4f4;
+      border: 1px solid #fcc;
+      border-radius: 8px;
+      padding: 20px 24px;
+      max-width: 420px;
+      text-align: left;
+    }
+    .error-box h3 { color: #d82c0d; margin-bottom: 8px; font-size: 15px; }
+    .error-box p  { font-size: 13px; color: #6d7175; }
+  </style>
+</head>
+<body>
+
+<div class="loader" id="loader">
+  <div class="spinner"></div>
+  <p>Chargement de TextileLab Studio…</p>
+</div>
+
+<div class="error-box" id="error-box">
+  <h3>⚠️ Erreur d'initialisation</h3>
+  <p id="error-msg">Une erreur est survenue lors du chargement de l'application.</p>
+</div>
+
+<!--
+  Shopify App Bridge 4
+  Doc : https://shopify.dev/docs/api/app-bridge
+  CDN : chargé directement depuis Shopify (pas de npm nécessaire en mode embed)
+-->
+<script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // ── 1. Lire les paramètres Shopify dans l'URL ────────────────────────────
+  const params  = new URLSearchParams(window.location.search);
+  const shop    = params.get('shop')    || '';
+  const host    = params.get('host')    || '';   // base64 encodé par Shopify
+  const apiKey  = '{{SHOPIFY_API_KEY}}';          // injecté par le serveur
+
+  function showError(msg) {
+    document.getElementById('loader').style.display = 'none';
+    const box = document.getElementById('error-box');
+    box.style.display = 'block';
+    document.getElementById('error-msg').textContent = msg;
+    console.error('[TextileLab] App Bridge error:', msg);
+  }
+
+  if (!shop || !host) {
+    // Accès direct hors Shopify → rediriger vers l'admin standalone
+    window.location.href = '/textilelab-admin.html';
+    return;
+  }
+
+  if (!apiKey || apiKey === '{{SHOPIFY_API_KEY}}') {
+    showError('SHOPIFY_API_KEY non configurée sur le serveur.');
+    return;
+  }
+
+  // ── 2. Initialiser App Bridge ────────────────────────────────────────────
+  let app;
+  try {
+    app = shopify.createApp({ apiKey, host });
+  } catch (err) {
+    showError('Impossible d\'initialiser Shopify App Bridge : ' + err.message);
+    return;
+  }
+
+  // ── 3. Obtenir un session token et le stocker ────────────────────────────
+  async function bootstrap() {
+    try {
+      // getSessionToken() renvoie un JWT signé par Shopify (valide ~1 min)
+      const token = await shopify.getSessionToken(app);
+      sessionStorage.setItem('shopify_session_token', token);
+      sessionStorage.setItem('shopify_shop',  shop);
+      sessionStorage.setItem('shopify_host',  host);
+
+      // ── 4. Vérifier le token côté backend (optionnel, mais recommandé) ──
+      const resp = await fetch('/api/shopify-session/verify', {
+        method: 'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ shop }),
+      });
+
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${resp.status}`);
+      }
+
+      // ── 5. Rediriger vers l'admin TextileLab ────────────────────────────
+      window.location.href = '/textilelab-admin.html?shopify=1&shop=' + encodeURIComponent(shop);
+
+    } catch (err) {
+      showError('Erreur de session Shopify : ' + err.message);
+    }
+  }
+
+  bootstrap();
+})();
+</script>
+
+</body>
+</html>

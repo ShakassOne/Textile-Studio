@@ -1,0 +1,55 @@
+# ── TextileLab Studio — docker-compose.yml ───────────────────────────
+# Usage :
+#   docker compose up -d          → démarrer en arrière-plan
+#   docker compose logs -f        → voir les logs
+#   docker compose down           → arrêter
+#   docker compose pull && docker compose up -d  → mettre à jour
+#
+# Avant de lancer : copier .env.example en .env et remplir les valeurs
+# ─────────────────────────────────────────────────────────────────────
+
+services:
+  textilelab:
+    build: .
+    container_name: textilelab-studio
+    restart: unless-stopped
+    ports:
+      - "3001:3001"       # Changer le port gauche pour exposer sur un autre port hôte
+    env_file:
+      - .env              # Toutes les variables d'env viennent de .env
+    volumes:
+      - ./db:/app/db                        # Base SQLite persistante
+      - ./uploads:/app/uploads              # Fichiers uploadés (library, renders)
+      - ./public:/app/public                # Pages HTML (studio, admin, backoffice)
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Optionnel : Nginx reverse proxy ──────────────────────────────
+  # Décommentez pour exposer sur le port 80/443 avec HTTPS automatique
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: textilelab-nginx
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+  #     - ./certbot/conf:/etc/letsencrypt:ro
+  #     - ./certbot/www:/var/www/certbot:ro
+  #   depends_on:
+  #     - textilelab
+
+# ── Volumes nommés (alternative aux bind mounts) ─────────────────────
+# volumes:
+#   textilelab_db:
+#   textilelab_uploads:
