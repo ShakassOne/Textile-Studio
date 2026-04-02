@@ -9,10 +9,10 @@
 set -e
 
 if [ -n "$DATA_DIR" ]; then
-  echo "🔗  DATA_DIR=$DATA_DIR — Linking /app/uploads et /app/db → $DATA_DIR"
+  echo "🔗  DATA_DIR=$DATA_DIR — Linking /app/uploads → $DATA_DIR/uploads"
 
-  # Créer les dossiers cibles dans le volume si absents
-  mkdir -p "$DATA_DIR/uploads/library" "$DATA_DIR/uploads/renders" "$DATA_DIR/uploads/models3d" "$DATA_DIR/db"
+  # Créer les dossiers uploads dans le volume si absents
+  mkdir -p "$DATA_DIR/uploads/library" "$DATA_DIR/uploads/renders" "$DATA_DIR/uploads/models3d"
 
   # Remplacer /app/uploads par un symlink si c'est un dossier classique
   if [ ! -L /app/uploads ]; then
@@ -21,16 +21,11 @@ if [ -n "$DATA_DIR" ]; then
     echo "   ✅ /app/uploads → $DATA_DIR/uploads"
   fi
 
-  # /app/db n'est PAS un symlink (database.js utilise DATA_DIR directement)
-  # mais on le crée au cas où d'autres scripts l'utilisent
-  if [ ! -L /app/db ]; then
-    rm -rf /app/db
-    ln -sf "$DATA_DIR/db" /app/db
-    echo "   ✅ /app/db → $DATA_DIR/db"
-  fi
+  # ⚠ Ne PAS symlinkter /app/db — database.js utilise DATA_DIR pour le .db
+  # et db/database.js (code) doit rester accessible dans /app/db/
 else
   echo "ℹ️  DATA_DIR non défini — mode local (docker-compose bind mounts)"
-  mkdir -p /app/uploads/library /app/uploads/renders /app/uploads/models3d /app/db
+  mkdir -p /app/uploads/library /app/uploads/renders /app/uploads/models3d
 fi
 
 echo "🚀  Démarrage de TextileLab Studio..."
