@@ -2,8 +2,11 @@
 # Exclut les données locales du build Docker (volumes = persistance en prod)
 
 # Données locales (montées en volumes en prod)
+# ⚠ Ne PAS exclure db/ entier : db/database.js est nécessaire au build !
 uploads/
-db/
+db/*.db
+db/*.db-shm
+db/*.db-wal
 textilelab.db
 textilelab.db-shm
 textilelab.db-wal
