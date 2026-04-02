@@ -10,8 +10,8 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-# Commande de démarrage (override du CMD Dockerfile si besoin)
-startCommand = "node server.js"
+# Commande de démarrage — start.sh crée les symlinks /data puis lance node
+startCommand = "/app/start.sh"
 
 # Health check — Railway redémarre le service si /health ne répond pas
 healthcheckPath    = "/health"

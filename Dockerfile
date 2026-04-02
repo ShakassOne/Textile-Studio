@@ -40,12 +40,12 @@ RUN mkdir -p /data/uploads/library /data/uploads/renders /data/db
 COPY start.sh /app/start.sh
 RUN chmod +x /app/start.sh
 
-# Exposer le port
+# Exposer le port (Railway injecte PORT dynamiquement, on expose 3001 par défaut)
 EXPOSE 3001
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD wget -qO- http://localhost:3001/health || exit 1
+# Health check — utilise $PORT si défini, sinon 3001
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD wget -qO- http://localhost:${PORT:-3001}/health || exit 1
 
 # Démarrer via le script d'entrée
 CMD ["/app/start.sh"]
