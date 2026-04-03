@@ -98,6 +98,30 @@ app.get('/', (req, res) => {
 // ── Init DB ────────────────────────────────────────────────────────────
 initDB();
 
+// ── Bootstrap shop OAuth (survie aux redémarrages Railway sans volume) ──
+// Définir SHOPIFY_BOOTSTRAP_SHOP + SHOPIFY_BOOTSTRAP_TOKEN dans Railway env vars
+// → le shop est réinséré dans la DB à chaque démarrage sans refaire OAuth
+(function bootstrapShop() {
+  const bShop  = process.env.SHOPIFY_BOOTSTRAP_SHOP;
+  const bToken = process.env.SHOPIFY_BOOTSTRAP_TOKEN;
+  if (!bShop || !bToken) return;
+  try {
+    const db = require('./db/database').getDB();
+    const existing = db.prepare('SELECT id FROM shops WHERE shop_domain = ?').get(bShop);
+    if (existing) {
+      db.prepare('UPDATE shops SET access_token = ?, is_active = 1 WHERE shop_domain = ?')
+        .run(bToken, bShop);
+      console.log(`🔄  Bootstrap shop mis à jour : ${bShop}`);
+    } else {
+      db.prepare('INSERT INTO shops (shop_domain, access_token, is_active) VALUES (?, ?, 1)')
+        .run(bShop, bToken);
+      console.log(`✅  Bootstrap shop créé : ${bShop}`);
+    }
+  } catch (err) {
+    console.warn('⚠️  Bootstrap shop échoué :', err.message);
+  }
+})();
+
 // ── Routes ─────────────────────────────────────────────────────────────
 app.use('/api/auth',       require('./routes/auth'));
 app.use('/api/designs',    require('./routes/designs'));
