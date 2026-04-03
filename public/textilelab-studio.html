@@ -5122,19 +5122,22 @@ async function _checkoutShopifyDirect() {
     const variantId = pData?.variant_id;
     if (!variantId) throw new Error(pData?.error || 'Variante Shopify introuvable pour ce produit');
 
-    // Construire la query string manuellement — URLSearchParams encode [ ] en %5B %5D
-    // ce que Shopify rejette avec "properties parameter is invalid"
-    const cartParts = [
-      'properties[design_id]=' + encodeURIComponent(designId || ''),
-      'properties[_product]='  + encodeURIComponent(STATE.product),
-      'properties[_format]='   + encodeURIComponent(STATE.format),
-      'properties[_color]='    + encodeURIComponent(STATE.textileColor),
-      'properties[_views]='    + encodeURIComponent(String(viewsCount)),
-    ];
-    if (previewUrl) cartParts.push('properties[Apercu]=' + encodeURIComponent(previewUrl));
-    cartParts.push('note=' + encodeURIComponent('Design TextileLab #' + (designId || '')));
+    // Format officiel Shopify : properties encodées en Base64 JSON
+    // https://shopify.dev/docs/apps/build/checkout/create-cart-permalinks
+    // Évite tout problème d'encodage de crochets (properties[key] rejeté par Shopify)
+    const propsObj = {
+      'design_id': String(designId || ''),
+      'Produit':   STATE.product,
+      'Format':    STATE.format,
+      'Couleur':   STATE.textileColor,
+      'Faces':     String(viewsCount),
+    };
+    if (previewUrl) propsObj['Apercu design'] = previewUrl;
 
-    const cartUrl = `https://${window._TL_SHOP}/cart/${variantId}:1?` + cartParts.join('&');
+    // btoa ne gère pas l'Unicode — on passe par encodeURIComponent + unescape
+    const propsB64 = btoa(unescape(encodeURIComponent(JSON.stringify(propsObj))));
+    const noteB64  = encodeURIComponent('Design TextileLab #' + (designId || ''));
+    const cartUrl  = `https://${window._TL_SHOP}/cart/${variantId}:1?properties=${propsB64}&note=${noteB64}`;
     showToast('✅ Redirection vers votre boutique…');
     setTimeout(() => { window.location.href = cartUrl; }, 800);
   } catch(e) {
