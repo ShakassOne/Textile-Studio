@@ -721,9 +721,16 @@ let dragging=false, resizing=false, dragOff={x:0,y:0}, resizeDir='', zoneRafId=n
 // ============================================
 // AUTH
 // ============================================
-const token = sessionStorage.getItem('tl_admin_token');
+// Token partagé entre tous les onglets (localStorage)
+// Fallback sessionStorage pour compatibilité ancienne version
+const token = localStorage.getItem('tl_admin_token') || sessionStorage.getItem('tl_admin_token');
 if (!token) window.location.href = 'textilelab-login.html';
-const adminUser = sessionStorage.getItem('tl_admin_user') || 'admin';
+// Migration automatique sessionStorage → localStorage
+if (!localStorage.getItem('tl_admin_token') && sessionStorage.getItem('tl_admin_token')) {
+  localStorage.setItem('tl_admin_token', sessionStorage.getItem('tl_admin_token'));
+  localStorage.setItem('tl_admin_user', sessionStorage.getItem('tl_admin_user') || 'admin');
+}
+const adminUser = localStorage.getItem('tl_admin_user') || sessionStorage.getItem('tl_admin_user') || 'admin';
 document.getElementById('nav-username').textContent = adminUser;
 const API_BASE = (window.location.hostname==='localhost'||window.location.hostname==='127.0.0.1')
   ? 'http://localhost:3001' : '';
@@ -731,6 +738,8 @@ const _apiUrlEl = document.getElementById('api-url-display');
 if (_apiUrlEl) _apiUrlEl.textContent = API_BASE || window.location.origin;
 
 function logout() {
+  localStorage.removeItem('tl_admin_token');
+  localStorage.removeItem('tl_admin_user');
   sessionStorage.removeItem('tl_admin_token');
   sessionStorage.removeItem('tl_admin_user');
   window.location.href = 'textilelab-login.html';
@@ -767,10 +776,19 @@ function showView(name) {
 // ============================================
 async function api(path, opts = {}) {
   try {
+    const currentToken = localStorage.getItem('tl_admin_token') || token;
     const res = await fetch(API_BASE + path, {
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, ...(opts.headers||{}) },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentToken}`, ...(opts.headers||{}) },
       ...opts,
     });
+    // Session expirée → retour à la page de login
+    if (res.status === 401) {
+      localStorage.removeItem('tl_admin_token');
+      sessionStorage.removeItem('tl_admin_token');
+      showToast('⚠️ Session expirée — reconnexion…');
+      setTimeout(() => { window.location.href = 'textilelab-login.html'; }, 1500);
+      return null;
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch(e) {

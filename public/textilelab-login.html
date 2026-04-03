@@ -211,7 +211,7 @@ const API_BASE = (window.location.hostname === 'localhost' || window.location.ho
   ? 'http://localhost:3001' : '';
 
 // Si déjà connecté → redirect
-if (sessionStorage.getItem('tl_admin_token')) {
+if (localStorage.getItem('tl_admin_token')) {
   window.location.href = 'textilelab-admin.html';
 }
 
@@ -246,28 +246,18 @@ async function doLogin() {
 
     if (res.ok) {
       const data = await res.json();
-      sessionStorage.setItem('tl_admin_token', data.token);
-      sessionStorage.setItem('tl_admin_user', username);
+      localStorage.setItem('tl_admin_token', data.token);
+      localStorage.setItem('tl_admin_user', username);
+      // Nettoyer l'ancien token sessionStorage si présent
+      sessionStorage.removeItem('tl_admin_token');
+      sessionStorage.removeItem('tl_admin_user');
       window.location.href = 'textilelab-admin.html';
     } else {
-      // Fallback : login local si API hors-ligne
-      if (username === 'admin' && password === 'admin1234') {
-        sessionStorage.setItem('tl_admin_token', 'local_token');
-        sessionStorage.setItem('tl_admin_user', username);
-        window.location.href = 'textilelab-admin.html';
-      } else {
-        showError('Identifiants incorrects');
-      }
+      const errData = await res.json().catch(() => ({}));
+      showError(errData.error || 'Identifiants incorrects');
     }
   } catch {
-    // API hors-ligne : fallback local
-    if (username === 'admin' && password === 'admin1234') {
-      sessionStorage.setItem('tl_admin_token', 'local_token');
-      sessionStorage.setItem('tl_admin_user', username);
-      window.location.href = 'textilelab-admin.html';
-    } else {
-      showError('Impossible de contacter le serveur — vérifiez que le backend est lancé');
-    }
+    showError('Impossible de contacter le serveur — vérifiez votre connexion');
   }
 
   btn.classList.remove('loading');
