@@ -3479,6 +3479,8 @@ function _saveCurrentViewLayers() {
 // Restaurer les calques d'une vue
 function _restoreViewLayers(mockupId, viewIdx, callback) {
   const key = _viewKey(mockupId, viewIdx);
+  // Désélectionner AVANT de supprimer pour éviter les handles fantômes
+  canvas.discardActiveObject();
   // Supprimer les calques utilisateur actuels
   canvas.getObjects()
     .filter(o => !o.__isFrame && !o.__isMockupBg && !o.__isColorOverlay && !o.__isPrintMask)
@@ -3488,6 +3490,7 @@ function _restoreViewLayers(mockupId, viewIdx, callback) {
   console.log(`%c[Views] RESTORE "${key}" — ${saved?.length || 0} objet(s)`, 'color:#10B981;font-weight:bold');
 
   if (!saved || !saved.length) {
+    canvas.discardActiveObject();
     canvas.calcOffset();
     canvas.requestRenderAll();
     updateLayerBar();
@@ -3500,6 +3503,8 @@ function _restoreViewLayers(mockupId, viewIdx, callback) {
       applyFrameClipToObject(o); // réappliquer le clip
       canvas.add(o);
     });
+    // Désélectionner après restauration pour éviter les handles résiduels
+    canvas.discardActiveObject();
     canvas.calcOffset();
     canvas.requestRenderAll();
     updateLayerBar();
@@ -3538,7 +3543,8 @@ function applyMockup(productKey, viewIdx, mockupIdx) {
   const targetMockupId = STATE_mockup?.id;
   const targetViewIdx  = STATE_viewIdx;
 
-  // ── ÉTAPE 4 : Vider l'ancien fond + overlay + calques utilisateur ──
+  // ── ÉTAPE 4 : Désélectionner + vider l'ancien fond + overlay ──
+  canvas.discardActiveObject();
   canvas.getObjects()
     .filter(o => o.__isMockupBg || o.__isColorOverlay)
     .forEach(o => canvas.remove(o));
@@ -3751,7 +3757,7 @@ function switchMockupView(viewIdx) {
     if (STATE.view === '3d') {
       setTimeout(_apply3DTexture, 400);
     }
-  }, 80); // 80ms de délai pour absorber les doubles-clics
+  }, 150); // 150ms de délai pour absorber les doubles-clics et laisser l'async se stabiliser
 }
 
 
@@ -5116,16 +5122,19 @@ async function _checkoutShopifyDirect() {
     const variantId = pData?.variant_id;
     if (!variantId) throw new Error(pData?.error || 'Variante Shopify introuvable pour ce produit');
 
-    const params = new URLSearchParams();
-    params.set('properties[design_id]', String(designId || ''));
-    params.set('properties[_product]',  STATE.product);
-    params.set('properties[_format]',   STATE.format);
-    params.set('properties[_color]',    STATE.textileColor);
-    params.set('properties[_views]',    String(viewsCount));
-    if (previewUrl) params.set('properties[Aperçu design]', previewUrl);
-    params.set('note', 'Design TextileLab #' + (designId || ''));
+    // Construire la query string manuellement — URLSearchParams encode [ ] en %5B %5D
+    // ce que Shopify rejette avec "properties parameter is invalid"
+    const cartParts = [
+      'properties[design_id]=' + encodeURIComponent(designId || ''),
+      'properties[_product]='  + encodeURIComponent(STATE.product),
+      'properties[_format]='   + encodeURIComponent(STATE.format),
+      'properties[_color]='    + encodeURIComponent(STATE.textileColor),
+      'properties[_views]='    + encodeURIComponent(String(viewsCount)),
+    ];
+    if (previewUrl) cartParts.push('properties[Apercu]=' + encodeURIComponent(previewUrl));
+    cartParts.push('note=' + encodeURIComponent('Design TextileLab #' + (designId || '')));
 
-    const cartUrl = `https://${window._TL_SHOP}/cart/${variantId}:1?${params.toString()}`;
+    const cartUrl = `https://${window._TL_SHOP}/cart/${variantId}:1?` + cartParts.join('&');
     showToast('✅ Redirection vers votre boutique…');
     setTimeout(() => { window.location.href = cartUrl; }, 800);
   } catch(e) {
