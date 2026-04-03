@@ -227,9 +227,8 @@ router.get('/callback', async (req, res) => {
     .then(() => console.log(`🪝  Webhook app/uninstalled enregistré pour ${shop}`))
     .catch(err => console.warn(`⚠️  Webhook app/uninstalled non enregistré pour ${shop}:`, err.message));
 
-  // 7. Rediriger vers l'admin Shopify (embed dans iFrame App Bridge)
-  const appHandle = process.env.SHOPIFY_APP_HANDLE || 'textilelab';
-  return res.redirect(`https://${shop}/admin/apps/${appHandle}`);
+  // 7. Rediriger vers le studio TextileLab après installation
+  return res.redirect(`${SHOPIFY_APP_URL}/textilelab-studio.html?shop=${shop}`);
 });
 
 // ── Enregistrement d'un webhook Shopify via REST Admin API ───────────────────
