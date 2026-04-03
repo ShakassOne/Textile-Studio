@@ -160,8 +160,8 @@ router.get('/install', (req, res) => {
     + '?client_id='    + encodeURIComponent(SHOPIFY_API_KEY)
     + '&scope='        + encodeURIComponent(scopes)
     + '&redirect_uri=' + encodeURIComponent(redirectUri)
-    + '&state='        + nonce
-    + '&grant_options[]=per-user'; // online access token (optionnel, retirer pour offline)
+    + '&state='        + nonce;
+    // token offline (permanent) — retirer la ligne per-user
 
   console.log(`🔐  OAuth install — shop: ${shop}`);
   return res.redirect(installUrl);

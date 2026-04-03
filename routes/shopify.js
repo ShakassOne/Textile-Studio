@@ -274,4 +274,13 @@ function handleOrderPaid(payload) {
   }
 }
 
+// ── TEMP DEV ROUTE — récupère le token admin pour setup (à supprimer après) ──
+const { requireAuth } = require('./auth');
+const { getShop }     = require('../db/database');
+router.get('/dev-token', requireAuth, (req, res) => {
+  const record = getShop('textile-studio-lab.myshopify.com');
+  if (!record) return res.status(404).json({ error: 'Shop non trouvé' });
+  res.json({ shop: record.shop_domain, token: record.access_token });
+});
+
 module.exports = router;
