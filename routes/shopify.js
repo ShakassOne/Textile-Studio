@@ -222,10 +222,17 @@ function handleAppUninstalled(payload, shopDomain) {
 function handleOrderPaid(payload) {
   const db = getDB();
 
-  // Extract design_id from order note attributes or line item properties
-  const attrs = payload.note_attributes || [];
-  const designAttr = attrs.find(a => a.name === 'design_id');
-  const design_id  = designAttr ? parseInt(designAttr.value) : null;
+  // Extract design_id — 1) note_attributes  2) line item properties (nouveau flow cart direct)
+  const attrs      = payload.note_attributes || [];
+  const designAttr = attrs.find(a => a.name === 'design_id' || a.name === '_design_id');
+  let design_id    = designAttr ? parseInt(designAttr.value) : null;
+
+  if (!design_id) {
+    const lineItem   = payload.line_items?.[0] || {};
+    const lineProps  = lineItem.properties || [];
+    const designProp = lineProps.find(p => p.name === 'design_id' || p.name === '_design_id');
+    if (designProp) design_id = parseInt(designProp.value) || null;
+  }
 
   // Extract product and format from first line item
   const lineItem   = payload.line_items?.[0] || {};

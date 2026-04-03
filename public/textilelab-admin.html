@@ -315,6 +315,12 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
         Produits & Mockups
       </div>
 
+      <div class="nav-section">Production</div>
+      <div class="nav-item" onclick="showView('orders')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>
+        Commandes
+      </div>
+
       <div class="nav-section">Système</div>
       <div class="nav-item" onclick="showView('settings')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
@@ -503,6 +509,17 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
           </div>
         </div>
 
+      </div>
+    </div>
+
+    <!-- ══ COMMANDES ══ -->
+    <div class="view" id="view-orders">
+      <div class="page-header">
+        <div><div class="page-title">Commandes</div><div class="page-sub">Commandes Shopify avec designs à produire</div></div>
+        <button class="btn btn-sm" onclick="loadOrders()">↻ Actualiser</button>
+      </div>
+      <div style="padding:24px">
+        <div id="orders-list"><div style="color:var(--text3);font-size:13px">Chargement…</div></div>
       </div>
     </div>
 
@@ -741,6 +758,7 @@ function showView(name) {
   if (name === 'mockups')   loadMockupsView();
   if (name === 'library')   loadLibrary();
   if (name === 'pricing')   { loadProductLinks(); loadPricingEditor(); }
+  if (name === 'orders')    loadOrders();
   if (name === 'settings')  loadSettingsInfo();
 }
 
@@ -2109,6 +2127,76 @@ function showToast(msg) {
 async function refreshAll() { await loadDashboard(); showToast('↻ Dashboard actualisé'); }
 
 // ============================================
+// COMMANDES — Shopify orders + PNG HD
+// ============================================
+async function loadOrders() {
+  const container = document.getElementById('orders-list');
+  if (!container) return;
+  container.innerHTML = '<div style="color:var(--text3);font-size:13px">Chargement…</div>';
+
+  const orders = await api('/api/orders').catch(() => []) || [];
+  if (!orders.length) {
+    container.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:20px;text-align:center">Aucune commande pour l\'instant.<br><span style="font-size:11px;opacity:.6">Les commandes Shopify apparaissent ici dès que le webhook orders/paid est reçu.</span></div>';
+    return;
+  }
+
+  const STATUS_COLORS = { confirmed:'#4ade80', pending:'#facc15', cancelled:'#f87171', shipped:'#60a5fa' };
+  const STATUS_LABELS = { confirmed:'Confirmée', pending:'En attente', cancelled:'Annulée', shipped:'Expédiée' };
+
+  container.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead>
+        <tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text3);font-size:11px;font-family:'DM Mono',monospace">
+          <th style="padding:10px 12px">#</th>
+          <th style="padding:10px 12px">CLIENT</th>
+          <th style="padding:10px 12px">PRODUIT</th>
+          <th style="padding:10px 12px">STATUT</th>
+          <th style="padding:10px 12px">DATE</th>
+          <th style="padding:10px 12px">DESIGN / PNG HD</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${orders.map(o => {
+          const statusColor = STATUS_COLORS[o.status] || '#888';
+          const statusLabel = STATUS_LABELS[o.status] || o.status;
+          const date = o.created_at ? new Date(o.created_at).toLocaleDateString('fr-FR') : '—';
+          const pngBtn = o.design_id
+            ? `<button class="btn btn-sm btn-primary" onclick="downloadOrderPng(${o.design_id})" title="Télécharger le PNG HD de ce design">📥 PNG HD</button>`
+            : '<span style="color:var(--text3);font-size:11px">pas de design</span>';
+          return `
+            <tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:10px 12px;color:var(--text3)">#${o.id}</td>
+              <td style="padding:10px 12px">
+                <div style="font-weight:600">${o.customer_name || '—'}</div>
+                <div style="font-size:11px;color:var(--text3)">${o.customer_email || ''}</div>
+              </td>
+              <td style="padding:10px 12px">
+                <div>${PRODUCT_NAMES[o.product]||o.product||'—'}</div>
+                <div style="font-size:11px;color:var(--text3)">${o.format||''} · qté ${o.quantity||1} · ${(o.total_price||0).toFixed(2)} €</div>
+              </td>
+              <td style="padding:10px 12px">
+                <span style="background:${statusColor}22;color:${statusColor};padding:3px 10px;border-radius:20px;font-size:11px;font-family:'DM Mono',monospace">${statusLabel}</span>
+              </td>
+              <td style="padding:10px 12px;color:var(--text3);font-size:12px">${date}</td>
+              <td style="padding:10px 12px">${pngBtn}</td>
+            </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+}
+
+async function downloadOrderPng(designId) {
+  // Vérifier si un render HD existe pour ce design
+  const info = await api(`/api/render/${designId}`).catch(() => null);
+  if (info?.url || info?.render_url) {
+    const url = info.url || info.render_url;
+    window.open(API_BASE + (url.startsWith('/') ? url : '/' + url), '_blank');
+  } else {
+    showToast('⚠ Pas encore de PNG HD pour ce design. Le client doit avoir finalisé son design dans le studio.');
+  }
+}
+
+// ============================================
 // CATEGORIES PRODUITS
 // ============================================
 let _editingCatId = null;
@@ -2203,11 +2291,109 @@ async function deleteCategory(id, name) {
 }
 
 // ============================================
+// CONFIGURE PRODUCT — depuis Shopify Admin App
+// URL params : ?configure_product=HANDLE&product_id=ID&title=TITLE
+// ============================================
+async function initConfigureProductPanel() {
+  const up = new URLSearchParams(window.location.search);
+  const handle    = up.get('configure_product');
+  const productId = up.get('product_id');
+  const title     = decodeURIComponent(up.get('title') || handle || 'Produit');
+  if (!handle && !productId) return;
+
+  // Charger mockups
+  const mockups = await api('/api/mockups').catch(() => []) || [];
+  // Liaison existante
+  const existingLink = await api('/api/product-links/by-product/' + encodeURIComponent(handle || productId)).catch(() => null);
+
+  const modal = document.createElement('div');
+  modal.id = 'cp-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(10px);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+
+  const mockupOpts = `<option value="">— Aucun mockup —</option>`
+    + mockups.map(m => `<option value="${m.id}" ${existingLink?.mockup_id === m.id ? 'selected' : ''}>${m.name}</option>`).join('');
+
+  modal.innerHTML = `
+    <div style="background:#1a1a1f;border:1px solid #333;border-radius:18px;padding:32px;width:min(480px,96vw);display:flex;flex-direction:column;gap:20px">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="font-size:28px">🎨</div>
+        <div>
+          <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:18px;color:#fff">Configurer TextileLab</div>
+          <div style="font-size:13px;color:#888;margin-top:2px">Liaison mockup pour ce produit</div>
+        </div>
+      </div>
+
+      <div style="background:#111;border:1px solid #2a2a2a;border-radius:12px;padding:14px 16px">
+        <div style="font-size:11px;color:#666;margin-bottom:4px;font-family:'DM Mono',monospace">PRODUIT SHOPIFY</div>
+        <div style="font-weight:700;color:#fff;font-size:15px">${title}</div>
+        <div style="font-size:11px;color:#555;margin-top:2px;font-family:'DM Mono',monospace">${handle || productId}</div>
+      </div>
+
+      <div>
+        <label style="font-size:12px;color:#aaa;display:block;margin-bottom:8px">Mockup à utiliser pour la personnalisation :</label>
+        <select id="cp-mockup-sel" style="width:100%;background:#111;border:1px solid #333;border-radius:10px;padding:12px 14px;color:#fff;font-size:14px;outline:none">
+          ${mockupOpts}
+        </select>
+      </div>
+
+      <div style="display:flex;gap:10px">
+        <button id="cp-save-btn" onclick="saveConfigureProduct('${handle}','${productId}','${encodeURIComponent(title)}')"
+          style="flex:1;background:#f5a623;color:#000;border:none;border-radius:10px;padding:13px;font-weight:700;font-size:14px;cursor:pointer">
+          ✓ Enregistrer la liaison
+        </button>
+        <button onclick="document.getElementById('cp-modal').remove()" title="Fermer"
+          style="background:#222;border:1px solid #333;color:#aaa;border-radius:10px;padding:13px 16px;cursor:pointer;font-size:16px">
+          ✕
+        </button>
+      </div>
+      <div id="cp-result" style="font-size:13px;text-align:center;min-height:20px"></div>
+    </div>`;
+
+  document.body.appendChild(modal);
+}
+
+async function saveConfigureProduct(handle, productId, titleEnc) {
+  const btn    = document.getElementById('cp-save-btn');
+  const result = document.getElementById('cp-result');
+  const mockupId = document.getElementById('cp-mockup-sel').value;
+  const title    = decodeURIComponent(titleEnc || handle);
+
+  btn.disabled = true; btn.textContent = '⏳ Enregistrement…';
+
+  const pid = productId || handle;
+  const r = await api('/api/product-links/' + encodeURIComponent(pid), {
+    method: 'PUT',
+    body: JSON.stringify({
+      mockup_id: mockupId ? parseInt(mockupId) : null,
+      shopify_product_handle: handle,
+      shopify_product_title:  title,
+    }),
+  });
+
+  btn.disabled = false;
+  if (r?.ok !== false) {
+    btn.textContent = '✓ Enregistrer la liaison';
+    result.style.color = '#4ade80';
+    result.textContent = mockupId
+      ? '✅ Liaison enregistrée — le bouton Personnaliser est actif sur ce produit'
+      : '✅ Liaison supprimée — le bouton Personnaliser est désactivé';
+  } else {
+    result.style.color = '#f87171';
+    result.textContent = '❌ Erreur lors de la sauvegarde';
+    btn.textContent = '✓ Enregistrer la liaison';
+  }
+}
+
+// ============================================
 // INIT
 // ============================================
 document.getElementById('dash-date').textContent = new Date().toLocaleDateString('fr-FR',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
 // Charger les catégories en premier, puis le dashboard
-loadProductCategories().then(() => loadDashboard());
+loadProductCategories().then(() => {
+  loadDashboard();
+  // Ouvrir le panneau configure-product si params URL présents
+  initConfigureProductPanel();
+});
 </script>
 </body>
 </html>

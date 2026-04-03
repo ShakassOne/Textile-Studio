@@ -5233,6 +5233,38 @@ async function checkout() {
 
   const firstItem = STATE.cart[0];
 
+  // ── Mode Shopify direct (depuis fiche produit via bouton Personnaliser) ────
+  // On connaît le shop et le handle produit → on redirige vers /cart/ Shopify
+  const _tlShop    = window._TL_SHOP           || '';
+  const _tlHandle  = window._TL_PRODUCT_HANDLE || '';
+
+  if (_tlShop && _tlHandle) {
+    try {
+      // Récupérer les variantes du produit Shopify (endpoint public)
+      const _pRes = await fetch(`https://${_tlShop}/products/${_tlHandle}.json`);
+      const _pData = _pRes.ok ? await _pRes.json() : null;
+      const _variant = _pData?.product?.variants?.[0];
+      if (_variant) {
+        // Construire l'URL /cart avec les propriétés design en line item properties
+        const _props = [
+          `properties[design_id]=${encodeURIComponent(designId || '')}`,
+          `properties[_product]=${encodeURIComponent(firstItem.product)}`,
+          `properties[_format]=${encodeURIComponent(firstItem.format)}`,
+          `properties[_color]=${encodeURIComponent(firstItem.color)}`,
+          `properties[_views]=${encodeURIComponent(firstItem.viewCount || 1)}`,
+          `note=${encodeURIComponent('Design TextileLab #' + (designId || ''))}`,
+        ].join('&');
+        const _cartUrl = `https://${_tlShop}/cart/${_variant.id}:1?${_props}`;
+        showToast('✅ Redirection vers votre boutique…');
+        closeCart();
+        setTimeout(() => { window.location.href = _cartUrl; }, 500);
+        return;
+      }
+    } catch(_e) {
+      console.warn('[TextileLab] Direct cart error, fallback to API:', _e.message);
+    }
+  }
+
   if (isShopifyConfigured) {
     // ── Mode Shopify réel — panier multi-articles + multi-vues ────────
     // Compter les vues avec contenu pour la facturation
@@ -6086,7 +6118,29 @@ function init() {
   setTimeout(_initDrawerCloseTap, 1000);
   setTimeout(_initPinchToScale, 1500);
   loadMockupsFromBackoffice().then(() => {
-    applyMockup(STATE.product, 0);
+    // ── Params URL : ?shop=, ?product=, ?mockup= (depuis fiche produit Shopify)
+    const _up = new URLSearchParams(window.location.search);
+    window._TL_SHOP           = _up.get('shop')    || '';
+    window._TL_PRODUCT_HANDLE = _up.get('product') || '';
+    const _urlMockupId = _up.get('mockup');
+
+    if (_urlMockupId) {
+      // Trouver le mockup correspondant dans MOCKUPS_DATA
+      const _mi = MOCKUPS_DATA.findIndex(m => String(m.id) === String(_urlMockupId));
+      if (_mi >= 0) {
+        const _m = MOCKUPS_DATA[_mi];
+        // Sélectionner le bon type de produit si disponible
+        if (_m.product && STATE.product !== _m.product) selectProduct(_m.product);
+        // Recalculer l'index dans le sous-tableau du produit
+        const _mForProduct = MOCKUPS_DATA.filter(m => m.product === _m.product);
+        const _miLocal = _mForProduct.findIndex(m => String(m.id) === String(_urlMockupId));
+        applyMockup(_m.product || STATE.product, 0, Math.max(0, _miLocal));
+      } else {
+        applyMockup(STATE.product, 0);
+      }
+    } else {
+      applyMockup(STATE.product, 0);
+    }
     showMockupStatus();
   });
   initCanvas();

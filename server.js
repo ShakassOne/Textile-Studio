@@ -35,7 +35,9 @@ app.use(cors({
     if (!origin) return cb(null, true);
     // En développement, autoriser localhost
     if (process.env.NODE_ENV !== 'production') return cb(null, true);
-    // En production : vérifier la whitelist
+    // Toujours autoriser les boutiques Shopify (storefront → notre API)
+    if (origin.endsWith('.myshopify.com') || origin.includes('.shopify.com')) return cb(null, true);
+    // Whitelist configurée dans ALLOWED_ORIGIN
     if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
     cb(new Error(`CORS: origine non autorisée — ${origin}`));
   },
