@@ -3488,7 +3488,8 @@ function _restoreViewLayers(mockupId, viewIdx, callback) {
   console.log(`%c[Views] RESTORE "${key}" — ${saved?.length || 0} objet(s)`, 'color:#10B981;font-weight:bold');
 
   if (!saved || !saved.length) {
-    canvas.renderAll();
+    canvas.calcOffset();
+    canvas.requestRenderAll();
     updateLayerBar();
     if (callback) callback();
     return;
@@ -3499,7 +3500,8 @@ function _restoreViewLayers(mockupId, viewIdx, callback) {
       applyFrameClipToObject(o); // réappliquer le clip
       canvas.add(o);
     });
-    canvas.renderAll();
+    canvas.calcOffset();
+    canvas.requestRenderAll();
     updateLayerBar();
     updatePrice(); // recalcul prix car le nombre de vues avec contenu a pu changer
     if (callback) callback();
@@ -3585,7 +3587,8 @@ function applyMockup(productKey, viewIdx, mockupIdx) {
     // ── ÉTAPE 7 : Restaurer les calques de la nouvelle vue ──
     _restoreViewLayers(targetMockupId, targetViewIdx, () => {
       _reorderCanvasLayers();
-      canvas.renderAll();
+      canvas.calcOffset();
+      canvas.requestRenderAll();
     });
   });
 
@@ -3738,12 +3741,17 @@ function switchMockupSelection(mockupIdx) {
   applyMockup(STATE.product, 0, mockupIdx);
 }
 
+let _switchViewDebounceTimer = null;
 function switchMockupView(viewIdx) {
-  applyMockup(STATE.product, viewIdx, _STATE_mockupIdx);
-  // Si on est en vue 3D, recharger la texture avec la bonne face
-  if (STATE.view === '3d') {
-    setTimeout(_apply3DTexture, 400); // attendre que applyMockup finisse
-  }
+  // Debounce : éviter les switches rapides qui laissent le canvas en état partiel
+  if (_switchViewDebounceTimer) clearTimeout(_switchViewDebounceTimer);
+  _switchViewDebounceTimer = setTimeout(() => {
+    _switchViewDebounceTimer = null;
+    applyMockup(STATE.product, viewIdx, _STATE_mockupIdx);
+    if (STATE.view === '3d') {
+      setTimeout(_apply3DTexture, 400);
+    }
+  }, 80); // 80ms de délai pour absorber les doubles-clics
 }
 
 
@@ -5055,9 +5063,84 @@ function addMobileTicketBatch() {
 // ============================================
 // CART
 // ============================================
+// ── Checkout Shopify direct (depuis fiche produit via bouton Personnaliser) ──
+async function _checkoutShopifyDirect() {
+  const allBtns = document.querySelectorAll('.btn-cart-big, [onclick*="addToCart"]');
+  allBtns.forEach(b => { if (b.tagName === 'BUTTON') { b.disabled = true; b.textContent = '⏳ Préparation…'; } });
+
+  _saveCurrentViewLayers();
+  showToast('⏳ Sauvegarde du design…');
+
+  let designId = _currentDesignId;
+  if (!designId) {
+    const thumbnail = canvas.toDataURL({ format: 'jpeg', quality: 0.5, multiplier: 0.3 });
+    const frame = STATE.frameCoords || { x:20, y:20, w:canvas.getWidth()-40, h:canvas.getHeight()-40 };
+    const saved = await apiFetch('/api/designs', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'Design ' + new Date().toLocaleTimeString('fr-FR'),
+        product: STATE.product,
+        color: STATE.textileColor,
+        format: STATE.format,
+        frame_x: frame.x, frame_y: frame.y, frame_w: frame.w, frame_h: frame.h,
+        layers_json: JSON.stringify(canvas.toJSON(['__isFrame','__isMockupBg','__isQR','__isAI'])),
+        thumbnail,
+      }),
+    });
+    if (saved?.id) {
+      designId = saved.id;
+      _currentDesignId = designId;
+      _generateAndSaveHDRender(designId);
+    }
+  }
+
+  const APP_ORIGIN = window.location.origin;
+  const previewUrl = designId ? `${APP_ORIGIN}/api/render/${designId}` : null;
+
+  const mockup = STATE_mockup;
+  const views  = mockup?.views || [];
+  let viewsCount = 0;
+  views.forEach((_, idx) => {
+    const hasLayers = idx === STATE_viewIdx
+      ? canvas.getObjects().some(o => !o.__isFrame && !o.__isMockupBg && !o.__isColorOverlay && !o.__isPrintMask)
+      : (STATE.viewLayers?.[_viewKey(mockup?.id, idx)] || []).length > 0;
+    if (hasLayers) viewsCount++;
+  });
+  viewsCount = Math.max(1, viewsCount);
+
+  try {
+    const pRes = await fetch(`https://${window._TL_SHOP}/products/${window._TL_PRODUCT_HANDLE}.json`);
+    const pData = pRes.ok ? await pRes.json() : null;
+    const variant = pData?.product?.variants?.[0];
+    if (!variant) throw new Error('Variante Shopify introuvable pour ce produit');
+
+    const params = new URLSearchParams();
+    params.set('properties[design_id]', String(designId || ''));
+    params.set('properties[_product]',  STATE.product);
+    params.set('properties[_format]',   STATE.format);
+    params.set('properties[_color]',    STATE.textileColor);
+    params.set('properties[_views]',    String(viewsCount));
+    if (previewUrl) params.set('properties[Aperçu design]', previewUrl);
+    params.set('note', 'Design TextileLab #' + (designId || ''));
+
+    const cartUrl = `https://${window._TL_SHOP}/cart/${variant.id}:1?${params.toString()}`;
+    showToast('✅ Redirection vers votre boutique…');
+    setTimeout(() => { window.location.href = cartUrl; }, 800);
+  } catch(e) {
+    console.error('[TextileLab] _checkoutShopifyDirect:', e);
+    showToast('❌ Erreur Shopify : ' + e.message);
+    allBtns.forEach(b => { if (b.tagName === 'BUTTON') { b.disabled = false; b.textContent = '🛒 Ajouter au panier'; } });
+  }
+}
+
 async function addToCart() {
   const product = PRODUCTS[STATE.product];
   if (!product) return showToast('❌ Produit introuvable');
+
+  // ── MODE SHOPIFY DIRECT — bypass panier interne ──────────────────────
+  if (window._TL_SHOP && window._TL_PRODUCT_HANDLE) {
+    return _checkoutShopifyDirect();
+  }
 
   // Sauvegarder la vue courante AVANT de scanner
   _saveCurrentViewLayers();
@@ -5447,6 +5530,7 @@ async function submitCheckoutForm(designId) {
 
 function showOrderConfirmation(order, email) {
   const modal = document.createElement('div');
+  modal.id = 'tl-order-confirmation-overlay';
   modal.style.cssText = 'position:fixed;inset:0;z-index:700;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.8);backdrop-filter:blur(6px)';
   modal.innerHTML = `
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:20px;width:min(420px,90vw);padding:36px;text-align:center">
@@ -5461,11 +5545,26 @@ function showOrderConfirmation(order, email) {
         Votre design personnalisé est en cours de préparation.<br>
         Nous vous notifierons dès l'expédition.
       </div>
-      <button onclick="this.closest('div[style]').remove()" style="background:var(--amber);border:none;border-radius:12px;padding:12px 28px;font-family:'Syne',sans-serif;font-weight:700;color:#000;cursor:pointer;font-size:14px">
+      <button id="tl-new-design-btn" style="background:var(--amber);border:none;border-radius:12px;padding:12px 28px;font-family:'Syne',sans-serif;font-weight:700;color:#000;cursor:pointer;font-size:14px">
         Créer un nouveau design
       </button>
     </div>`;
   document.body.appendChild(modal);
+  // Bouton "Créer un nouveau design" — reset complet du studio
+  document.getElementById('tl-new-design-btn').addEventListener('click', () => {
+    document.getElementById('tl-order-confirmation-overlay')?.remove();
+    // Reset du panier et du design courant
+    STATE.cart = [];
+    _currentDesignId = null;
+    const badge = document.getElementById('cart-badge');
+    if (badge) badge.textContent = '0';
+    // Vider le canvas pour un nouveau design
+    canvas.getObjects().filter(o => !o.__isFrame && !o.__isMockupBg && !o.__isColorOverlay && !o.__isPrintMask)
+      .forEach(o => canvas.remove(o));
+    canvas.discardActiveObject();
+    canvas.requestRenderAll();
+    showToast('✏️ Nouveau design — canvas prêt');
+  });
 }
 
 
