@@ -5109,10 +5109,12 @@ async function _checkoutShopifyDirect() {
   viewsCount = Math.max(1, viewsCount);
 
   try {
-    const pRes = await fetch(`https://${window._TL_SHOP}/products/${window._TL_PRODUCT_HANDLE}.json`);
+    // Fetch via notre backend (évite les blocages CORS / boutique protégée par mot de passe)
+    const APP_ORIGIN2 = window.location.origin;
+    const pRes = await fetch(`${APP_ORIGIN2}/api/shopify/product-variant?handle=${encodeURIComponent(window._TL_PRODUCT_HANDLE)}`);
     const pData = pRes.ok ? await pRes.json() : null;
-    const variant = pData?.product?.variants?.[0];
-    if (!variant) throw new Error('Variante Shopify introuvable pour ce produit');
+    const variantId = pData?.variant_id;
+    if (!variantId) throw new Error(pData?.error || 'Variante Shopify introuvable pour ce produit');
 
     const params = new URLSearchParams();
     params.set('properties[design_id]', String(designId || ''));
@@ -5123,7 +5125,7 @@ async function _checkoutShopifyDirect() {
     if (previewUrl) params.set('properties[Aperçu design]', previewUrl);
     params.set('note', 'Design TextileLab #' + (designId || ''));
 
-    const cartUrl = `https://${window._TL_SHOP}/cart/${variant.id}:1?${params.toString()}`;
+    const cartUrl = `https://${window._TL_SHOP}/cart/${variantId}:1?${params.toString()}`;
     showToast('✅ Redirection vers votre boutique…');
     setTimeout(() => { window.location.href = cartUrl; }, 800);
   } catch(e) {

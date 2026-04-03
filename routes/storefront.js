@@ -325,5 +325,51 @@ router.get('/variants', (req, res) => {
   res.json({ mappings: PRODUCT_VARIANT_MAP });
 });
 
+// ── GET /api/shopify/product-variant?handle=xxx
+// Récupère le premier variantId Shopify d'un produit via Admin REST API
+// Utilisé par le studio pour construire l'URL /cart/{variantId}:1
+// (évite les problèmes CORS depuis le navigateur vers la boutique protégée)
+router.get('/product-variant', async (req, res) => {
+  const { handle } = req.query;
+  if (!handle) return res.status(400).json({ error: 'handle requis' });
+
+  try {
+    const { getDB } = require('../db/database');
+    const db = getDB();
+    const shopRecord = db.prepare(
+      'SELECT shop_domain, access_token FROM shops WHERE is_active = 1 ORDER BY id DESC LIMIT 1'
+    ).get();
+
+    if (!shopRecord?.access_token) {
+      return res.status(503).json({ error: 'Shopify non configuré — OAuth requis' });
+    }
+
+    const apiRes = await fetch(
+      `https://${shopRecord.shop_domain}/admin/api/2024-01/products.json?handle=${encodeURIComponent(handle)}&fields=id,handle,variants`,
+      { headers: { 'X-Shopify-Access-Token': shopRecord.access_token } }
+    );
+
+    if (!apiRes.ok) {
+      return res.status(apiRes.status).json({ error: `Shopify API error ${apiRes.status}` });
+    }
+
+    const data = await apiRes.json();
+    const product = data.products?.[0];
+    if (!product) return res.status(404).json({ error: `Produit "${handle}" introuvable` });
+
+    const variant = product.variants?.[0];
+    if (!variant) return res.status(404).json({ error: 'Aucune variante trouvée' });
+
+    res.json({
+      product_id: product.id,
+      handle:     product.handle,
+      variant_id: variant.id,
+      variant_gid: `gid://shopify/ProductVariant/${variant.id}`,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
 module.exports.getVariantId = getVariantId;
