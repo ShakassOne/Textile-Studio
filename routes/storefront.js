@@ -45,32 +45,72 @@ function storefrontQuery(query, variables = {}) {
 }
 
 // ── GET /api/shopify/products — liste les produits Shopify ────────────
+// Priorité : Storefront API (si configurée) → Admin REST API (token OAuth en DB)
 router.get('/products', async (req, res) => {
-  try {
-    const data = await storefrontQuery(`
-      query {
-        products(first: 20) {
-          edges {
-            node {
-              id handle title
-              priceRange { minVariantPrice { amount currencyCode } }
-              variants(first: 50) {
-                edges {
-                  node {
-                    id title availableForSale
-                    selectedOptions { name value }
-                    price { amount currencyCode }
+  // 1. Essai Storefront API
+  if (STORE_DOMAIN && STOREFRONT_TOKEN) {
+    try {
+      const data = await storefrontQuery(`
+        query {
+          products(first: 250) {
+            edges {
+              node {
+                id handle title
+                priceRange { minVariantPrice { amount currencyCode } }
+                variants(first: 50) {
+                  edges {
+                    node {
+                      id title availableForSale
+                      selectedOptions { name value }
+                      price { amount currencyCode }
+                    }
                   }
                 }
               }
             }
           }
         }
-      }
-    `);
-    res.json(data.products.edges.map(e => e.node));
+      `);
+      return res.json(data.products.edges.map(e => e.node));
+    } catch (err) {
+      console.warn('Storefront API failed, falling back to Admin API:', err.message);
+    }
+  }
+
+  // 2. Fallback : Admin REST API via token OAuth stocké en DB
+  try {
+    const { getDB } = require('../db/database');
+    const db        = getDB();
+    const shopRecord = db.prepare(
+      'SELECT shop_domain, access_token FROM shops WHERE is_active = 1 ORDER BY id DESC LIMIT 1'
+    ).get();
+
+    if (!shopRecord || !shopRecord.access_token) {
+      return res.status(503).json({ error: 'Shopify non configuré — installez l\'app via OAuth', configured: false });
+    }
+
+    const apiRes = await fetch(
+      `https://${shopRecord.shop_domain}/admin/api/2024-01/products.json?limit=250&fields=id,title,handle,images`,
+      { headers: { 'X-Shopify-Access-Token': shopRecord.access_token } }
+    );
+
+    if (!apiRes.ok) {
+      const txt = await apiRes.text();
+      return res.status(apiRes.status).json({ error: txt, configured: false });
+    }
+
+    const { products } = await apiRes.json();
+    // Normaliser au format attendu par le front (id = GID, title, handle, image)
+    const normalized = (products || []).map(p => ({
+      id:     `gid://shopify/Product/${p.id}`,
+      handle: p.handle,
+      title:  p.title,
+      image:  p.images?.[0] ? { url: p.images[0].src, altText: p.images[0].alt || p.title } : null,
+    }));
+    return res.json(normalized);
   } catch (err) {
-    res.status(500).json({ error: err.message, configured: !!(STORE_DOMAIN && STOREFRONT_TOKEN) });
+    console.error('Admin API fallback error:', err.message);
+    res.status(500).json({ error: err.message, configured: false });
   }
 });
 
