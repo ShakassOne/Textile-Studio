@@ -2178,9 +2178,32 @@ async function loadOrders() {
           const statusColor = STATUS_COLORS[o.status] || '#888';
           const statusLabel = STATUS_LABELS[o.status] || o.status;
           const date = o.created_at ? new Date(o.created_at).toLocaleDateString('fr-FR') : '—';
+
+          // Miniatures recto/verso depuis views_preview_json (stocké par save-views au checkout)
+          let thumbsHtml = '';
+          if (o.views_preview_json) {
+            try {
+              const vp = JSON.parse(o.views_preview_json);
+              const entries = Object.values(vp);
+              if (entries.length) {
+                thumbsHtml = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">` +
+                  entries.map(v => `
+                    <a href="${v.url}" target="_blank" title="Voir ${v.name}" style="display:inline-block">
+                      <img src="${v.url}" alt="${v.name}"
+                           style="width:52px;height:52px;object-fit:contain;border-radius:6px;border:1px solid var(--border);background:#f8f8f8">
+                      <div style="font-size:9px;text-align:center;color:var(--text3);margin-top:2px">${v.name}</div>
+                    </a>`).join('') +
+                `</div>`;
+              }
+            } catch {}
+          } else if (o.design_thumb) {
+            thumbsHtml = `<img src="${o.design_thumb}" style="width:48px;height:48px;object-fit:contain;border-radius:6px;border:1px solid var(--border);background:#f8f8f8;margin-bottom:4px">`;
+          }
+
           const pngBtn = o.design_id
             ? `<button class="btn btn-sm btn-primary" onclick="downloadOrderPng(${o.design_id})" title="Télécharger le PNG HD de ce design">📥 PNG HD</button>`
             : '<span style="color:var(--text3);font-size:11px">pas de design</span>';
+
           return `
             <tr style="border-bottom:1px solid var(--border)">
               <td style="padding:10px 12px;color:var(--text3)">#${o.id}</td>
@@ -2196,7 +2219,10 @@ async function loadOrders() {
                 <span style="background:${statusColor}22;color:${statusColor};padding:3px 10px;border-radius:20px;font-size:11px;font-family:'DM Mono',monospace">${statusLabel}</span>
               </td>
               <td style="padding:10px 12px;color:var(--text3);font-size:12px">${date}</td>
-              <td style="padding:10px 12px">${pngBtn}</td>
+              <td style="padding:10px 12px">
+                ${thumbsHtml}
+                ${pngBtn}
+              </td>
             </tr>`;
         }).join('')}
       </tbody>

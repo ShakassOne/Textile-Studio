@@ -39,6 +39,48 @@ router.get('/', requireAuth, (req, res) => {
   })));
 });
 
+// ── POST /api/render/save-views ── sauvegarde les thumbnails de TOUTES les vues d'un design
+// Body: { design_id, views: [{ idx, name, png_base64 }] }
+// Stocke chaque image dans uploads/renders et met à jour views_preview_json dans la table designs
+router.post('/save-views', (req, res) => {
+  const { design_id, views } = req.body;
+  if (!design_id || !Array.isArray(views) || !views.length) {
+    return res.status(400).json({ error: 'design_id et views[] requis' });
+  }
+
+  const db      = getDB();
+  const APP_URL = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
+  const result  = {};
+
+  for (const view of views) {
+    try {
+      const base64Data = (view.png_base64 || '').replace(/^data:image\/\w+;base64,/, '');
+      if (!base64Data) continue;
+      const buffer   = Buffer.from(base64Data, 'base64');
+      const filename = `preview_d${design_id}_v${view.idx}_${Date.now()}.jpg`;
+      const filepath = path.join(RENDERS_DIR, filename);
+      fs.writeFileSync(filepath, buffer);
+      const absUrl = `${APP_URL}/uploads/renders/${filename}`;
+      result[view.idx] = { url: absUrl, name: view.name || `Vue ${view.idx}` };
+    } catch(e) {
+      console.error(`[render] save-views view ${view.idx}:`, e.message);
+    }
+  }
+
+  // Ajouter colonne si elle n'existe pas encore
+  try { db.prepare('ALTER TABLE designs ADD COLUMN views_preview_json TEXT').run(); } catch { /* ok */ }
+
+  try {
+    db.prepare('UPDATE designs SET views_preview_json=?, updated_at=datetime(\'now\') WHERE id=?')
+      .run(JSON.stringify(result), design_id);
+    console.log(`[render] ${Object.keys(result).length} thumbnail(s) sauvegardé(s) pour design #${design_id}`);
+    res.json({ ok: true, views: result });
+  } catch(e) {
+    console.error('[render] save-views DB:', e.message);
+    res.status(500).json({ error: 'Erreur DB' });
+  }
+});
+
 // ── POST /api/render/save ── reçoit base64, sauvegarde le fichier PNG (public — appelé par le studio)
 router.post('/save', (req, res) => {
   const { design_id, png_base64 } = req.body;

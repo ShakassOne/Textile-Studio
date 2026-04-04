@@ -2642,6 +2642,9 @@ const STATE = {
   layerCount: 0,
   // Calques par vue : clé = "mockupId_viewIdx", valeur = JSON des objets canvas
   viewLayers: {},
+  // Thumbnails par vue : clé = "mockupId_viewIdx", valeur = dataURL JPEG basse résolution
+  // Générés automatiquement avant chaque switch de face — utilisés au checkout
+  viewThumbs: {},
 };
 
 const PRODUCTS = {
@@ -3482,6 +3485,12 @@ function _saveCurrentViewLayers() {
   });
   STATE.viewLayers[key] = serialized;
   console.log(`%c[Views] SAVE "${key}" — ${serialized.length} objet(s)`, 'color:#F59E0B;font-weight:bold');
+
+  // Snapshot de la vue courante (composite canvas = mockup + calques)
+  // Utilisé au checkout pour générer les aperçus recto/verso
+  try {
+    STATE.viewThumbs[key] = canvas.toDataURL({ format: 'jpeg', quality: 0.65, multiplier: 0.5 });
+  } catch(e) { /* silencieux — canvas pas encore prêt */ }
 }
 
 // Restaurer les calques d'une vue
@@ -4663,6 +4672,13 @@ function switchTab(tab) {
       updateTextPreview();
     }
   }
+  // Recalculer l'offset canvas après changement de layout du panneau
+  // Evite les handles fantômes hors zone quand la sidebar change de hauteur/contenu
+  requestAnimationFrame(() => {
+    if (!canvas) return;
+    canvas.calcOffset();
+    canvas.requestRenderAll();
+  });
 }
 
 // ============================================
@@ -5090,9 +5106,12 @@ async function _checkoutShopifyDirect() {
   const allBtns = document.querySelectorAll('.btn-cart-big, [onclick*="addToCart"]');
   allBtns.forEach(b => { if (b.tagName === 'BUTTON') { b.disabled = true; b.textContent = '⏳ Préparation…'; } });
 
-  _saveCurrentViewLayers();
+  // ── 1. Snapshot de la vue courante (mockup + calques) AVANT tout ──
+  _saveCurrentViewLayers(); // met aussi à jour STATE.viewThumbs[currentKey]
+
   showToast('⏳ Sauvegarde du design…');
 
+  // ── 2. Créer le design en DB si pas encore fait ──
   let designId = _currentDesignId;
   if (!designId) {
     const thumbnail = canvas.toDataURL({ format: 'jpeg', quality: 0.5, multiplier: 0.3 });
@@ -5112,45 +5131,74 @@ async function _checkoutShopifyDirect() {
     if (saved?.id) {
       designId = saved.id;
       _currentDesignId = designId;
-      _generateAndSaveHDRender(designId);
+      _generateAndSaveHDRender(designId); // fire-and-forget rendu HD
     }
   }
 
-  const APP_ORIGIN = window.location.origin;
-  const previewUrl = designId ? `${APP_ORIGIN}/api/render/${designId}` : null;
-
-  const mockup = STATE_mockup;
-  const views  = mockup?.views || [];
+  // ── 3. Collecter toutes les vues avec contenu + leur thumbnail ──
+  const mockup     = STATE_mockup;
+  const allViews   = mockup?.views || [{}];
+  const VIEW_NAMES = ['Recto','Verso','Vue 3','Vue 4'];
+  const viewsToUpload = [];   // vues qui ont du contenu
   let viewsCount = 0;
-  views.forEach((_, idx) => {
+
+  for (let idx = 0; idx < allViews.length; idx++) {
+    const key = _viewKey(mockup?.id, idx);
     const hasLayers = idx === STATE_viewIdx
       ? canvas.getObjects().some(o => !o.__isFrame && !o.__isMockupBg && !o.__isColorOverlay && !o.__isPrintMask)
-      : (STATE.viewLayers?.[_viewKey(mockup?.id, idx)] || []).length > 0;
-    if (hasLayers) viewsCount++;
-  });
+      : (STATE.viewLayers?.[key] || []).length > 0;
+    if (hasLayers) {
+      viewsCount++;
+      const thumb = STATE.viewThumbs?.[key];
+      if (thumb) {
+        viewsToUpload.push({ idx, name: allViews[idx]?.name || VIEW_NAMES[idx] || `Vue ${idx+1}`, png_base64: thumb });
+      }
+    }
+  }
   viewsCount = Math.max(1, viewsCount);
 
+  // ── 4. Uploader les thumbnails de chaque vue (fire-and-forget) ──
+  let viewsPreview = {}; // { idx: { url, name } }
+  if (designId && viewsToUpload.length) {
+    try {
+      const r = await apiFetch('/api/render/save-views', {
+        method: 'POST',
+        body: JSON.stringify({ design_id: designId, views: viewsToUpload }),
+      });
+      viewsPreview = r?.views || {};
+    } catch(e) {
+      console.warn('[TextileLab] save-views:', e.message);
+    }
+  }
+
+  // ── 5. Construire les properties Shopify ──
+  const APP_ORIGIN = window.location.origin;
+  const propsObj = {
+    'design_id': String(designId || ''),
+    'Produit':   STATE.product,
+    'Format':    STATE.format,
+    'Couleur':   STATE.textileColor,
+    'Faces':     String(viewsCount),
+  };
+
+  // Ajouter une URL par vue (Recto, Verso…) — visibles en texte dans le checkout Shopify
+  const viewKeys = Object.keys(viewsPreview);
+  if (viewKeys.length > 0) {
+    viewKeys.forEach(idx => {
+      const v = viewsPreview[idx];
+      propsObj[`Apercu_${v.name}`] = v.url; // ex: "Apercu_Recto" → URL absolue image
+    });
+  } else if (designId) {
+    // Fallback : lien vers le render HD (sera redirigé vers PNG par notre 302)
+    propsObj['Apercu design'] = `${APP_ORIGIN}/api/render/${designId}`;
+  }
+
   try {
-    // Fetch via notre backend (évite les blocages CORS / boutique protégée par mot de passe)
-    const APP_ORIGIN2 = window.location.origin;
-    const pRes = await fetch(`${APP_ORIGIN2}/api/shopify/product-variant?handle=${encodeURIComponent(window._TL_PRODUCT_HANDLE)}`);
+    const pRes = await fetch(`${APP_ORIGIN}/api/shopify/product-variant?handle=${encodeURIComponent(window._TL_PRODUCT_HANDLE)}`);
     const pData = pRes.ok ? await pRes.json() : null;
     const variantId = pData?.variant_id;
     if (!variantId) throw new Error(pData?.error || 'Variante Shopify introuvable pour ce produit');
 
-    // Format officiel Shopify : properties encodées en Base64 JSON
-    // https://shopify.dev/docs/apps/build/checkout/create-cart-permalinks
-    // Évite tout problème d'encodage de crochets (properties[key] rejeté par Shopify)
-    const propsObj = {
-      'design_id': String(designId || ''),
-      'Produit':   STATE.product,
-      'Format':    STATE.format,
-      'Couleur':   STATE.textileColor,
-      'Faces':     String(viewsCount),
-    };
-    if (previewUrl) propsObj['Apercu design'] = previewUrl;
-
-    // btoa ne gère pas l'Unicode — on passe par encodeURIComponent + unescape
     const propsB64 = btoa(unescape(encodeURIComponent(JSON.stringify(propsObj))));
     const noteB64  = encodeURIComponent('Design TextileLab #' + (designId || ''));
     const cartUrl  = `https://${window._TL_SHOP}/cart/${variantId}:1?properties=${propsB64}&note=${noteB64}`;

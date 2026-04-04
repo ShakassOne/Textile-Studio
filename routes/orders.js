@@ -17,9 +17,24 @@ router.get('/meta/pricing', (_req, res) => {
 router.get('/', requireAuth, (req, res) => {
   const db = getDB();
   const { status } = req.query;
-  const rows = status
-    ? db.prepare('SELECT * FROM orders WHERE status=? ORDER BY created_at DESC').all(status)
-    : db.prepare('SELECT * FROM orders ORDER BY created_at DESC').all();
+
+  // LEFT JOIN designs pour récupérer views_preview_json et thumbnail
+  let rows;
+  try {
+    const q = status
+      ? `SELECT o.*, d.views_preview_json, d.thumbnail AS design_thumb
+         FROM orders o LEFT JOIN designs d ON d.id = o.design_id
+         WHERE o.status=? ORDER BY o.created_at DESC`
+      : `SELECT o.*, d.views_preview_json, d.thumbnail AS design_thumb
+         FROM orders o LEFT JOIN designs d ON d.id = o.design_id
+         ORDER BY o.created_at DESC`;
+    rows = status ? db.prepare(q).all(status) : db.prepare(q).all();
+  } catch {
+    // Fallback sans join (colonne views_preview_json peut ne pas exister encore)
+    rows = status
+      ? db.prepare('SELECT * FROM orders WHERE status=? ORDER BY created_at DESC').all(status)
+      : db.prepare('SELECT * FROM orders ORDER BY created_at DESC').all();
+  }
   res.json(rows);
 });
 

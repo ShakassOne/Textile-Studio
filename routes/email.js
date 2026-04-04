@@ -222,12 +222,39 @@ function buildOrderConfirmationHTML(order, design) {
   const extraFmt    = parseFloat(order.format_price).toFixed(2).replace('.', ',');
   const dateStr     = new Date(order.created_at).toLocaleDateString('fr-FR', { year:'numeric', month:'long', day:'numeric' });
 
-  const thumbnailBlock = design?.thumbnail
-    ? `<div style="text-align:center;margin:24px 0">
-        <img src="${design.thumbnail}" alt="Votre design" style="max-width:200px;max-height:200px;border-radius:12px;border:2px solid #f0f0f8;object-fit:contain">
+  // Images recto/verso : depuis views_preview_json si disponible, sinon thumbnail unique
+  const APP_URL = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
+  let thumbnailBlock = '';
+  if (design?.views_preview_json) {
+    try {
+      const vp      = JSON.parse(design.views_preview_json);
+      const entries = Object.values(vp).filter(v => v?.url);
+      if (entries.length) {
+        thumbnailBlock = `
+          <div style="text-align:center;margin:24px 0">
+            <div style="font-size:11px;color:#aaa;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px">Votre design personnalisé</div>
+            <div style="display:inline-flex;gap:12px;flex-wrap:wrap;justify-content:center">
+              ${entries.map(v => `
+                <div style="text-align:center">
+                  <a href="${v.url}" target="_blank" style="display:inline-block">
+                    <img src="${v.url}" alt="${v.name}" width="160" height="160"
+                         style="border-radius:10px;border:2px solid #f0f0f8;object-fit:contain;background:#f8f8f8;display:block">
+                  </a>
+                  <div style="font-size:11px;color:#aaa;margin-top:4px">${v.name}</div>
+                </div>`).join('')}
+            </div>
+          </div>`;
+      }
+    } catch {}
+  }
+  if (!thumbnailBlock && design?.thumbnail) {
+    thumbnailBlock = `
+      <div style="text-align:center;margin:24px 0">
+        <img src="${design.thumbnail}" alt="Votre design"
+             style="max-width:200px;max-height:200px;border-radius:12px;border:2px solid #f0f0f8;object-fit:contain">
         <div style="font-size:11px;color:#aaa;margin-top:6px">${design.name || 'Votre design'}</div>
-       </div>`
-    : '';
+      </div>`;
+  }
 
   const content = `
     <!-- Hero -->
