@@ -222,8 +222,22 @@ function buildOrderConfirmationHTML(order, design) {
   const extraFmt    = parseFloat(order.format_price).toFixed(2).replace('.', ',');
   const dateStr     = new Date(order.created_at).toLocaleDateString('fr-FR', { year:'numeric', month:'long', day:'numeric' });
 
-  // Images recto/verso : depuis views_preview_json si disponible, sinon thumbnail unique
+  // Lien vers la page aperçu recto/verso (toujours disponible si design_id existe)
   const APP_URL = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
+  const previewPageUrl = design?.id ? `${APP_URL}/design-preview/${design.id}` : null;
+
+  // Bouton "Voir votre design" — lien vers la page HTML recto/verso
+  const previewBtnBlock = previewPageUrl ? `
+    <div style="text-align:center;margin:28px 0 8px">
+      <a href="${previewPageUrl}" target="_blank"
+         style="display:inline-block;background:#F59E0B;color:#000;font-weight:700;font-size:14px;
+                padding:14px 32px;border-radius:10px;text-decoration:none;letter-spacing:0.3px">
+        👕 Voir votre design
+      </a>
+      <div style="font-size:11px;color:#aaa;margin-top:8px">Recto &amp; verso · cliquable depuis cet email</div>
+    </div>` : '';
+
+  // Images inline recto/verso (depuis views_preview_json si disponible)
   let thumbnailBlock = '';
   if (design?.views_preview_json) {
     try {
@@ -231,16 +245,16 @@ function buildOrderConfirmationHTML(order, design) {
       const entries = Object.values(vp).filter(v => v?.url);
       if (entries.length) {
         thumbnailBlock = `
-          <div style="text-align:center;margin:24px 0">
-            <div style="font-size:11px;color:#aaa;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px">Votre design personnalisé</div>
+          <div style="text-align:center;margin:20px 0 0">
+            <div style="font-size:10px;color:#bbb;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px">Aperçu rapide</div>
             <div style="display:inline-flex;gap:12px;flex-wrap:wrap;justify-content:center">
               ${entries.map(v => `
                 <div style="text-align:center">
-                  <a href="${v.url}" target="_blank" style="display:inline-block">
-                    <img src="${v.url}" alt="${v.name}" width="160" height="160"
+                  <a href="${previewPageUrl || v.url}" target="_blank" style="display:inline-block">
+                    <img src="${v.url}" alt="${v.name}" width="140" height="140"
                          style="border-radius:10px;border:2px solid #f0f0f8;object-fit:contain;background:#f8f8f8;display:block">
                   </a>
-                  <div style="font-size:11px;color:#aaa;margin-top:4px">${v.name}</div>
+                  <div style="font-size:10px;color:#aaa;margin-top:4px">${v.name}</div>
                 </div>`).join('')}
             </div>
           </div>`;
@@ -249,10 +263,11 @@ function buildOrderConfirmationHTML(order, design) {
   }
   if (!thumbnailBlock && design?.thumbnail) {
     thumbnailBlock = `
-      <div style="text-align:center;margin:24px 0">
-        <img src="${design.thumbnail}" alt="Votre design"
-             style="max-width:200px;max-height:200px;border-radius:12px;border:2px solid #f0f0f8;object-fit:contain">
-        <div style="font-size:11px;color:#aaa;margin-top:6px">${design.name || 'Votre design'}</div>
+      <div style="text-align:center;margin:20px 0 0">
+        <a href="${previewPageUrl || design.thumbnail}" target="_blank">
+          <img src="${design.thumbnail}" alt="Votre design"
+               style="max-width:180px;max-height:180px;border-radius:12px;border:2px solid #f0f0f8;object-fit:contain">
+        </a>
       </div>`;
   }
 
@@ -270,6 +285,7 @@ function buildOrderConfirmationHTML(order, design) {
       <div style="font-size:24px;font-weight:700;color:#F59E0B;font-family:'Courier New',monospace">#${String(order.id).padStart(5,'0')}</div>
     </div>
 
+    ${previewBtnBlock}
     ${thumbnailBlock}
 
     <!-- Order details -->

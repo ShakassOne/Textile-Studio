@@ -67,6 +67,13 @@ app.get('/sw.js', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'sw.js'));
 });
 
+// ── Aperçu design recto/verso — URL courte et propre ──────────────────────
+// /design-preview/:id → sert design-preview.html avec ?id= injecté dans l'URL
+// C'est cette URL qu'on met dans les properties Shopify du checkout (lien cliquable)
+app.get('/design-preview/:id', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'design-preview.html'));
+});
+
 // ── Politique de confidentialité (obligatoire App Store Shopify) ───────────
 // URL à déclarer dans Partners Dashboard → App setup → Privacy policy URL
 app.get('/privacy', (_req, res) => {

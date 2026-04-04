@@ -3560,13 +3560,20 @@ function applyMockup(productKey, viewIdx, mockupIdx) {
   const targetMockupId = STATE_mockup?.id;
   const targetViewIdx  = STATE_viewIdx;
 
-  // ── ÉTAPE 4 : Clear radical — les calques sont déjà sauvegardés à l'étape 1 ──
-  // canvas.clear() supprime TOUT (objets + sélection + handles) puis on reconstruit entièrement.
-  // Les calques utilisateur ont été sérialisés à l'étape 1 → safe.
+  // ── ÉTAPE 4 : Nettoyer le canvas + invalider les fromURL en vol ──
+  // On incrémente _loadGeneration : tout callback fromURL avec une valeur différente sera ignoré.
+  // Pas de canvas.clear() — il déclenche des events Fabric en cascade (object:removed × N,
+  // canvas:cleared) qui causent des erreurs getRetinaScaling et des double-renders.
+  // On supprime les objets un par un et on force un renderAll propre.
+  _loadGeneration++;
+  const _myGeneration = _loadGeneration;
   _switchingView = true;
+
   canvas.discardActiveObject();
-  canvas.clear();
-  canvas.renderAll();
+  // Supprimer TOUS les objets (bg, frame, overlay, calques user) — copie du tableau d'abord
+  canvas.getObjects().slice().forEach(o => canvas.remove(o));
+  canvas.setBackgroundColor('transparent', () => {});
+  canvas.renderAll(); // vide le upper-canvas (handles fantômes)
 
   updateViewSwitcher();
 
@@ -3582,9 +3589,10 @@ function applyMockup(productKey, viewIdx, mockupIdx) {
   const view = STATE_mockup.views[targetViewIdx];
 
   fabric.Image.fromURL(view.imageData, (img) => {
-    // Vérifier qu'on est toujours sur la même vue (pas de switch entre-temps)
-    if (STATE_mockup?.id !== targetMockupId || STATE_viewIdx !== targetViewIdx) {
-      _switchingView = false; // libérer le flag même si on abandonne cette vue
+    // Guard robuste : token de génération — si un nouveau applyMockup a été appelé
+    // entre le démarrage et la fin du chargement, on ignore ce callback.
+    if (_loadGeneration !== _myGeneration) {
+      _switchingView = false;
       return;
     }
 
@@ -3773,6 +3781,7 @@ function switchMockupSelection(mockupIdx) {
 let _switchViewDebounceTimer = null;
 let _switchingView = false;   // true pendant le chargement async d'une vue (bloque les interactions)
 let _editingObj = null;       // dernier objet sélectionné (maintien de sélection depuis tools-panel)
+let _loadGeneration = 0;      // incrément à chaque applyMockup — invalide les fromURL obsolètes
 function switchMockupView(viewIdx) {
   // Debounce : éviter les switches rapides qui laissent le canvas en état partiel
   if (_switchViewDebounceTimer) clearTimeout(_switchViewDebounceTimer);
@@ -5181,16 +5190,10 @@ async function _checkoutShopifyDirect() {
     'Faces':     String(viewsCount),
   };
 
-  // Ajouter une URL par vue (Recto, Verso…) — visibles en texte dans le checkout Shopify
-  const viewKeys = Object.keys(viewsPreview);
-  if (viewKeys.length > 0) {
-    viewKeys.forEach(idx => {
-      const v = viewsPreview[idx];
-      propsObj[`Apercu_${v.name}`] = v.url; // ex: "Apercu_Recto" → URL absolue image
-    });
-  } else if (designId) {
-    // Fallback : lien vers le render HD (sera redirigé vers PNG par notre 302)
-    propsObj['Apercu design'] = `${APP_ORIGIN}/api/render/${designId}`;
+  // Un seul lien "Voir mon design" → page HTML belle avec recto+verso cliquable
+  // Shopify l'affiche en texte dans le checkout — le client peut cliquer dessus
+  if (designId) {
+    propsObj['Voir mon design'] = `${APP_ORIGIN}/design-preview/${designId}`;
   }
 
   try {

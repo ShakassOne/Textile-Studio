@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aperçu de votre design — TextileLab Studio</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0a0a0c;
+    color: #fff;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 16px 60px;
+  }
+
+  .logo {
+    font-family: 'Arial Black', sans-serif;
+    font-size: 20px;
+    font-weight: 900;
+    margin-bottom: 32px;
+    letter-spacing: -0.5px;
+  }
+  .logo span { color: #F59E0B; }
+
+  h1 {
+    font-size: 15px;
+    font-weight: 400;
+    color: #888;
+    margin-bottom: 32px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    text-align: center;
+  }
+
+  .views-grid {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
+    max-width: 900px;
+  }
+
+  .view-card {
+    flex: 1;
+    min-width: 220px;
+    max-width: 380px;
+    background: #15151a;
+    border: 1px solid #2a2a35;
+    border-radius: 16px;
+    overflow: hidden;
+    text-align: center;
+  }
+
+  .view-label {
+    padding: 14px 20px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #F59E0B;
+  }
+
+  .view-img-wrap {
+    padding: 4px 16px 16px;
+    background: #f8f8f8;
+    margin: 0 16px 16px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+  }
+
+  .view-img-wrap img {
+    width: 100%;
+    height: auto;
+    max-height: 340px;
+    object-fit: contain;
+    border-radius: 6px;
+    display: block;
+  }
+
+  .view-img-wrap.loading {
+    background: #1e1e28;
+    color: #555;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .meta {
+    margin-top: 40px;
+    text-align: center;
+    color: #444;
+    font-size: 12px;
+    line-height: 1.8;
+  }
+  .meta strong { color: #666; }
+
+  .error-state {
+    text-align: center;
+    margin-top: 80px;
+    color: #555;
+    font-size: 14px;
+  }
+  .error-state .code { font-size: 48px; margin-bottom: 16px; }
+
+  /* Spinner */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner {
+    width: 32px; height: 32px;
+    border: 3px solid #2a2a35;
+    border-top-color: #F59E0B;
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+    margin: 0 auto 12px;
+  }
+</style>
+</head>
+<body>
+
+<div class="logo">Textile<span>Lab</span> Studio</div>
+<h1>Aperçu de votre design personnalisé</h1>
+
+<div id="app">
+  <div style="text-align:center;color:#555;font-size:14px">
+    <div class="spinner"></div>
+    Chargement…
+  </div>
+</div>
+
+<div class="meta" id="meta"></div>
+
+<script>
+  const designId = (new URLSearchParams(window.location.search)).get('id')
+                || window.location.pathname.split('/').pop();
+
+  if (!designId || isNaN(Number(designId))) {
+    document.getElementById('app').innerHTML =
+      '<div class="error-state"><div class="code">🎨</div>Aucun design spécifié.</div>';
+  } else {
+    const API = window.location.origin;
+    fetch(`${API}/api/render/${designId}?json=1`)
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(info => {
+        // Récupérer le design complet pour avoir views_preview_json
+        return fetch(`${API}/api/designs/${designId}`)
+          .then(r => r.ok ? r.json() : Promise.reject(r.status))
+          .then(design => ({ info, design }));
+      })
+      .then(({ info, design }) => {
+        let views = [];
+
+        // 1) Priorité : views_preview_json (thumbnails par vue générés au checkout)
+        if (design.views_preview_json) {
+          try {
+            const vp = JSON.parse(design.views_preview_json);
+            views = Object.values(vp).filter(v => v?.url);
+          } catch {}
+        }
+
+        // 2) Fallback : render HD unique
+        if (!views.length && info.render_url) {
+          views = [{ name: 'Aperçu', url: info.render_url }];
+        }
+
+        // 3) Fallback 2 : thumbnail basse qualité
+        if (!views.length && design.thumbnail) {
+          views = [{ name: 'Aperçu', url: design.thumbnail }];
+        }
+
+        if (!views.length) {
+          document.getElementById('app').innerHTML =
+            '<div class="error-state"><div class="code">⏳</div>Le rendu est en cours de génération.<br>Revenez dans quelques instants.</div>';
+          return;
+        }
+
+        const grid = document.createElement('div');
+        grid.className = 'views-grid';
+
+        views.forEach(v => {
+          const card = document.createElement('div');
+          card.className = 'view-card';
+          card.innerHTML = `
+            <div class="view-label">${v.name || 'Vue'}</div>
+            <div class="view-img-wrap" id="wrap-${v.name}">
+              <img src="${v.url}" alt="${v.name}"
+                   onload="this.parentElement.classList.remove('loading')"
+                   onerror="this.parentElement.innerHTML='<span style=color:#555;font-size:12px>Image non disponible</span>'">
+            </div>`;
+          grid.appendChild(card);
+        });
+
+        document.getElementById('app').innerHTML = '';
+        document.getElementById('app').appendChild(grid);
+
+        // Méta-infos du design
+        const PRODUCTS = { tshirt:'T-Shirt', hoodie:'Hoodie', cap:'Casquette', totebag:'Tote Bag' };
+        const meta = document.getElementById('meta');
+        meta.innerHTML = [
+          design.product ? `<strong>Produit :</strong> ${PRODUCTS[design.product] || design.product}` : '',
+          design.format  ? `<strong>Format :</strong> ${design.format}` : '',
+          design.color   ? `<strong>Couleur :</strong> ${design.color}` : '',
+        ].filter(Boolean).join(' &nbsp;·&nbsp; ');
+      })
+      .catch(err => {
+        console.error(err);
+        document.getElementById('app').innerHTML =
+          '<div class="error-state"><div class="code">😕</div>Design introuvable ou rendu non encore disponible.</div>';
+      });
+  }
+</script>
+</body>
+</html>
