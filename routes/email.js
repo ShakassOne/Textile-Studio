@@ -11,6 +11,36 @@ const FROM_EMAIL    = process.env.FROM_EMAIL        || 'noreply@textilelab.studi
 const FROM_NAME     = process.env.FROM_NAME         || 'TextileLab Studio';
 const STORE_URL     = process.env.SHOPIFY_STORE_URL || 'https://votre-boutique.myshopify.com';
 
+// ── SMTP via Nodemailer ──────────────────────────────────────────────
+// Variables Railway à configurer :
+//   SMTP_HOST=smtp.ionos.fr  SMTP_PORT=587  SMTP_USER=xxx  SMTP_PASS=xxx
+//   SMTP_FROM="TextileLab Studio <noreply@xxx.com>"  (optionnel, sinon FROM_EMAIL)
+const SMTP_HOST = process.env.SMTP_HOST || '';
+const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587', 10);
+const SMTP_USER = process.env.SMTP_USER || '';
+const SMTP_PASS = process.env.SMTP_PASS || '';
+const SMTP_FROM = process.env.SMTP_FROM || `${FROM_NAME} <${FROM_EMAIL}>`;
+const SMTP_SECURE = process.env.SMTP_SECURE === 'true' || SMTP_PORT === 465;
+
+let _nodemailerTransport = null;
+function _getSmtpTransport() {
+  if (_nodemailerTransport) return _nodemailerTransport;
+  try {
+    const nodemailer = require('nodemailer');
+    _nodemailerTransport = nodemailer.createTransport({
+      host:   SMTP_HOST,
+      port:   SMTP_PORT,
+      secure: SMTP_SECURE,
+      auth:   { user: SMTP_USER, pass: SMTP_PASS },
+    });
+    console.log(`📧  SMTP transport initialisé → ${SMTP_HOST}:${SMTP_PORT}`);
+    return _nodemailerTransport;
+  } catch(e) {
+    console.error('❌  Nodemailer non disponible :', e.message);
+    return null;
+  }
+}
+
 const PRODUCTS = { tshirt:'T-Shirt', hoodie:'Hoodie', cap:'Casquette', totebag:'Tote Bag' };
 const STATUS_FR = { pending:'En attente', confirmed:'Confirmée', printing:'En impression', shipped:'Expédiée', done:'Terminée' };
 
@@ -64,10 +94,33 @@ router.post('/shipping-update', requireAuth, async (req, res) => {
   }
 });
 
+// ── GET /api/email/config (admin) — statut de la config email ─────────
+router.get('/config', requireAuth, (req, res) => {
+  let method = 'none';
+  let details = 'Aucun service email configuré. Ajoutez SMTP_HOST ou RESEND_API_KEY dans Railway.';
+  if (RESEND_KEY)   { method = 'resend';   details = 'Resend API'; }
+  if (SENDGRID_KEY) { method = 'sendgrid'; details = 'SendGrid API'; }
+  if (SMTP_HOST)    { method = 'smtp';     details = `SMTP ${SMTP_USER}@${SMTP_HOST}:${SMTP_PORT}`; }
+  res.json({ method, details, from: SMTP_FROM || FROM_EMAIL });
+});
+
 // ── POST /api/email/test (admin) ──────────────────────────────────────
 router.post('/test', requireAuth, async (req, res) => {
   const { to } = req.body;
   if (!to) return res.status(400).json({ error: 'to required' });
+
+  // Vérifier qu'un service est bien configuré
+  if (!RESEND_KEY && !SENDGRID_KEY && !SMTP_HOST) {
+    return res.status(400).json({
+      error: 'Aucun service email configuré. Ajoutez SMTP_HOST+SMTP_USER+SMTP_PASS (ou RESEND_API_KEY) dans les variables Railway.',
+      config_help: {
+        smtp_ionos:   'SMTP_HOST=smtp.ionos.fr  SMTP_PORT=587  SMTP_USER=votre@email.com  SMTP_PASS=motdepasse',
+        smtp_gmail:   'SMTP_HOST=smtp.gmail.com SMTP_PORT=587  SMTP_USER=votre@gmail.com  SMTP_PASS=mot-de-passe-app',
+        resend:       'RESEND_API_KEY=re_xxxx (gratuit jusqu\'à 3000 emails/mois)',
+      },
+    });
+  }
+
   try {
     await sendEmail({
       to,
@@ -75,10 +128,11 @@ router.post('/test', requireAuth, async (req, res) => {
       html: `<div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:40px">
         <h1 style="color:#F59E0B">TextileLab Studio</h1>
         <p>Si vous recevez cet email, la configuration est correcte ✅</p>
-        <p style="color:#999;font-size:12px;margin-top:24px">Envoyé depuis ${FROM_EMAIL}</p>
+        <p style="color:#555;font-size:13px;margin-top:16px">Service utilisé : <strong>${SMTP_HOST ? 'SMTP (' + SMTP_HOST + ')' : RESEND_KEY ? 'Resend' : 'SendGrid'}</strong></p>
+        <p style="color:#999;font-size:12px;margin-top:24px">Envoyé depuis ${SMTP_FROM || FROM_EMAIL}</p>
       </div>`,
     });
-    res.json({ ok: true, to });
+    res.json({ ok: true, to, method: SMTP_HOST ? 'smtp' : RESEND_KEY ? 'resend' : 'sendgrid' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -88,18 +142,31 @@ router.post('/test', requireAuth, async (req, res) => {
 // EMAIL SENDER — Resend en priorité, SendGrid en fallback, log en dev
 // ════════════════════════════════════════════════════════════════════════
 async function sendEmail({ to, subject, html }) {
-  if (RESEND_KEY) {
-    return sendViaResend({ to, subject, html });
-  }
-  if (SENDGRID_KEY) {
-    return sendViaSendGrid({ to, subject, html });
-  }
+  if (RESEND_KEY)   return sendViaResend({ to, subject, html });
+  if (SENDGRID_KEY) return sendViaSendGrid({ to, subject, html });
+  if (SMTP_HOST)    return sendViaSMTP({ to, subject, html });
+
   // Dev mode — juste logger
-  console.log(`\n📧  [EMAIL DEV MODE]`);
+  console.log(`\n📧  [EMAIL DEV MODE — aucun service configuré]`);
   console.log(`   To      : ${to}`);
   console.log(`   Subject : ${subject}`);
-  console.log(`   (Ajoutez RESEND_API_KEY ou SENDGRID_API_KEY dans .env pour l'envoi réel)\n`);
+  console.log(`   Configurez SMTP_HOST+SMTP_USER+SMTP_PASS ou RESEND_API_KEY dans Railway\n`);
   return { ok: true, dev: true };
+}
+
+function sendViaSMTP({ to, subject, html }) {
+  return new Promise((resolve, reject) => {
+    const transport = _getSmtpTransport();
+    if (!transport) return reject(new Error('Transport SMTP non disponible'));
+    transport.sendMail({ from: SMTP_FROM, to, subject, html }, (err, info) => {
+      if (err) {
+        console.error(`❌  SMTP sendMail → ${to} :`, err.message);
+        return reject(err);
+      }
+      console.log(`📧  Email envoyé via SMTP → ${to} (id: ${info.messageId})`);
+      resolve({ ok: true, messageId: info.messageId });
+    });
+  });
 }
 
 function sendViaResend({ to, subject, html }) {
