@@ -1727,6 +1727,14 @@
     </div>
 
     <div class="topbar-right">
+      <!-- Bouton retour boutique Shopify — visible uniquement en mode embed (?shop=) -->
+      <a id="btn-back-to-shop" href="#" target="_top"
+        style="display:none;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;
+               border:1px solid var(--border);background:var(--bg3);color:var(--text2);
+               font-size:12px;text-decoration:none;white-space:nowrap;transition:all .2s"
+        title="Retourner sur la boutique">
+        ← Boutique
+      </a>
       <!-- Switch thème -->
       <button id="btn-theme" onclick="toggleTheme()" title="Mode clair/sombre"
         style="background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:4px 10px;cursor:pointer;display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text2);transition:all .2s">
@@ -6236,6 +6244,21 @@ function init() {
     window._TL_SHOP           = _up.get('shop')    || '';
     window._TL_PRODUCT_HANDLE = _up.get('product') || '';
     const _urlMockupId = _up.get('mockup');
+
+    // ── Bouton retour boutique — visible si ouvert depuis une fiche produit Shopify ──
+    if (window._TL_SHOP) {
+      const _btnBack = document.getElementById('btn-back-to-shop');
+      if (_btnBack) {
+        const _backUrl = window._TL_PRODUCT_HANDLE
+          ? `https://${window._TL_SHOP}/products/${window._TL_PRODUCT_HANDLE}`
+          : `https://${window._TL_SHOP}`;
+        _btnBack.href = _backUrl;
+        _btnBack.style.display = 'flex';
+      }
+      // En mode Shopify embed : masquer le panier interne (inutile, on redirige direct)
+      const _btnCart = document.querySelector('.btn-cart');
+      if (_btnCart) _btnCart.style.display = 'none';
+    }
 
     if (_urlMockupId) {
       // Trouver le mockup correspondant dans MOCKUPS_DATA
