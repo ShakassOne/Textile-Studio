@@ -850,7 +850,7 @@ async function deleteDesign(id) {
 }
 
 async function launchRenderForDesign(id) {
-  const info = await api(`/api/render/${id}`);
+  const info = await api(`/api/render/${id}?json=1`);
   if (info?.render_url) {
     window.open(`${API_BASE}/api/render/download/${id}`, '_blank');
   } else {
@@ -2204,11 +2204,11 @@ async function loadOrders() {
 }
 
 async function downloadOrderPng(designId) {
-  // Vérifier si un render HD existe pour ce design
-  const info = await api(`/api/render/${designId}`).catch(() => null);
-  if (info?.url || info?.render_url) {
-    const url = info.url || info.render_url;
-    window.open(API_BASE + (url.startsWith('/') ? url : '/' + url), '_blank');
+  // ?json=1 pour rester en JSON (la route par défaut fait une redirection 302 → image)
+  const info = await api(`/api/render/${designId}?json=1`).catch(() => null);
+  if (info?.render_url) {
+    // render_url est maintenant une URL absolue retournée par le backend
+    window.open(info.render_url, '_blank');
   } else {
     showToast('⚠ Pas encore de PNG HD pour ce design. Le client doit avoir finalisé son design dans le studio.');
   }

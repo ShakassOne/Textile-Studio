@@ -136,7 +136,9 @@ router.get('/download/:design_id', (req, res) => {
   res.download(filepath, path.basename(filepath));
 });
 
-// ── GET /api/render/:design_id ── récupère l'URL du render HD d'un design
+// ── GET /api/render/:design_id ──
+// • Sans ?json=1  → redirection 302 vers l'image PNG absolue (cliquable depuis email/admin)
+// • Avec  ?json=1 → réponse JSON avec URL absolue (rétro-compat API)
 router.get('/:design_id', (req, res) => {
   const db  = getDB();
   let design;
@@ -147,11 +149,25 @@ router.get('/:design_id', (req, res) => {
     return res.json({ render_url: null });
   }
   if (!design) return res.status(404).json({ error: 'Design introuvable' });
-  res.json({
-    design_id:    design.id,
-    render_url:   design.render_url   || null,
-    render_size_kb: design.render_size_kb || null,
-  });
+
+  // Construire l'URL absolue (render_url est un chemin relatif type /uploads/renders/...)
+  const APP_URL = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
+  const relativeUrl = design.render_url || null;
+  const absoluteUrl = relativeUrl
+    ? (relativeUrl.startsWith('http') ? relativeUrl : `${APP_URL}${relativeUrl}`)
+    : null;
+
+  // Mode JSON explicite (?json=1) ou pas de render disponible → JSON
+  if (req.query.json === '1' || !absoluteUrl) {
+    return res.json({
+      design_id:      design.id,
+      render_url:     absoluteUrl,
+      render_size_kb: design.render_size_kb || null,
+    });
+  }
+
+  // Défaut : redirection 302 → le navigateur/email ouvre directement l'image PNG
+  res.redirect(302, absoluteUrl);
 });
 
 module.exports = router;

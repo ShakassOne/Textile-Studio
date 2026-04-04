@@ -122,6 +122,45 @@ initDB();
   }
 })();
 
+// ── Bootstrap webhooks (fire-and-forget au démarrage) ──────────────────
+// Enregistre orders/paid + app/uninstalled si SHOPIFY_BOOTSTRAP_SHOP est défini.
+// 422 = webhook déjà existant → ignoré silencieusement.
+(function bootstrapWebhooks() {
+  const shop     = process.env.SHOPIFY_BOOTSTRAP_SHOP;
+  const token    = process.env.SHOPIFY_BOOTSTRAP_TOKEN;
+  const appUrl   = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
+  if (!shop || !token || !appUrl) return;
+
+  const https = require('https');
+  function registerWebhook(topic, address) {
+    const body = JSON.stringify({ webhook: { topic, address, format: 'json' } });
+    const req  = https.request({
+      hostname: shop,
+      path:     '/admin/api/2024-01/webhooks.json',
+      method:   'POST',
+      headers: {
+        'Content-Type':           'application/json',
+        'Content-Length':         Buffer.byteLength(body),
+        'X-Shopify-Access-Token': token,
+      },
+    }, (res) => {
+      let data = '';
+      res.on('data', c => { data += c; });
+      res.on('end', () => {
+        if (res.statusCode === 201) console.log(`🪝  Webhook enregistré : ${topic}`);
+        else if (res.statusCode === 422) console.log(`🪝  Webhook déjà présent : ${topic}`);
+        else console.warn(`⚠️  Webhook ${topic} → HTTP ${res.statusCode}: ${data.slice(0,200)}`);
+      });
+    });
+    req.on('error', err => console.warn(`⚠️  Webhook ${topic} — réseau : ${err.message}`));
+    req.write(body);
+    req.end();
+  }
+
+  registerWebhook('orders/paid',     `${appUrl}/shopify/webhook`);
+  registerWebhook('app/uninstalled', `${appUrl}/shopify/webhook`);
+})();
+
 // ── Routes ─────────────────────────────────────────────────────────────
 app.use('/api/auth',       require('./routes/auth'));
 app.use('/api/designs',    require('./routes/designs'));

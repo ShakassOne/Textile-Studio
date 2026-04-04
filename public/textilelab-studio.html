@@ -3551,11 +3551,13 @@ function applyMockup(productKey, viewIdx, mockupIdx) {
   const targetMockupId = STATE_mockup?.id;
   const targetViewIdx  = STATE_viewIdx;
 
-  // ── ÉTAPE 4 : Désélectionner + vider l'ancien fond + overlay ──
+  // ── ÉTAPE 4 : Clear radical — les calques sont déjà sauvegardés à l'étape 1 ──
+  // canvas.clear() supprime TOUT (objets + sélection + handles) puis on reconstruit entièrement.
+  // Les calques utilisateur ont été sérialisés à l'étape 1 → safe.
+  _switchingView = true;
   canvas.discardActiveObject();
-  canvas.getObjects()
-    .filter(o => o.__isMockupBg || o.__isColorOverlay)
-    .forEach(o => canvas.remove(o));
+  canvas.clear();
+  canvas.renderAll();
 
   updateViewSwitcher();
 
@@ -3563,7 +3565,7 @@ function applyMockup(productKey, viewIdx, mockupIdx) {
   if (!STATE_mockup || !STATE_mockup.views[targetViewIdx]?.imageData) {
     canvas.setBackgroundColor(STATE.textileColor, () => canvas.renderAll());
     drawPrintFrame();
-    _restoreViewLayers(targetMockupId, targetViewIdx);
+    _restoreViewLayers(targetMockupId, targetViewIdx, () => { _switchingView = false; });
     return;
   }
 
@@ -3572,7 +3574,10 @@ function applyMockup(productKey, viewIdx, mockupIdx) {
 
   fabric.Image.fromURL(view.imageData, (img) => {
     // Vérifier qu'on est toujours sur la même vue (pas de switch entre-temps)
-    if (STATE_mockup?.id !== targetMockupId || STATE_viewIdx !== targetViewIdx) return;
+    if (STATE_mockup?.id !== targetMockupId || STATE_viewIdx !== targetViewIdx) {
+      _switchingView = false; // libérer le flag même si on abandonne cette vue
+      return;
+    }
 
     const cw = canvas.getWidth();
     const ch = canvas.getHeight();
@@ -3603,6 +3608,7 @@ function applyMockup(productKey, viewIdx, mockupIdx) {
       _reorderCanvasLayers();
       canvas.calcOffset();
       canvas.requestRenderAll();
+      _switchingView = false;
     });
   });
 
@@ -3756,6 +3762,8 @@ function switchMockupSelection(mockupIdx) {
 }
 
 let _switchViewDebounceTimer = null;
+let _switchingView = false;   // true pendant le chargement async d'une vue (bloque les interactions)
+let _editingObj = null;       // dernier objet sélectionné (maintien de sélection depuis tools-panel)
 function switchMockupView(viewIdx) {
   // Debounce : éviter les switches rapides qui laissent le canvas en état partiel
   if (_switchViewDebounceTimer) clearTimeout(_switchViewDebounceTimer);
