@@ -121,6 +121,8 @@ function initDB() {
   `);
   // Migrations pour shops (si la table existait déjà sans certaines colonnes)
   try { db.exec("ALTER TABLE shops ADD COLUMN uninstalled_at TEXT DEFAULT NULL"); } catch {}
+  // Migration mockups — couleur produit pour variantes futures
+  try { db.exec("ALTER TABLE mockups ADD COLUMN product_color TEXT DEFAULT 'white'"); } catch {}
   try { db.exec("ALTER TABLE shops ADD COLUMN is_active INTEGER DEFAULT 1"); } catch {}
   try { db.exec("ALTER TABLE library ADD COLUMN thumb_url TEXT DEFAULT NULL"); } catch {}
 

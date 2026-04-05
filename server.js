@@ -176,6 +176,7 @@ app.use('/api/render',     require('./routes/render'));
 app.use('/api/library',    require('./routes/library'));
 app.use('/api/pricing',    require('./routes/pricing'));
 app.use('/api/mockups',             require('./routes/mockups'));
+app.use('/api/mockup-gen',          require('./routes/mockup-gen'));
 app.use('/api/product-categories', require('./routes/product-categories'));
 app.use('/api/product-links',      require('./routes/product-links'));
 app.use('/api/email',              require('./routes/email'));
