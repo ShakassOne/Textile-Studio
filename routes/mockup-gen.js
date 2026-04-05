@@ -25,7 +25,7 @@ const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 const GEN_DIR    = path.join(UPLOADS_DIR, 'generated');
 const APP_URL    = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
 const OUTPUT_SIZE = 2000;
-const DISP_INTENSITY = 20;
+const DISP_INTENSITY = 12; // 20 → 12 : moins de déformation, résultat plus naturel
 // Backoffice canvas dimensions (ne pas changer)
 const BACK_W = 440, BACK_H = 340;
 
@@ -144,21 +144,20 @@ router.delete('/cleanup', async (req, res) => {
 // ════════════════════════════════════════════════════════════════════════════
 
 async function generateMockup({ designBuffer, mockupBuffer, naturalW, naturalH, zone, dispIntensity }) {
-  // ── 1. Mockup redimensionné à 2000×2000 ─────────────────────────────────
+  // ── 1. Mockup → 2000×2000 ────────────────────────────────────────────────
   const mockupResized = await sharp(mockupBuffer)
     .resize(OUTPUT_SIZE, OUTPUT_SIZE, { fit: 'fill' })
     .png()
     .toBuffer();
 
-  // ── 2. Design redimensionné pour remplir la zone d'impression ────────────
+  // ── 2. Design → taille de la zone, AVEC alpha (transparent = pas d'encre) ─
   const designResized = await sharp(designBuffer)
     .resize(zone.w, zone.h, { fit: 'fill' })
     .ensureAlpha()
     .png()
     .toBuffer();
 
-  // ── 3. Displacement map = zone du mockup (niveaux de gris, contraste boosté) ──
-  //    Crop sécurisé (éviter débordement)
+  // ── 3. Displacement map — contraste modéré (pas de normalise agressif) ────
   const cropX = Math.min(zone.x, OUTPUT_SIZE - 1);
   const cropY = Math.min(zone.y, OUTPUT_SIZE - 1);
   const cropW = Math.min(zone.w, OUTPUT_SIZE - cropX);
@@ -168,26 +167,49 @@ async function generateMockup({ designBuffer, mockupBuffer, naturalW, naturalH, 
     .extract({ left: cropX, top: cropY, width: cropW, height: cropH })
     .resize(zone.w, zone.h, { fit: 'fill' })
     .grayscale()
-    .normalise()             // étire les niveaux 0–255 (comme Niveaux dans Photoshop)
-    .blur(1.5)               // lissage léger
+    .linear(1.8, -40)   // contraste modéré — plis visibles sans déformation excessive
+    .blur(2)             // lissage pour des transitions douces
     .toBuffer();
 
-  // ── 4. Appliquer le filtre déplacement (20px) au design ──────────────────
+  // ── 4. Filtre déplacement appliqué au design ──────────────────────────────
   const displacedDesign = await applyDisplacement(designResized, dispMap, zone.w, zone.h, dispIntensity);
 
-  // ── 5. Design déplacé sur fond blanc ──────────────────────────────────────
-  //    (fond blanc = neutre en mode Multiply → le tissu transparaît)
-  const designOnWhite = await sharp({
-    create: { width: zone.w, height: zone.h, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 255 } },
-  })
-    .composite([{ input: displacedDesign, blend: 'over' }])
+  // ── 5. Composite design sur le mockup — blend 'over' ──────────────────────
+  //    'over' = alpha correct, couleurs vives, SANS fond blanc visible
+  const withDesign = await sharp(mockupResized)
+    .composite([{
+      input : displacedDesign,
+      blend : 'over',
+      left  : zone.x,
+      top   : zone.y,
+    }])
     .png()
     .toBuffer();
 
-  // ── 6. Composite Multiply sur le mockup à la position de la zone ──────────
-  const result = await sharp(mockupResized)
+  // ── 6. Overlay texture tissu en semi-transparent (~16 %) ──────────────────
+  //    Simule le Multiply doux de Photoshop : les plis du tissu transparaissent
+  //    légèrement à travers le design sans écraser les couleurs.
+  const textureRaw = await sharp(dispMap)
+    .resize(zone.w, zone.h, { fit: 'fill' })
+    .grayscale()
+    .raw()
+    .toBuffer();
+
+  const textureAlpha = Buffer.alloc(zone.w * zone.h * 4);
+  for (let i = 0; i < zone.w * zone.h; i++) {
+    const g = textureRaw[i];
+    textureAlpha[i * 4]     = g;
+    textureAlpha[i * 4 + 1] = g;
+    textureAlpha[i * 4 + 2] = g;
+    textureAlpha[i * 4 + 3] = 40; // 40/255 ≈ 16 % — subtil mais visible
+  }
+  const textureOverlay = await sharp(textureAlpha, {
+    raw: { width: zone.w, height: zone.h, channels: 4 },
+  }).png().toBuffer();
+
+  const result = await sharp(withDesign)
     .composite([{
-      input : designOnWhite,
+      input : textureOverlay,
       blend : 'multiply',
       left  : zone.x,
       top   : zone.y,
