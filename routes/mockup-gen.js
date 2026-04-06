@@ -174,42 +174,23 @@ async function generateMockup({ designBuffer, mockupBuffer, naturalW, naturalH, 
   // ── 4. Filtre déplacement appliqué au design ──────────────────────────────
   const displacedDesign = await applyDisplacement(designResized, dispMap, zone.w, zone.h, dispIntensity);
 
-  // ── 5. Composite design sur le mockup — blend 'over' ──────────────────────
-  //    'over' = alpha correct, couleurs vives, SANS fond blanc visible
-  const withDesign = await sharp(mockupResized)
-    .composite([{
-      input : displacedDesign,
-      blend : 'over',
-      left  : zone.x,
-      top   : zone.y,
-    }])
+  // ── 5. Design déplacé sur fond blanc ─────────────────────────────────────
+  //    Fond blanc = neutre en Multiply sur tissu blanc (blanc × blanc = blanc)
+  //    Le design transparent exporté depuis le canvas → fond blanc ici seulement
+  const designOnWhite = await sharp({
+    create: { width: zone.w, height: zone.h, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 255 } },
+  })
+    .composite([{ input: displacedDesign, blend: 'over' }])
     .png()
     .toBuffer();
 
-  // ── 6. Overlay texture tissu en semi-transparent (~16 %) ──────────────────
-  //    Simule le Multiply doux de Photoshop : les plis du tissu transparaissent
-  //    légèrement à travers le design sans écraser les couleurs.
-  const textureRaw = await sharp(dispMap)
-    .resize(zone.w, zone.h, { fit: 'fill' })
-    .grayscale()
-    .raw()
-    .toBuffer();
-
-  const textureAlpha = Buffer.alloc(zone.w * zone.h * 4);
-  for (let i = 0; i < zone.w * zone.h; i++) {
-    const g = textureRaw[i];
-    textureAlpha[i * 4]     = g;
-    textureAlpha[i * 4 + 1] = g;
-    textureAlpha[i * 4 + 2] = g;
-    textureAlpha[i * 4 + 3] = 40; // 40/255 ≈ 16 % — subtil mais visible
-  }
-  const textureOverlay = await sharp(textureAlpha, {
-    raw: { width: zone.w, height: zone.h, channels: 4 },
-  }).png().toBuffer();
-
-  const result = await sharp(withDesign)
+  // ── 6. Composite Multiply sur le mockup ───────────────────────────────────
+  //    Multiply : design × tissu / 255
+  //    Blanc (255) × tissu → tissu visible (zones sans encre = tissu natif)
+  //    Couleurs design × tissu blanc → couleurs fidèles + plis du tissu intégrés
+  const result = await sharp(mockupResized)
     .composite([{
-      input : textureOverlay,
+      input : designOnWhite,
       blend : 'multiply',
       left  : zone.x,
       top   : zone.y,

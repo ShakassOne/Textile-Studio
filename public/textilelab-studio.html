@@ -7826,7 +7826,8 @@ async function _mgExportDesign() {
     toHide.forEach(o => o.set('visible', false));
 
     const origBg = canvas.backgroundColor;
-    canvas.setBackgroundColor('rgba(0,0,0,0)', () => {});
+    // null = fond vraiment transparent dans fabric.js (pas de rectangle gris/blanc exporté)
+    canvas.backgroundColor = null;
     canvas.renderAll();
 
     // Zone d'impression (frame rect sur le canvas)
@@ -7848,7 +7849,7 @@ async function _mgExportDesign() {
 
     // Restaurer
     toHide.forEach((o, i) => o.set('visible', origVisible[i]));
-    canvas.setBackgroundColor(origBg, () => {});
+    canvas.backgroundColor = origBg;
     canvas.renderAll();
 
     resolve(dataUrl);
