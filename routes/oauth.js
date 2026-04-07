@@ -227,8 +227,12 @@ router.get('/callback', async (req, res) => {
     .then(() => console.log(`🪝  Webhook app/uninstalled enregistré pour ${shop}`))
     .catch(err => console.warn(`⚠️  Webhook app/uninstalled non enregistré pour ${shop}:`, err.message));
 
-  // 7. Rediriger vers le studio TextileLab après installation
-  return res.redirect(`${SHOPIFY_APP_URL}/textilelab-studio.html?shop=${shop}`);
+  // 7. Rediriger vers l'app embedded dans l'admin Shopify après installation
+  // Pattern standard Embedded App : Shopify ouvre l'App URL avec ?shop=&host=
+  const shopName = shop.replace('.myshopify.com', '');
+  const embeddedUrl = `https://admin.shopify.com/store/${shopName}/apps/${SHOPIFY_API_KEY}`;
+  console.log(`OAuth callback - redirection embedded : ${embeddedUrl}`);
+  return res.redirect(embeddedUrl);
 });
 
 // ── Enregistrement d'un webhook Shopify via REST Admin API ───────────────────

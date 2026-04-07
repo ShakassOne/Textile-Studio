@@ -29,6 +29,17 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGIN || '')
   .map(o => o.trim())
   .filter(Boolean);
 
+// Headers Shopify Embedded App
+// Permet a Shopify Admin de charger l'app dans une iframe
+app.use((req, res, next) => {
+  res.setHeader(
+    'Content-Security-Policy',
+    "frame-ancestors 'self' https://*.myshopify.com https://admin.shopify.com https://*.shopify.com"
+  );
+  res.removeHeader('X-Frame-Options');
+  next();
+});
+
 app.use(cors({
   origin: (origin, cb) => {
     // Autoriser les requêtes sans origin (curl, Postman, server-to-server)
