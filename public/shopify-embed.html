@@ -4,6 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>TextileLab Studio</title>
+  <!--
+    App Bridge 4 — la clé API est lue par le CDN depuis cette meta tag
+    Le serveur injecte la vraie valeur à la place de {{SHOPIFY_API_KEY}}
+  -->
+  <meta id="shopify-api-key" name="shopify-api-key" content="{{SHOPIFY_API_KEY}}">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -15,12 +20,9 @@
       min-height: 100vh;
       color: #202223;
     }
-    .loader {
-      text-align: center;
-    }
+    .loader { text-align: center; }
     .spinner {
-      width: 40px;
-      height: 40px;
+      width: 40px; height: 40px;
       border: 3px solid #e0e0e0;
       border-top-color: #5c6ac4;
       border-radius: 50%;
@@ -50,25 +52,26 @@
 </div>
 
 <div class="error-box" id="error-box">
-  <h3>⚠️ Erreur d'initialisation</h3>
+  <h3>&#x26A0;&#xFE0F; Erreur d'initialisation</h3>
   <p id="error-msg">Une erreur est survenue lors du chargement de l'application.</p>
 </div>
 
 <!--
-  Shopify App Bridge 4
+  Shopify App Bridge 4 (CDN)
   Doc : https://shopify.dev/docs/api/app-bridge
-  CDN : chargé directement depuis Shopify (pas de npm nécessaire en mode embed)
+  Le CDN lit automatiquement la meta[name="shopify-api-key"] ci-dessus
+  et initialise window.shopify — plus besoin de createApp()
 -->
 <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
 <script>
 (function () {
   'use strict';
 
-  // ── 1. Lire les paramètres Shopify dans l'URL ────────────────────────────
-  const params  = new URLSearchParams(window.location.search);
-  const shop    = params.get('shop')    || '';
-  const host    = params.get('host')    || '';   // base64 encodé par Shopify
-  const apiKey  = '{{SHOPIFY_API_KEY}}';          // injecté par le serveur
+  const params = new URLSearchParams(window.location.search);
+  const shop   = params.get('shop') || '';
+  const host   = params.get('host') || '';
+  // La clé API est injectée dans la meta tag par le serveur (voir server.js)
+  const apiKey = (document.getElementById('shopify-api-key') || {}).content || '';
 
   function showError(msg) {
     document.getElementById('loader').style.display = 'none';
@@ -78,52 +81,45 @@
     console.error('[TextileLab] App Bridge error:', msg);
   }
 
+  // Hors contexte Shopify (pas de shop/host dans l'URL) → admin standalone
   if (!shop || !host) {
-    // Accès direct hors Shopify → rediriger vers l'admin standalone
     window.location.href = '/textilelab-admin.html';
     return;
   }
 
   if (!apiKey || apiKey === '{{SHOPIFY_API_KEY}}') {
-    showError('SHOPIFY_API_KEY non configurée sur le serveur.');
+    showError('SHOPIFY_API_KEY non configuree sur le serveur.');
     return;
   }
 
-  // ── 2. Initialiser App Bridge ────────────────────────────────────────────
-  let app;
-  try {
-    app = shopify.createApp({ apiKey, host });
-  } catch (err) {
-    showError('Impossible d\'initialiser Shopify App Bridge : ' + err.message);
-    return;
-  }
-
-  // ── 3. Obtenir un session token et le stocker ────────────────────────────
+  // ── App Bridge 4 : shopify est deja initialise par le CDN via la meta tag ──
+  // Pas de createApp() — on appelle directement shopify.idToken()
   async function bootstrap() {
     try {
-      // getSessionToken() renvoie un JWT signé par Shopify (valide ~1 min)
-      const token = await shopify.getSessionToken(app);
-      sessionStorage.setItem('shopify_session_token', token);
-      sessionStorage.setItem('shopify_shop',  shop);
-      sessionStorage.setItem('shopify_host',  host);
+      // idToken() = JWT signe par Shopify, valide ~1 min (remplace getSessionToken)
+      const token = await shopify.idToken();
 
-      // ── 4. Vérifier le token côté backend (optionnel, mais recommandé) ──
+      sessionStorage.setItem('shopify_session_token', token);
+      sessionStorage.setItem('shopify_shop', shop);
+      sessionStorage.setItem('shopify_host', host);
+
+      // Verification optionnelle cote backend
       const resp = await fetch('/api/shopify-session/verify', {
         method: 'POST',
         headers: {
           'Content-Type':  'application/json',
-          'Authorization': `Bearer ${token}`,
+          'Authorization': 'Bearer ' + token,
         },
         body: JSON.stringify({ shop }),
       });
 
       if (!resp.ok) {
         const body = await resp.json().catch(() => ({}));
-        throw new Error(body.error || `HTTP ${resp.status}`);
+        throw new Error(body.error || 'HTTP ' + resp.status);
       }
 
-      // ── 5. Rediriger vers l'admin TextileLab ────────────────────────────
-      window.location.href = '/textilelab-admin.html?shopify=1&shop=' + encodeURIComponent(shop);
+      // Rediriger vers l'admin TextileLab dans le contexte embedded
+      window.location.href = '/textilelab-admin.html?shopify=1&shop=' + encodeURIComponent(shop) + '&host=' + encodeURIComponent(host);
 
     } catch (err) {
       showError('Erreur de session Shopify : ' + err.message);

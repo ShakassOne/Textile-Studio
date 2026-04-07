@@ -106,7 +106,7 @@ app.get('/', (req, res) => {
   fs.readFile(htmlPath, 'utf8', (err, html) => {
     if (err) return res.status(500).send('Erreur de lecture du fichier embed.');
     const apiKey = process.env.SHOPIFY_API_KEY || '';
-    const injected = html.replace("'{{SHOPIFY_API_KEY}}'", JSON.stringify(apiKey));
+    const injected = html.replace('{{SHOPIFY_API_KEY}}', apiKey);
     res.setHeader('Content-Type', 'text/html');
     res.setHeader('Cache-Control', 'no-store'); // pas de cache — token dans l'URL
     res.send(injected);
