@@ -4,11 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>TextileLab Studio</title>
-  <!--
-    App Bridge 4 — la clé API est lue par le CDN depuis cette meta tag
-    Le serveur injecte la vraie valeur à la place de {{SHOPIFY_API_KEY}}
-  -->
-  <meta id="shopify-api-key" name="shopify-api-key" content="{{SHOPIFY_API_KEY}}">
+  <!-- App Bridge 4 — CLIENT ID public (pas un secret, safe à hardcoder) -->
+  <meta id="shopify-api-key" name="shopify-api-key" content="9f77ba5672b593f4e6a5d32d2093e460">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -87,7 +84,7 @@
     return;
   }
 
-  if (!apiKey || apiKey === '{{SHOPIFY_API_KEY}}') {
+  if (!apiKey) {
     showError('SHOPIFY_API_KEY non configuree sur le serveur.');
     return;
   }
