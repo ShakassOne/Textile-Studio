@@ -1727,6 +1727,14 @@
     </div>
 
     <div class="topbar-right">
+      <!-- Bouton fermer modal — visible uniquement en mode iframe (tl-modal.js) -->
+      <button id="btn-close-modal" onclick="closeTLModal()"
+        style="display:none;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;
+               border:1px solid var(--border);background:var(--bg3);color:var(--text2);
+               font-size:12px;cursor:pointer;white-space:nowrap;transition:all .2s"
+        title="Fermer l'éditeur">
+        ✕ Fermer
+      </button>
       <!-- Bouton retour boutique Shopify — visible uniquement en mode embed (?shop=) -->
       <a id="btn-back-to-shop" href="#" target="_top"
         style="display:none;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;
@@ -1893,10 +1901,7 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
           Photo
         </button>
-        <button class="tab-btn" onclick="switchTab('qr')" data-tab="qr">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="5" y="5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="16" y="5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="5" y="16" width="3" height="3" fill="currentColor" stroke="none"/><path d="M14 14h3v3h-3zM17 17h3v3h-3zM14 20h3"/></svg>
-          QR
-        </button>
+        <!-- Onglet QR supprimé (masquait le bouton Ajouter au panier) -->
 
 
       </div>
@@ -2261,107 +2266,8 @@
         <div id="photo-results" style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px"></div>
       </div>
 
-      <!-- TAB: QR -->
-      <div class="tab-content" id="tab-qr">
-        <div class="tool-section">
-          <div class="tool-section-title">URL</div>
-          <input type="text" class="input-field" id="qr-url" placeholder="https://example.com" oninput="updateQRPreview()">
-        </div>
-
-        <div class="tool-section">
-          <div class="row" style="align-items:flex-start;gap:16px">
-            <div>
-              <div class="tool-section-title">Couleur QR</div>
-              <input type="color" id="qr-color" value="#000000" oninput="updateQRPreview()">
-            </div>
-            <div>
-              <div class="tool-section-title">Fond</div>
-              <input type="color" id="qr-bg" value="#FFFFFF" oninput="updateQRPreview()">
-              <label style="display:flex;align-items:center;gap:5px;margin-top:6px;font-size:11px;color:var(--text3);cursor:pointer">
-                <input type="checkbox" id="qr-bg-transparent" onchange="updateQRPreview()" style="accent-color:var(--amber);width:13px;height:13px">
-                Transparent
-              </label>
-            </div>
-          </div>
-        </div>
-
-        <!-- Forme du corps -->
-        <div class="tool-section">
-          <div class="tool-section-title">Forme du corps</div>
-          <div class="qr-shape-row" id="qr-dots-row">
-            <button class="qr-shape-btn active" onclick="setQRDots('square')" data-val="square">
-              <svg viewBox="0 0 28 28" fill="currentColor"><rect x="2" y="2" width="6" height="6"/><rect x="11" y="2" width="6" height="6"/><rect x="20" y="2" width="6" height="6"/><rect x="2" y="11" width="6" height="6"/><rect x="11" y="11" width="6" height="6"/><rect x="20" y="11" width="6" height="6"/><rect x="2" y="20" width="6" height="6"/><rect x="11" y="20" width="6" height="6"/><rect x="20" y="20" width="6" height="6"/></svg>
-              <span>Carré</span>
-            </button>
-            <button class="qr-shape-btn" onclick="setQRDots('dots')" data-val="dots">
-              <svg viewBox="0 0 28 28" fill="currentColor"><circle cx="5" cy="5" r="3"/><circle cx="14" cy="5" r="3"/><circle cx="23" cy="5" r="3"/><circle cx="5" cy="14" r="3"/><circle cx="14" cy="14" r="3"/><circle cx="23" cy="14" r="3"/><circle cx="5" cy="23" r="3"/><circle cx="14" cy="23" r="3"/><circle cx="23" cy="23" r="3"/></svg>
-              <span>Rond</span>
-            </button>
-            <button class="qr-shape-btn" onclick="setQRDots('rounded')" data-val="rounded">
-              <svg viewBox="0 0 28 28" fill="currentColor"><rect x="2" y="2" width="6" height="6" rx="2"/><rect x="11" y="2" width="6" height="6" rx="2"/><rect x="20" y="2" width="6" height="6" rx="2"/><rect x="2" y="11" width="6" height="6" rx="2"/><rect x="11" y="11" width="6" height="6" rx="2"/><rect x="20" y="11" width="6" height="6" rx="2"/><rect x="2" y="20" width="6" height="6" rx="2"/><rect x="11" y="20" width="6" height="6" rx="2"/><rect x="20" y="20" width="6" height="6" rx="2"/></svg>
-              <span>Arrondi</span>
-            </button>
-            <button class="qr-shape-btn" onclick="setQRDots('extra-rounded')" data-val="extra-rounded">
-              <svg viewBox="0 0 28 28" fill="currentColor"><rect x="2" y="2" width="6" height="6" rx="3"/><rect x="11" y="2" width="6" height="6" rx="3"/><rect x="20" y="2" width="6" height="6" rx="3"/><rect x="2" y="11" width="6" height="6" rx="3"/><rect x="11" y="11" width="6" height="6" rx="3"/><rect x="20" y="11" width="6" height="6" rx="3"/><rect x="2" y="20" width="6" height="6" rx="3"/><rect x="11" y="20" width="6" height="6" rx="3"/><rect x="20" y="20" width="6" height="6" rx="3"/></svg>
-              <span>Ovale</span>
-            </button>
-            <button class="qr-shape-btn" onclick="setQRDots('classy')" data-val="classy">
-              <svg viewBox="0 0 28 28" fill="currentColor"><path d="M2 5a3 3 0 013-3h3v6H2V5z"/><path d="M11 2h6v6h-6z"/><path d="M20 2h3a3 3 0 013 3v3h-6V2z"/><path d="M2 11h6v6H2z"/><path d="M11 11h6v6h-6z"/><path d="M20 11h6v6h-6z"/><path d="M2 20h6v6H5a3 3 0 01-3-3v-3z"/><path d="M11 20h6v6h-6z"/><path d="M20 20h6v3a3 3 0 01-3 3h-3v-6z"/></svg>
-              <span>Classy</span>
-            </button>
-            <button class="qr-shape-btn" onclick="setQRDots('classy-rounded')" data-val="classy-rounded">
-              <svg viewBox="0 0 28 28" fill="currentColor"><path d="M2 5a3 3 0 013-3h3v6H2V5z" rx="1"/><rect x="11" y="2" width="6" height="6" rx="2"/><path d="M20 2h3a3 3 0 013 3v3h-6V2z"/><rect x="2" y="11" width="6" height="6" rx="2"/><rect x="11" y="11" width="6" height="6" rx="2"/><rect x="20" y="11" width="6" height="6" rx="2"/><path d="M2 20h6v6H5a3 3 0 01-3-3v-3z"/><rect x="11" y="20" width="6" height="6" rx="2"/><path d="M20 20h6v3a3 3 0 01-3 3h-3v-6z"/></svg>
-              <span>Classy+</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Contour des marqueurs -->
-        <div class="tool-section">
-          <div class="tool-section-title">Contour des marqueurs</div>
-          <div class="qr-shape-row" id="qr-corners-sq-row">
-            <button class="qr-shape-btn active" onclick="setQRCornersSquare('square')" data-val="square">
-              <svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="22" height="22"/><rect x="8" y="8" width="12" height="12"/></svg>
-              <span>Carré</span>
-            </button>
-            <button class="qr-shape-btn" onclick="setQRCornersSquare('extra-rounded')" data-val="extra-rounded">
-              <svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="22" height="22" rx="6"/><rect x="8" y="8" width="12" height="12" rx="4"/></svg>
-              <span>Arrondi</span>
-            </button>
-            <button class="qr-shape-btn" onclick="setQRCornersSquare('dot')" data-val="dot">
-              <svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="14" cy="14" r="11"/><circle cx="14" cy="14" r="6"/></svg>
-              <span>Rond</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Centre des marqueurs -->
-        <div class="tool-section">
-          <div class="tool-section-title">Centre des marqueurs</div>
-          <div class="qr-shape-row" id="qr-corners-dot-row">
-            <button class="qr-shape-btn active" onclick="setQRCornersDot('square')" data-val="square">
-              <svg viewBox="0 0 28 28" fill="currentColor"><rect x="7" y="7" width="14" height="14"/></svg>
-              <span>Carré</span>
-            </button>
-            <button class="qr-shape-btn" onclick="setQRCornersDot('dot')" data-val="dot">
-              <svg viewBox="0 0 28 28" fill="currentColor"><circle cx="14" cy="14" r="7"/></svg>
-              <span>Rond</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="tool-section">
-          <div class="tool-section-title">Taille</div>
-          <div class="stepper">
-            <button onclick="adjustQRSize(-20)">−</button>
-            <span id="qr-size-val">150</span>
-            <button onclick="adjustQRSize(20)">+</button>
-          </div>
-        </div>
-
-        <div id="qr-preview-wrap"></div>
-        <button class="btn-primary" onclick="addQRToCanvas()">+ Ajouter le QR Code</button>
-      </div>
+      <!-- TAB: QR supprimé -->
+      <div class="tab-content" id="tab-qr" style="display:none!important"></div>
 
       <!-- Bouton panier sticky desktop -->
       <div id="desktop-cart-btn-wrap" style="padding:12px 16px;border-top:1px solid var(--border);margin-top:auto;flex-shrink:0">
@@ -5206,7 +5112,14 @@ async function _checkoutShopifyDirect() {
     const noteB64  = encodeURIComponent('Design TextileLab #' + (designId || ''));
     const cartUrl  = `https://${window._TL_SHOP}/cart/${variantId}:1?properties=${propsB64}&note=${noteB64}`;
     showToast('✅ Redirection vers votre boutique…');
-    setTimeout(() => { window.location.href = cartUrl; }, 800);
+    // Si dans un iframe (modal tl-modal.js), envoyer le message au parent
+    if (window.self !== window.top) {
+      setTimeout(() => {
+        window.parent.postMessage({ type: 'tl-add-to-cart', cartUrl }, '*');
+      }, 800);
+    } else {
+      setTimeout(() => { window.location.href = cartUrl; }, 800);
+    }
   } catch(e) {
     console.error('[TextileLab] _checkoutShopifyDirect:', e);
     showToast('❌ Erreur Shopify : ' + e.message);
@@ -5421,7 +5334,11 @@ async function checkout() {
         const _cartUrl = `https://${_tlShop}/cart/${_variant.id}:1?${_props}`;
         showToast('✅ Redirection vers votre boutique…');
         closeCart();
-        setTimeout(() => { window.location.href = _cartUrl; }, 500);
+        if (window.self !== window.top) {
+          setTimeout(() => { window.parent.postMessage({ type: 'tl-add-to-cart', cartUrl: _cartUrl }, '*'); }, 500);
+        } else {
+          setTimeout(() => { window.location.href = _cartUrl; }, 500);
+        }
         return;
       }
     } catch(_e) {
@@ -5476,21 +5393,9 @@ async function checkout() {
     if (result?.checkoutUrl) {
       showToast('✅ Redirection Shopify…');
       closeCart();
-      // Si mode embed (App Proxy dans iFrame) → envoyer message au parent
-      if (window.parent !== window) {
-        window.parent.postMessage({
-          type:       'tl:add-to-cart',
-          payload: {
-            design_id:   designId,
-            product:     firstItem.product,
-            format:      firstItem.format,
-            color:       firstItem.color,
-            quantity:    STATE.cart.reduce((s, i) => s + i.qty, 0),
-            views_count: viewsCount,
-            thumbnail:   firstItem.thumbnail,
-            checkoutUrl: result.checkoutUrl,
-          }
-        }, '*');
+      // Si mode iframe (tl-modal.js ou App Proxy) → envoyer message au parent
+      if (window.self !== window.top) {
+        window.parent.postMessage({ type: 'tl-add-to-cart', cartUrl: result.checkoutUrl }, '*');
       } else {
         setTimeout(() => window.location.href = result.checkoutUrl, 600);
       }
@@ -6293,6 +6198,13 @@ function showToast(msg) {
 // ============================================
 // INIT
 // ============================================
+// Fermeture du modal parent (depuis tl-modal.js)
+function closeTLModal() {
+  if (window.self !== window.top) {
+    window.parent.postMessage({ type: 'tl-close-modal' }, '*');
+  }
+}
+
 function init() {
   _initPhotoInput();
   setTimeout(_initDrawerCloseTap, 1000);
@@ -6303,6 +6215,12 @@ function init() {
     window._TL_SHOP           = _up.get('shop')    || '';
     window._TL_PRODUCT_HANDLE = _up.get('product') || '';
     const _urlMockupId = _up.get('mockup');
+
+    // ── Mode iframe (tl-modal.js) — afficher le bouton Fermer ──────────────
+    if (window.self !== window.top) {
+      const _btnClose = document.getElementById('btn-close-modal');
+      if (_btnClose) _btnClose.style.display = 'flex';
+    }
 
     // ── Bouton retour boutique — visible si ouvert depuis une fiche produit Shopify ──
     if (window._TL_SHOP) {
@@ -7588,12 +7506,17 @@ async function _generateAndSaveHDRender(designId) {
 // INIT CALL
 // ============================================
 
-// Restaurer le thème
-if (localStorage.getItem('tl-theme') === 'light') {
-  document.body.classList.add('light-mode');
-  const icon = document.getElementById('theme-icon');
-  if (icon) icon.textContent = '🌙';
-}
+// Restaurer le thème (défaut : clair si ?shop= dans l'URL, sombre sinon)
+(function() {
+  const _saved = localStorage.getItem('tl-theme');
+  const _isShopFront = new URLSearchParams(window.location.search).get('shop');
+  const _isLight = _saved === 'light' || (!_saved && _isShopFront);
+  if (_isLight) {
+    document.body.classList.add('light-mode');
+    const icon = document.getElementById('theme-icon');
+    if (icon) icon.textContent = '🌙';
+  }
+})();
 
 // Démarrer l'app
 init();
@@ -7768,7 +7691,11 @@ async function openMockupGenModal() {
   document.getElementById('mg-modal').style.display = 'block';
   document.getElementById('mg-loading-text').textContent = 'Export du design en cours…';
   document.getElementById('mg-loading-sub').textContent  = 'Préparation de la zone d\'impression';
-  document.getElementById('mg-subtitle').textContent = 'Génération du design sur tous les mockups disponibles';
+  // Vue active en cours d'édition
+  const _activeViewName = STATE_mockup?.views?.[STATE_viewIdx]?.name || null;
+  document.getElementById('mg-subtitle').textContent = _activeViewName
+    ? `Génération du visuel pour la vue : ${_activeViewName}`
+    : 'Génération du design sur tous les mockups disponibles';
 
   try {
     // 1. Exporter le design (sans mockup, sans frame) croppé sur la zone d'impression
@@ -7783,7 +7710,7 @@ async function openMockupGenModal() {
     const res = await fetch(API_BASE + '/api/mockup-gen/generate-all', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ design_png: designPng, format }),
+      body: JSON.stringify({ design_png: designPng, format, view_name: _activeViewName }),
     });
 
     if (!res.ok) {

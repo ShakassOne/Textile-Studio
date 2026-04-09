@@ -3,8 +3,9 @@
  * /api/mockup-gen — Générateur de visuels produit HD
  *
  * POST /api/mockup-gen/generate-all
- *   Body : { design_png: "data:image/png;base64,...", format: "A4" }
+ *   Body : { design_png: "data:image/png;base64,...", format: "A4", view_name?: "Recto" }
  *   Retourne : { ok, results:[{ mockup_name, view_name, product, url }], errors }
+ *   Si view_name est fourni, seule la vue correspondant à ce nom est générée.
  *
  * Traitement par vue de mockup :
  *  1. Zone backoffice (440×340) → coords natives image → coords output 2000×2000
@@ -34,7 +35,7 @@ if (!fs.existsSync(GEN_DIR)) fs.mkdirSync(GEN_DIR, { recursive: true });
 
 // ── POST /api/mockup-gen/generate-all ────────────────────────────────────────
 router.post('/generate-all', async (req, res) => {
-  const { design_png, format = 'A4' } = req.body;
+  const { design_png, format = 'A4', view_name = null } = req.body;
   if (!design_png) return res.status(400).json({ error: 'design_png required' });
 
   const db = getDB();
@@ -50,6 +51,9 @@ router.post('/generate-all', async (req, res) => {
 
     for (const view of views) {
       if (!view.imageData) continue;
+
+      // ── Filtre par vue active (si view_name fourni, ignorer les autres) ──
+      if (view_name && view.name !== view_name) continue;
 
       // Zone pour le format demandé (fallback sur la zone par défaut)
       const zoneData = view.zones?.[format] || view.zone;

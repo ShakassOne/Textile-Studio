@@ -19,6 +19,15 @@
   --text:#f0f0f5; --text2:#9090a8; --text3:#5a5a72;
   --success:#10B981; --danger:#EF4444; --info:#3B82F6; --warning:#F59E0B;
 }
+/* ── LIGHT MODE ADMIN ── */
+body.light-mode {
+  --bg:#f5f5f7; --bg2:#ffffff; --bg3:#eaeaef; --bg4:#dddde5;
+  --border:rgba(0,0,0,0.1); --border2:rgba(245,158,11,0.4);
+  --glass:rgba(0,0,0,0.03); --glass2:rgba(0,0,0,0.06);
+  --text:#1a1a2e; --text2:#555570; --text3:#9090a8;
+  --amber-dim:rgba(245,158,11,0.1); --amber-glow:rgba(245,158,11,0.05);
+}
+
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;overflow:hidden}
 ::-webkit-scrollbar{width:5px;height:5px}
@@ -340,6 +349,10 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
           <div class="nav-user-role">Administrateur</div>
         </div>
       </div>
+      <button onclick="adminToggleTheme()" style="width:100%;display:flex;align-items:center;gap:8px;justify-content:center;background:var(--bg3);border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:7px 12px;cursor:pointer;font-size:12px;margin-top:4px;transition:all .15s">
+        <span id="admin-theme-icon">☀️</span>
+        <span id="admin-theme-label">Mode clair</span>
+      </button>
       <button class="btn btn-danger btn-sm" style="width:100%;justify-content:center;margin-top:4px" onclick="logout()">Déconnexion</button>
     </div>
   </nav>
@@ -736,6 +749,15 @@ const API_BASE = (window.location.hostname==='localhost'||window.location.hostna
   ? 'http://localhost:3001' : '';
 const _apiUrlEl = document.getElementById('api-url-display');
 if (_apiUrlEl) _apiUrlEl.textContent = API_BASE || window.location.origin;
+
+function adminToggleTheme() {
+  const isLight = document.body.classList.toggle('light-mode');
+  localStorage.setItem('tl-admin-theme', isLight ? 'light' : 'dark');
+  const icon = document.getElementById('admin-theme-icon');
+  const label = document.getElementById('admin-theme-label');
+  if (icon) icon.textContent = isLight ? '🌙' : '☀️';
+  if (label) label.textContent = isLight ? 'Mode sombre' : 'Mode clair';
+}
 
 function logout() {
   localStorage.removeItem('tl_admin_token');
@@ -2431,6 +2453,19 @@ async function saveConfigureProduct(handle, productId, titleEnc) {
 // ============================================
 // INIT
 // ============================================
+
+// Restauration du thème admin au chargement
+(function() {
+  const _saved = localStorage.getItem('tl-admin-theme');
+  if (_saved === 'light') {
+    document.body.classList.add('light-mode');
+    const icon = document.getElementById('admin-theme-icon');
+    const label = document.getElementById('admin-theme-label');
+    if (icon) icon.textContent = '🌙';
+    if (label) label.textContent = 'Mode sombre';
+  }
+})();
+
 document.getElementById('dash-date').textContent = new Date().toLocaleDateString('fr-FR',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
 // Charger les catégories en premier, puis le dashboard
 loadProductCategories().then(() => {
