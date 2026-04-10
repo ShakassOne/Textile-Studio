@@ -2,131 +2,116 @@
  * tl-modal.js — TextileLab Studio : ouverture de l'éditeur en modal plein écran
  *
  * À inclure dans le thème Shopify (layout/theme.liquid ou via snippet).
- * Intercepts les liens "Personnalisé" (href contenant /textilelab-studio.html
- * ou data-tl-editor="true") et ouvre l'éditeur dans un overlay plein écran.
+ * Intercepte les liens "Personnalisé" et ouvre l'éditeur dans un overlay plein écran.
  *
  * Communication iframe ↔ parent via postMessage :
- *   - { type: 'tl-add-to-cart', cartUrl }  → redirige vers le panier Shopify
- *   - { type: 'tl-close-modal' }           → ferme le modal
+ *   - { type: 'tl-add-to-cart', variantId, quantity, properties } → AJAX cart + drawer
+ *   - { type: 'tl-close-modal' }                                  → ferme le modal
  */
 
 (function () {
   'use strict';
 
   // ── Styles injectés ─────────────────────────────────────────────────────────
-  const CSS = `
-    #tl-modal-overlay {
-      display: none;
-      position: fixed;
-      inset: 0;
-      z-index: 2147483647;
-      background: #0a0a0c;
-    }
-    #tl-modal-overlay.tl-open {
-      display: block;
-    }
-    #tl-modal-iframe {
-      width: 100%;
-      height: 100%;
-      border: none;
-      display: block;
-    }
-    #tl-modal-close {
-      position: fixed;
-      top: 12px;
-      right: 14px;
-      z-index: 2147483647;
-      background: rgba(255,255,255,0.1);
-      border: 1px solid rgba(255,255,255,0.2);
-      color: #fff;
-      border-radius: 50%;
-      width: 36px;
-      height: 36px;
-      font-size: 18px;
-      line-height: 1;
-      cursor: pointer;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      backdrop-filter: blur(8px);
-      transition: background 0.15s;
-    }
-    #tl-modal-close:hover {
-      background: rgba(255,255,255,0.2);
-    }
-    #tl-modal-overlay.tl-open + #tl-modal-close,
-    #tl-modal-close.tl-visible {
-      display: flex;
-    }
-  `;
+  var CSS = '\
+    #tl-modal-overlay {\
+      display: none;\
+      position: fixed;\
+      inset: 0;\
+      z-index: 2147483647;\
+      background: #0a0a0c;\
+    }\
+    #tl-modal-overlay.tl-open {\
+      display: block;\
+    }\
+    #tl-modal-iframe {\
+      width: 100%;\
+      height: 100%;\
+      border: none;\
+      display: block;\
+    }\
+  ';
 
   // ── Injection des éléments DOM ──────────────────────────────────────────────
   function injectDOM() {
-    const style = document.createElement('style');
+    var style = document.createElement('style');
     style.textContent = CSS;
     document.head.appendChild(style);
 
-    const overlay = document.createElement('div');
+    var overlay = document.createElement('div');
     overlay.id = 'tl-modal-overlay';
 
-    const iframe = document.createElement('iframe');
+    var iframe = document.createElement('iframe');
     iframe.id = 'tl-modal-iframe';
     iframe.setAttribute('allow', 'clipboard-write');
     iframe.setAttribute('allowfullscreen', '');
     overlay.appendChild(iframe);
 
-    const closeBtn = document.createElement('button');
-    closeBtn.id = 'tl-modal-close';
-    closeBtn.setAttribute('aria-label', 'Fermer l\'éditeur');
-    closeBtn.textContent = '✕';
-    closeBtn.addEventListener('click', closeModal);
-
     document.body.appendChild(overlay);
-    document.body.appendChild(closeBtn);
   }
 
   // ── Ouverture du modal ──────────────────────────────────────────────────────
   function openModal(editorUrl) {
-    const overlay = document.getElementById('tl-modal-overlay');
-    const iframe  = document.getElementById('tl-modal-iframe');
-    const closeBtn = document.getElementById('tl-modal-close');
-
+    var overlay = document.getElementById('tl-modal-overlay');
+    var iframe  = document.getElementById('tl-modal-iframe');
     if (!overlay || !iframe) return;
-
-    // Empêcher le scroll de la page en arrière-plan
     document.body.style.overflow = 'hidden';
-
     iframe.src = editorUrl;
     overlay.classList.add('tl-open');
-    if (closeBtn) closeBtn.classList.add('tl-visible');
   }
 
   // ── Fermeture du modal ──────────────────────────────────────────────────────
   function closeModal() {
-    const overlay  = document.getElementById('tl-modal-overlay');
-    const iframe   = document.getElementById('tl-modal-iframe');
-    const closeBtn = document.getElementById('tl-modal-close');
-
+    var overlay = document.getElementById('tl-modal-overlay');
+    var iframe  = document.getElementById('tl-modal-iframe');
     if (!overlay) return;
-
     overlay.classList.remove('tl-open');
-    if (closeBtn) closeBtn.classList.remove('tl-visible');
-
-    // Vider l'iframe pour libérer les ressources
-    setTimeout(() => {
+    setTimeout(function() {
       if (iframe) iframe.src = 'about:blank';
       document.body.style.overflow = '';
     }, 200);
   }
 
-  // ── Ouverture du drawer panier natif du thème ──────────────────────────────
-  function _tlOpenCartDrawer() {
-    // Rafraîchir le compteur panier (universel)
-    document.dispatchEvent(new CustomEvent('cart:refresh', { bubbles: true }));
-    // Dawn / OS 2.0 (thème le plus répandu)
-    document.documentElement.dispatchEvent(new CustomEvent('cart:open', { bubbles: true }));
+  // ── Mise à jour des sections Shopify (Dawn / OS 2.0) ───────────────────────
+  // Appelée avec data.sections retourné par /cart/add.json?sections=...
+  function _tlUpdateCartSections(sections) {
+    if (!sections) return;
+    var parser = new DOMParser();
+    Object.keys(sections).forEach(function(sectionId) {
+      var doc    = parser.parseFromString(sections[sectionId], 'text/html');
+      var newEl  = doc.getElementById(sectionId);
+      var existEl = document.getElementById(sectionId);
+      if (newEl && existEl) {
+        existEl.innerHTML = newEl.innerHTML;
+      }
+    });
+  }
 
-    // Fallback : clic sur l'icône panier (couvre la plupart des thèmes custom)
+  // ── Mise à jour manuelle du compteur panier (fallback) ─────────────────────
+  function _tlRefreshCartCount() {
+    fetch('/cart.js')
+      .then(function(r) { return r.json(); })
+      .then(function(cart) {
+        var count = cart.item_count || 0;
+        // Sélecteurs communs pour le compteur panier
+        var bubbles = document.querySelectorAll(
+          '.cart-count-bubble span, #cart-icon-bubble .cart-count-bubble span, ' +
+          '[data-cart-count], .header__cart-count'
+        );
+        bubbles.forEach(function(el) {
+          if (!isNaN(parseInt(el.textContent))) el.textContent = count;
+        });
+      })
+      .catch(function() {});
+  }
+
+  // ── Ouverture du drawer panier natif du thème ───────────────────────────────
+  function _tlOpenCartDrawer() {
+    // Dawn / Shopify OS 2.0
+    document.documentElement.dispatchEvent(new CustomEvent('cart:open', { bubbles: true }));
+    document.dispatchEvent(new CustomEvent('cart:refresh', { bubbles: true }));
+
+    // Fallback universel : clic sur l'icône panier
     var _selectors = [
       '#cart-icon-bubble',
       '[data-cart-toggle]',
@@ -134,7 +119,6 @@
       '[data-cart-drawer-trigger]',
       '.cart-count-bubble',
       '.header__icon--cart',
-      'a[href="/cart"]',
     ];
     for (var i = 0; i < _selectors.length; i++) {
       var el = document.querySelector(_selectors[i]);
@@ -145,73 +129,86 @@
     }
   }
 
-  // ── Injection visuelle dans le drawer après ajout au panier ───────────────
-  // Remplace les URLs brutes des propriétés line-item par des éléments visuels.
-  // Fonctionne avec n'importe quel thème Shopify, sans modification liquid.
-  function _tlInjectCartImages() {
+  // ── Remplacement de l'image produit par l'aperçu design ────────────────────
+  // previewUrl = URL directe du PNG de prévisualisation (Railway CDN ou Shopify)
+  function _tlInjectCartImages(previewUrl) {
     var _attempts = 0;
 
-    function _tryInject() {
+    function _try() {
       _attempts++;
-      var injected = false;
-
-      // Sélecteurs couvrant Dawn, Debut et la plupart des thèmes OS 2.0
-      var propValues = document.querySelectorAll(
-        '#cart-drawer dd, .cart-drawer__content dd, [id*="CartDrawer"] dd, ' +
-        '.drawer__inner dd, .cart-item__details dd, [class*="cart"] dl dd'
+      var cartItems = document.querySelectorAll(
+        '#cart-drawer .cart-item, .cart-drawer__content .cart-item, ' +
+        '[id*="CartDrawer"] .cart-item, .cart-items .cart-item, ' +
+        '.cart-drawer [class*="cart-item"]'
       );
 
-      propValues.forEach(function(dd) {
-        var text    = (dd.textContent || '').trim();
-        var prevDt  = dd.previousElementSibling;
-        var propKey = prevDt ? prevDt.textContent.trim() : '';
+      // Cibler le dernier item ajouté (le plus récent)
+      var lastItem = cartItems.length > 0 ? cartItems[cartItems.length - 1] : null;
 
-        // ── _preview_img → remplacer l'URL par une vraie miniature ──
-        if (propKey === '_preview_img' && text.startsWith('http')) {
-          var dl = dd.closest('dl');
-          if (dl && !dl.dataset.tlImg) {
-            dl.dataset.tlImg = '1';
-            // Cacher la ligne brute de la propriété
-            if (prevDt) prevDt.style.display = 'none';
-            dd.style.display = 'none';
-            // Injecter la miniature juste avant la liste de propriétés
-            var wrap = document.createElement('div');
-            wrap.style.cssText = 'width:64px;height:64px;border-radius:6px;overflow:hidden;margin:4px 0 6px;flex-shrink:0;border:1px solid rgba(0,0,0,0.1)';
-            var img = document.createElement('img');
-            img.src = text;
-            img.alt = 'Aperçu design';
-            img.style.cssText = 'width:100%;height:100%;object-fit:cover';
-            img.onerror = function() { wrap.style.display = 'none'; };
-            wrap.appendChild(img);
-            dl.parentNode.insertBefore(wrap, dl);
-            injected = true;
+      if (lastItem && !lastItem.dataset.tlImg) {
+        lastItem.dataset.tlImg = '1';
+
+        // Remplacer l'image produit par défaut par l'aperçu du design
+        if (previewUrl) {
+          var img = lastItem.querySelector('img.cart-item__image, img[loading="lazy"], img');
+          if (img) {
+            img.src = previewUrl;
+            img.srcset = '';
+            img.style.objectFit = 'cover';
           }
         }
 
-        // ── Voir mon design → lien cliquable propre ──
-        if (propKey === 'Voir mon design' && text.startsWith('http') && !dd.dataset.tlLink) {
-          dd.dataset.tlLink = '1';
-          dd.innerHTML = '<a href="' + text + '" target="_blank" rel="noopener" ' +
-            'style="color:inherit;font-size:11px;text-decoration:underline;opacity:0.7">👁 Voir le design</a>';
-          injected = true;
-        }
-      });
+        // Transformer les propriétés brutes en éléments lisibles
+        _tlFixLineItemProps(lastItem);
 
-      // Réessayer jusqu'à 5 fois si le drawer n'est pas encore rendu
-      if (!injected && _attempts < 5) {
-        setTimeout(_tryInject, 600);
+      } else if (!lastItem && _attempts < 5) {
+        setTimeout(_try, 600);
       }
+
+      // Passer aussi sur tous les items existants (cas page rafraîchie)
+      cartItems.forEach(function(item) { _tlFixLineItemProps(item); });
     }
 
-    setTimeout(_tryInject, 500);
+    setTimeout(_try, 450);
+  }
+
+  // ── Nettoyage des propriétés line item dans le drawer ─────────────────────
+  function _tlFixLineItemProps(container) {
+    if (!container) return;
+    var dts = container.querySelectorAll('dl dt, dl dt');
+    dts.forEach(function(dt) {
+      if (dt.dataset.tlFixed) return;
+      dt.dataset.tlFixed = '1';
+      var key = dt.textContent.trim();
+      var dd  = dt.nextElementSibling;
+      if (!dd) return;
+
+      // Masquer les propriétés internes (_prefixed)
+      if (key.startsWith('_')) {
+        dt.style.display = 'none';
+        dd.style.display = 'none';
+        return;
+      }
+
+      // "Voir mon design" → lien cliquable propre
+      if (key === 'Voir mon design') {
+        var url = dd.textContent.trim();
+        if (url.startsWith('http')) {
+          dd.innerHTML = '<a href="' + url + '" target="_blank" rel="noopener" ' +
+            'style="color:inherit;font-size:11px;text-decoration:underline;opacity:0.75">' +
+            '👁\u00a0Voir le design</a>';
+        }
+      }
+    });
   }
 
   // ── Écoute des messages de l'iframe ────────────────────────────────────────
   function listenMessages() {
-    window.addEventListener('message', function (e) {
+    window.addEventListener('message', function(e) {
       if (!e.data || typeof e.data !== 'object') return;
 
       switch (e.data.type) {
+
         case 'tl-close-modal':
           closeModal();
           break;
@@ -223,20 +220,35 @@
           var _qty   = e.data.quantity || 1;
 
           if (_vid && _props) {
-            // ── AJAX Shopify Cart API → reste sur la page, ouvre le drawer ──
+            // AJAX Shopify Cart API avec Sections pour rafraîchir le drawer HTML
             fetch('/cart/add.json', {
               method:  'POST',
               headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-              body:    JSON.stringify({ items: [{ id: parseInt(_vid, 10), quantity: _qty, properties: _props }] }),
+              body: JSON.stringify({
+                items: [{ id: parseInt(_vid, 10), quantity: _qty, properties: _props }],
+                sections: ['cart-drawer', 'cart-icon-bubble'],
+                sections_url: window.location.pathname,
+              }),
             })
             .then(function(r) { return r.json(); })
-            .then(function() {
+            .then(function(data) {
+              // 1. Mettre à jour le HTML du drawer via Sections API (Dawn/OS 2.0)
+              if (data.sections) {
+                _tlUpdateCartSections(data.sections);
+              } else {
+                // Fallback : mise à jour manuelle du compteur
+                _tlRefreshCartCount();
+              }
+              // 2. Ouvrir le drawer
               _tlOpenCartDrawer();
-              _tlInjectCartImages();
+              // 3. Injecter l'aperçu design dans l'image du line item
+              var previewUrl = _props['_preview_img'] || null;
+              _tlInjectCartImages(previewUrl);
             })
             .catch(function() { window.location.href = '/cart'; });
+
           } else if (e.data.cartUrl) {
-            // Rétrocompat
+            // Rétrocompat : ancienne version avec cartUrl
             setTimeout(function() { window.location.href = e.data.cartUrl; }, 250);
           }
           break;
@@ -249,34 +261,24 @@
   }
 
   // ── Interception des liens "Personnalisé" ───────────────────────────────────
-  // Détecte :
-  //  1. data-tl-editor="true"  (recommandé — à ajouter dans le thème)
-  //  2. href contenant "textilelab-studio.html"
-  //  3. href contenant "/apps/textilelab"
   function interceptLinks() {
-    document.addEventListener('click', function (e) {
-      const link = e.target.closest('a');
+    document.addEventListener('click', function(e) {
+      var link = e.target.closest('a');
       if (!link) return;
-
-      const href = link.getAttribute('href') || '';
-      const isTLEditor =
+      var href = link.getAttribute('href') || '';
+      var isTLEditor =
         link.dataset.tlEditor === 'true' ||
         href.includes('textilelab-studio.html') ||
         href.includes('/apps/textilelab');
-
       if (!isTLEditor) return;
-
       e.preventDefault();
       e.stopPropagation();
-
-      // Construire l'URL complète si relative
-      let editorUrl = href;
+      var editorUrl = href;
       if (!href.startsWith('http') && !href.startsWith('//')) {
         editorUrl = new URL(href, window.location.origin).href;
       }
-
       openModal(editorUrl);
-    }, true); // capture phase pour devancer d'autres handlers
+    }, true);
   }
 
   // ── Init ────────────────────────────────────────────────────────────────────
@@ -292,6 +294,5 @@
     init();
   }
 
-  // Exposition publique pour usage avancé
   window.TLModal = { open: openModal, close: closeModal };
 })();
