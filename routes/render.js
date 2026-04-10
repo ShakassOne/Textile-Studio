@@ -171,7 +171,7 @@ router.get('/download/:design_id', (req, res) => {
   if (!design?.render_url) {
     return res.status(404).json({ error: 'Aucun render HD disponible pour ce design' });
   }
-  const filepath = path.join(__dirname, '..', design.render_url);
+  const filepath = path.join(DATA_DIR, design.render_url);
   if (!fs.existsSync(filepath)) {
     return res.status(404).json({ error: 'Fichier introuvable sur le disque' });
   }

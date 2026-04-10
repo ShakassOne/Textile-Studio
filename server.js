@@ -11,7 +11,7 @@ const DATA_DIR    = process.env.DATA_DIR || __dirname;
 const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 
 // Créer les sous-dossiers uploads si absents (volume vide au premier démarrage)
-['', 'library', 'renders', 'models3d'].forEach(sub => {
+['', 'library', 'renders', 'models3d', 'generated'].forEach(sub => {
   fs.mkdirSync(path.join(UPLOADS_DIR, sub), { recursive: true });
 });
 

@@ -12,7 +12,7 @@ if [ -n "$DATA_DIR" ]; then
   echo "🔗  DATA_DIR=$DATA_DIR — Linking /app/uploads → $DATA_DIR/uploads"
 
   # Créer les dossiers uploads dans le volume si absents
-  mkdir -p "$DATA_DIR/uploads/library" "$DATA_DIR/uploads/renders" "$DATA_DIR/uploads/models3d"
+  mkdir -p "$DATA_DIR/uploads/library" "$DATA_DIR/uploads/renders" "$DATA_DIR/uploads/models3d" "$DATA_DIR/uploads/generated"
 
   # Remplacer /app/uploads par un symlink si c'est un dossier classique
   if [ ! -L /app/uploads ]; then
@@ -25,7 +25,7 @@ if [ -n "$DATA_DIR" ]; then
   # et db/database.js (code) doit rester accessible dans /app/db/
 else
   echo "ℹ️  DATA_DIR non défini — mode local (docker-compose bind mounts)"
-  mkdir -p /app/uploads/library /app/uploads/renders /app/uploads/models3d
+  mkdir -p /app/uploads/library /app/uploads/renders /app/uploads/models3d /app/uploads/generated
 fi
 
 echo "🚀  Démarrage de TextileLab Studio..."
