@@ -225,58 +225,32 @@
               headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
               body: JSON.stringify({
                 items: [{ id: parseInt(_vid, 10), quantity: _qty, properties: _props }],
-                sections: ['cart-drawer', 'cart-icon-bubble'],
-                sections_url: window.location.pathname,
               }),
             })
             .then(function(r) { return r.json(); })
-            .then(function(data) {
-              // 1. Reconstruire le DOM du drawer via Sections API
-              _tlUpdateCartSections(data.sections);
+            .then(function() {
+              // 1. Déclencher cart:update — component-cart-items.js va re-fetcher les sections automatiquement
+              document.dispatchEvent(new CustomEvent('cart:update', {
+                bubbles: true,
+                detail: { source: 'tl-modal', data: { sections: {} } }
+              }));
 
-              // 2. Ouvrir le drawer
-              _tlOpenCartDrawer();
+              // 2. Ouvrir le drawer directement via l'API du composant
+              var drawerEl = document.querySelector('cart-drawer-component');
+              if (drawerEl) {
+                if (typeof drawerEl.open === 'function') { drawerEl.open(); }
+                else if (typeof drawerEl.showDialog === 'function') { drawerEl.showDialog(); }
+              }
 
-              // 3. Attendre 600ms (stabilisation DOM), trouver le cart-item
-              //    via correspondance dt[_design_uid]/dd = _props['_design_uid']
-              var _uid        = _props['_design_uid'] || null;
-              var _previewUrl = _props['_preview_img'] || null;
-
+              // 3. Nettoyer les propriétés _ sur les items après re-render
               setTimeout(function() {
                 var cartItems = document.querySelectorAll(
                   '#cart-drawer .cart-item, .cart-drawer__content .cart-item, ' +
                   '[id*="CartDrawer"] .cart-item, .cart-items .cart-item, ' +
                   '.cart-drawer [class*="cart-item"]'
                 );
-
-                // Localiser l'item dont _design_uid correspond exactement
-                var targetItem = null;
-                if (_uid) {
-                  cartItems.forEach(function(item) {
-                    item.querySelectorAll('dt').forEach(function(dt) {
-                      if (dt.textContent.trim() === '_design_uid') {
-                        var dd = dt.nextElementSibling;
-                        if (dd && dd.textContent.trim() === _uid) {
-                          targetItem = item;
-                        }
-                      }
-                    });
-                  });
-                }
-
-                // Remplacer l'image produit par l'aperçu design
-                if (targetItem && _previewUrl) {
-                  var img = targetItem.querySelector('img.cart-item__image, img[loading="lazy"], img');
-                  if (img) {
-                    img.src    = _previewUrl;
-                    img.srcset = '';
-                    img.style.objectFit = 'cover';
-                  }
-                }
-
-                // Nettoyer propriétés sur tous les items
                 cartItems.forEach(function(item) { _tlFixLineItemProps(item); });
-              }, 600);
+              }, 800);
             })
             .catch(function() { window.location.href = '/cart'; });
 
