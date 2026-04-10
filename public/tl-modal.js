@@ -220,7 +220,6 @@
           var _qty   = e.data.quantity || 1;
 
           if (_vid && _props) {
-            // AJAX Shopify Cart API avec Sections pour rafraîchir le drawer HTML
             fetch('/cart/add.json', {
               method:  'POST',
               headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
@@ -232,18 +231,52 @@
             })
             .then(function(r) { return r.json(); })
             .then(function(data) {
-              // 1. Mettre à jour le HTML du drawer via Sections API (Dawn/OS 2.0)
-              if (data.sections) {
-                _tlUpdateCartSections(data.sections);
-              } else {
-                // Fallback : mise à jour manuelle du compteur
-                _tlRefreshCartCount();
-              }
+              // 1. Reconstruire le DOM du drawer via Sections API
+              _tlUpdateCartSections(data.sections);
+
               // 2. Ouvrir le drawer
               _tlOpenCartDrawer();
-              // 3. Injecter l'aperçu design dans l'image du line item
-              var previewUrl = _props['_preview_img'] || null;
-              _tlInjectCartImages(previewUrl);
+
+              // 3. Attendre 600ms (stabilisation DOM), trouver le cart-item
+              //    via correspondance dt[_design_uid]/dd = _props['_design_uid']
+              var _uid        = _props['_design_uid'] || null;
+              var _previewUrl = _props['_preview_img'] || null;
+
+              setTimeout(function() {
+                var cartItems = document.querySelectorAll(
+                  '#cart-drawer .cart-item, .cart-drawer__content .cart-item, ' +
+                  '[id*="CartDrawer"] .cart-item, .cart-items .cart-item, ' +
+                  '.cart-drawer [class*="cart-item"]'
+                );
+
+                // Localiser l'item dont _design_uid correspond exactement
+                var targetItem = null;
+                if (_uid) {
+                  cartItems.forEach(function(item) {
+                    item.querySelectorAll('dt').forEach(function(dt) {
+                      if (dt.textContent.trim() === '_design_uid') {
+                        var dd = dt.nextElementSibling;
+                        if (dd && dd.textContent.trim() === _uid) {
+                          targetItem = item;
+                        }
+                      }
+                    });
+                  });
+                }
+
+                // Remplacer l'image produit par l'aperçu design
+                if (targetItem && _previewUrl) {
+                  var img = targetItem.querySelector('img.cart-item__image, img[loading="lazy"], img');
+                  if (img) {
+                    img.src    = _previewUrl;
+                    img.srcset = '';
+                    img.style.objectFit = 'cover';
+                  }
+                }
+
+                // Nettoyer propriétés sur tous les items
+                cartItems.forEach(function(item) { _tlFixLineItemProps(item); });
+              }, 600);
             })
             .catch(function() { window.location.href = '/cart'; });
 
