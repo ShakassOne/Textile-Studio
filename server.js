@@ -218,6 +218,23 @@ app.get('/api/stats', requireAuth, (req, res) => {
 // ── Health ─────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => res.json({ ok: true, version: '1.0.0', ts: new Date().toISOString() }));
 
+// ── Webhooks GDPR obligatoires (Shopify App Store) ──────────────────────────
+
+app.post('/webhooks/customers/data_request', (req, res) => {
+  // Textile Studio Lab ne stocke aucune donnée client
+  res.sendStatus(200);
+});
+
+app.post('/webhooks/customers/redact', (req, res) => {
+  // Aucune donnée à supprimer
+  res.sendStatus(200);
+});
+
+app.post('/webhooks/shop/redact', (req, res) => {
+  // Aucune donnée boutique à supprimer
+  res.sendStatus(200);
+});
+
 // ── Start ──────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`\n✅  TextileLab Backend running on http://localhost:${PORT}`);
