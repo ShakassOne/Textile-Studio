@@ -179,6 +179,149 @@ initDB();
   registerWebhook('app/uninstalled', `${appUrl}/shopify/webhook`);
 })();
 
+// ── Billing API (Shopify App Store — Trial 15j + 19€/mois) ─────────────────
+
+// Créer la table subscriptions au démarrage
+(function initSubscriptionsTable() {
+  try {
+    const db = require('./db/database').getDB();
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS subscriptions (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        shop       TEXT NOT NULL,
+        charge_id  TEXT,
+        status     TEXT NOT NULL DEFAULT 'pending',
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `).run();
+    console.log('💳  Table subscriptions prête.');
+  } catch (err) {
+    console.warn('⚠️  initSubscriptionsTable :', err.message);
+  }
+})();
+
+// GET /billing/subscribe — Lance la souscription via mutation GraphQL appSubscriptionCreate
+app.get('/billing/subscribe', async (req, res) => {
+  const shop   = req.query.shop || process.env.SHOPIFY_BOOTSTRAP_SHOP;
+  const token  = process.env.SHOPIFY_ACCESS_TOKEN || process.env.SHOPIFY_BOOTSTRAP_TOKEN;
+  const appUrl = (process.env.APP_URL || '').replace(/\/$/, '');
+
+  if (!shop || !token) {
+    return res.status(400).json({ error: 'shop ou token manquant' });
+  }
+
+  const mutation = `
+    mutation AppSubscriptionCreate($name: String!, $returnUrl: URL!, $lineItems: [AppSubscriptionLineItemInput!]!, $trialDays: Int) {
+      appSubscriptionCreate(name: $name, returnUrl: $returnUrl, lineItems: $lineItems, trialDays: $trialDays) {
+        appSubscription { id status }
+        confirmationUrl
+        userErrors { field message }
+      }
+    }
+  `;
+
+  const variables = {
+    name:      'Textile Studio Lab — Pro',
+    trialDays: 15,
+    returnUrl: `${appUrl}/billing/callback?shop=${encodeURIComponent(shop)}`,
+    lineItems: [{
+      plan: {
+        appRecurringPricingDetails: {
+          price:    { amount: 19.00, currencyCode: 'EUR' },
+          interval: 'EVERY_30_DAYS',
+        },
+      },
+    }],
+  };
+
+  try {
+    const response = await fetch(`https://${shop}/admin/api/2024-01/graphql.json`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': token },
+      body:    JSON.stringify({ query: mutation, variables }),
+    });
+    const data   = await response.json();
+    const result = data?.data?.appSubscriptionCreate;
+
+    if (result?.userErrors?.length > 0) {
+      return res.status(400).json({ error: result.userErrors });
+    }
+    const confirmationUrl = result?.confirmationUrl;
+    if (!confirmationUrl) {
+      return res.status(500).json({ error: 'confirmationUrl absent de la réponse Shopify' });
+    }
+    return res.redirect(confirmationUrl);
+  } catch (err) {
+    console.error('❌ /billing/subscribe :', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /billing/callback — Shopify redirige ici après confirmation du marchand
+app.get('/billing/callback', async (req, res) => {
+  const shop     = req.query.shop || process.env.SHOPIFY_BOOTSTRAP_SHOP;
+  const chargeId = req.query.charge_id;
+  const token    = process.env.SHOPIFY_ACCESS_TOKEN || process.env.SHOPIFY_BOOTSTRAP_TOKEN;
+  const appUrl   = (process.env.APP_URL || '').replace(/\/$/, '');
+
+  if (!shop || !chargeId || !token) {
+    return res.status(400).json({ error: 'Paramètres manquants : shop, charge_id ou token.' });
+  }
+
+  try {
+    // Vérifier le statut réel de la charge auprès de Shopify
+    const response = await fetch(
+      `https://${shop}/admin/api/2024-01/recurring_application_charges/${chargeId}.json`,
+      { headers: { 'X-Shopify-Access-Token': token } }
+    );
+    const data   = await response.json();
+    const status = data?.recurring_application_charge?.status || 'unknown';
+
+    // Persister dans SQLite
+    const db = require('./db/database').getDB();
+    db.prepare(`
+      INSERT INTO subscriptions (shop, charge_id, status, created_at)
+      VALUES (?, ?, ?, datetime('now'))
+    `).run(shop, String(chargeId), status);
+
+    console.log(`💳  Subscription enregistrée : shop=${shop}  charge_id=${chargeId}  status=${status}`);
+    return res.redirect(`${appUrl}/?shop=${encodeURIComponent(shop)}`);
+  } catch (err) {
+    console.error('❌ /billing/callback :', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Middleware checkSubscription — vérifie l'abonnement actif/trial pour la boutique
+function checkSubscription(req, res, next) {
+  const shop = req.query.shop || req.headers['x-shopify-shop-domain'];
+  if (!shop) return next(); // pas de shop identifiable → laisser passer
+
+  try {
+    const db  = require('./db/database').getDB();
+    const sub = db.prepare(
+      "SELECT id FROM subscriptions WHERE shop = ? AND status IN ('active','trialing','pending') ORDER BY id DESC LIMIT 1"
+    ).get(shop);
+    if (sub) return next();
+
+    // Aucun abonnement actif → rediriger vers la page de souscription
+    const appUrl = (process.env.APP_URL || '').replace(/\/$/, '');
+    return res.redirect(`${appUrl}/billing/subscribe?shop=${encodeURIComponent(shop)}`);
+  } catch (err) {
+    console.warn('⚠️  checkSubscription :', err.message);
+    return next(); // erreur DB → ne pas bloquer
+  }
+}
+
+// Appliquer le middleware sur toutes les routes qui suivent
+// sauf /auth, /webhooks et /billing (enregistrées ci-dessus, donc non concernées)
+app.use((req, res, next) => {
+  const exempted = ['/api/auth', '/auth', '/webhooks', '/billing', '/oauth',
+                    '/health', '/privacy', '/manifest.json', '/sw.js'];
+  if (exempted.some(p => req.path.startsWith(p))) return next();
+  return checkSubscription(req, res, next);
+});
+
 // ── Routes ─────────────────────────────────────────────────────────────
 app.use('/api/auth',       require('./routes/auth'));
 app.use('/api/designs',    require('./routes/designs'));
