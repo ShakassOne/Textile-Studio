@@ -5097,9 +5097,15 @@ async function _checkoutShopifyDirect() {
   };
 
   // Un seul lien "Voir mon design" → page HTML belle avec recto+verso cliquable
-  // Shopify l'affiche en texte dans le checkout — le client peut cliquer dessus
   if (designId) {
     propsObj['Voir mon design'] = `${APP_ORIGIN}/design-preview/${designId}`;
+  }
+  // ── UID unique pour éviter la fusion des lignes dans le panier Shopify ──
+  propsObj['_design_uid'] = Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+  // ── Image prévisualisation (1ère vue uploadée) — affichée dans le panier ──
+  const _firstViewUrl = Object.values(viewsPreview)[0]?.url || null;
+  if (_firstViewUrl) {
+    propsObj['_preview_img'] = _firstViewUrl.startsWith('http') ? _firstViewUrl : `${APP_ORIGIN}${_firstViewUrl}`;
   }
 
   try {
@@ -5108,16 +5114,23 @@ async function _checkoutShopifyDirect() {
     const variantId = pData?.variant_id;
     if (!variantId) throw new Error(pData?.error || 'Variante Shopify introuvable pour ce produit');
 
-    const propsB64 = btoa(unescape(encodeURIComponent(JSON.stringify(propsObj))));
-    const noteB64  = encodeURIComponent('Design TextileLab #' + (designId || ''));
-    const cartUrl  = `https://${window._TL_SHOP}/cart/${variantId}:1?properties=${propsB64}&note=${noteB64}`;
-    showToast('✅ Redirection vers votre boutique…');
-    // Si dans un iframe (modal tl-modal.js), envoyer le message au parent
+    showToast('✅ Ajout au panier…');
+    // Si dans un iframe → tl-modal.js appelle /cart/add.json puis ouvre le drawer
     if (window.self !== window.top) {
       setTimeout(() => {
-        window.parent.postMessage({ type: 'tl-add-to-cart', cartUrl }, '*');
+        window.parent.postMessage({
+          type:       'tl-add-to-cart',
+          variantId:  String(variantId),
+          quantity:   1,
+          properties: propsObj,
+        }, '*');
       }, 800);
     } else {
+      // Hors iframe : AJAX cross-origin impossible → redirect /cart
+      const _qs = Object.entries(propsObj)
+        .map(([k, v]) => `properties[${encodeURIComponent(k)}]=${encodeURIComponent(String(v))}`)
+        .join('&');
+      const cartUrl = `https://${window._TL_SHOP}/cart/${variantId}:1?${_qs}&note=${encodeURIComponent('Design TextileLab #' + (designId || ''))}`;
       setTimeout(() => { window.location.href = cartUrl; }, 800);
     }
   } catch(e) {
@@ -5323,21 +5336,23 @@ async function checkout() {
       const _variant = _pData?.product?.variants?.[0];
       if (_variant) {
         // Construire l'URL /cart avec les propriétés design en line item properties
-        const _props = [
-          `properties[design_id]=${encodeURIComponent(designId || '')}`,
-          `properties[_product]=${encodeURIComponent(firstItem.product)}`,
-          `properties[_format]=${encodeURIComponent(firstItem.format)}`,
-          `properties[_color]=${encodeURIComponent(firstItem.color)}`,
-          `properties[_views]=${encodeURIComponent(firstItem.viewCount || 1)}`,
-          `note=${encodeURIComponent('Design TextileLab #' + (designId || ''))}`,
-        ].join('&');
-        const _cartUrl = `https://${_tlShop}/cart/${_variant.id}:1?${_props}`;
-        showToast('✅ Redirection vers votre boutique…');
+        const _designUid = Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+        const _propsObj = {
+          'design_id':   String(designId || ''),
+          '_product':    firstItem.product,
+          '_format':     firstItem.format,
+          '_color':      firstItem.color,
+          '_views':      String(firstItem.viewCount || 1),
+          '_design_uid': _designUid,
+        };
+        showToast('✅ Ajout au panier…');
         closeCart();
         if (window.self !== window.top) {
-          setTimeout(() => { window.parent.postMessage({ type: 'tl-add-to-cart', cartUrl: _cartUrl }, '*'); }, 500);
+          // tl-modal.js appelle /cart/add.json puis ouvre le drawer
+          setTimeout(() => { window.parent.postMessage({ type: 'tl-add-to-cart', variantId: String(_variant.id), quantity: 1, properties: _propsObj }, '*'); }, 500);
         } else {
-          setTimeout(() => { window.location.href = _cartUrl; }, 500);
+          const _qs = Object.entries(_propsObj).map(([k, v]) => `properties[${encodeURIComponent(k)}]=${encodeURIComponent(v)}`).join('&');
+          setTimeout(() => { window.location.href = `https://${_tlShop}/cart/${_variant.id}:1?${_qs}&note=${encodeURIComponent('Design TextileLab #' + (designId || ''))}`; }, 500);
         }
         return;
       }

@@ -119,6 +119,93 @@
     }, 200);
   }
 
+  // ── Ouverture du drawer panier natif du thème ──────────────────────────────
+  function _tlOpenCartDrawer() {
+    // Rafraîchir le compteur panier (universel)
+    document.dispatchEvent(new CustomEvent('cart:refresh', { bubbles: true }));
+    // Dawn / OS 2.0 (thème le plus répandu)
+    document.documentElement.dispatchEvent(new CustomEvent('cart:open', { bubbles: true }));
+
+    // Fallback : clic sur l'icône panier (couvre la plupart des thèmes custom)
+    var _selectors = [
+      '#cart-icon-bubble',
+      '[data-cart-toggle]',
+      '[data-drawer-toggle="cart-drawer"]',
+      '[data-cart-drawer-trigger]',
+      '.cart-count-bubble',
+      '.header__icon--cart',
+      'a[href="/cart"]',
+    ];
+    for (var i = 0; i < _selectors.length; i++) {
+      var el = document.querySelector(_selectors[i]);
+      if (el) {
+        (function(btn) { setTimeout(function() { btn.click(); }, 150); })(el);
+        break;
+      }
+    }
+  }
+
+  // ── Injection visuelle dans le drawer après ajout au panier ───────────────
+  // Remplace les URLs brutes des propriétés line-item par des éléments visuels.
+  // Fonctionne avec n'importe quel thème Shopify, sans modification liquid.
+  function _tlInjectCartImages() {
+    var _attempts = 0;
+
+    function _tryInject() {
+      _attempts++;
+      var injected = false;
+
+      // Sélecteurs couvrant Dawn, Debut et la plupart des thèmes OS 2.0
+      var propValues = document.querySelectorAll(
+        '#cart-drawer dd, .cart-drawer__content dd, [id*="CartDrawer"] dd, ' +
+        '.drawer__inner dd, .cart-item__details dd, [class*="cart"] dl dd'
+      );
+
+      propValues.forEach(function(dd) {
+        var text    = (dd.textContent || '').trim();
+        var prevDt  = dd.previousElementSibling;
+        var propKey = prevDt ? prevDt.textContent.trim() : '';
+
+        // ── _preview_img → remplacer l'URL par une vraie miniature ──
+        if (propKey === '_preview_img' && text.startsWith('http')) {
+          var dl = dd.closest('dl');
+          if (dl && !dl.dataset.tlImg) {
+            dl.dataset.tlImg = '1';
+            // Cacher la ligne brute de la propriété
+            if (prevDt) prevDt.style.display = 'none';
+            dd.style.display = 'none';
+            // Injecter la miniature juste avant la liste de propriétés
+            var wrap = document.createElement('div');
+            wrap.style.cssText = 'width:64px;height:64px;border-radius:6px;overflow:hidden;margin:4px 0 6px;flex-shrink:0;border:1px solid rgba(0,0,0,0.1)';
+            var img = document.createElement('img');
+            img.src = text;
+            img.alt = 'Aperçu design';
+            img.style.cssText = 'width:100%;height:100%;object-fit:cover';
+            img.onerror = function() { wrap.style.display = 'none'; };
+            wrap.appendChild(img);
+            dl.parentNode.insertBefore(wrap, dl);
+            injected = true;
+          }
+        }
+
+        // ── Voir mon design → lien cliquable propre ──
+        if (propKey === 'Voir mon design' && text.startsWith('http') && !dd.dataset.tlLink) {
+          dd.dataset.tlLink = '1';
+          dd.innerHTML = '<a href="' + text + '" target="_blank" rel="noopener" ' +
+            'style="color:inherit;font-size:11px;text-decoration:underline;opacity:0.7">👁 Voir le design</a>';
+          injected = true;
+        }
+      });
+
+      // Réessayer jusqu'à 5 fois si le drawer n'est pas encore rendu
+      if (!injected && _attempts < 5) {
+        setTimeout(_tryInject, 600);
+      }
+    }
+
+    setTimeout(_tryInject, 500);
+  }
+
   // ── Écoute des messages de l'iframe ────────────────────────────────────────
   function listenMessages() {
     window.addEventListener('message', function (e) {
@@ -129,15 +216,31 @@
           closeModal();
           break;
 
-        case 'tl-add-to-cart':
-          if (e.data.cartUrl) {
-            closeModal();
-            // Petit délai pour laisser le modal se fermer visuellement
-            setTimeout(() => {
-              window.location.href = e.data.cartUrl;
-            }, 250);
+        case 'tl-add-to-cart': {
+          closeModal();
+          var _vid   = e.data.variantId;
+          var _props = e.data.properties;
+          var _qty   = e.data.quantity || 1;
+
+          if (_vid && _props) {
+            // ── AJAX Shopify Cart API → reste sur la page, ouvre le drawer ──
+            fetch('/cart/add.json', {
+              method:  'POST',
+              headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+              body:    JSON.stringify({ items: [{ id: parseInt(_vid, 10), quantity: _qty, properties: _props }] }),
+            })
+            .then(function(r) { return r.json(); })
+            .then(function() {
+              _tlOpenCartDrawer();
+              _tlInjectCartImages();
+            })
+            .catch(function() { window.location.href = '/cart'; });
+          } else if (e.data.cartUrl) {
+            // Rétrocompat
+            setTimeout(function() { window.location.href = e.data.cartUrl; }, 250);
           }
           break;
+        }
 
         default:
           break;
