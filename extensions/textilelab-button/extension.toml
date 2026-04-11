@@ -1,6 +1,0 @@
-api_version = "2024-01"
-
-[[extensions]]
-  type   = "theme"
-  name   = "Textile Studio Lab — Bouton Personnaliser"
-  handle = "textilelab-button"

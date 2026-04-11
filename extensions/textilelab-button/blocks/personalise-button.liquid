@@ -1,7 +1,5 @@
 {% comment %} TextileLab — Theme App Extension — Bouton Personnaliser {% endcomment %}
 
-{{ 'tl-modal.js' | asset_url | script_tag }}
-
 {%- assign tl_editor_url = product.metafields.textilelab.editor_url.value -%}
 
 {%- if tl_editor_url != blank -%}
@@ -20,10 +18,6 @@
 
 {%- else -%}
 
-  {%- comment -%}
-    Fallback dynamique : si le metafield textilelab.editor_url n'est pas encore défini,
-    on reconstruit l'URL via l'API /api/product-links (même logique que le snippet thème).
-  {%- endcomment -%}
   <div id="tl-cta-{{ product.id }}"></div>
   <script>
   (function() {
@@ -58,7 +52,6 @@
 {
   "name": "Bouton Personnaliser",
   "target": "section",
-  "javascript": "tl-modal.js",
   "settings": []
 }
 {% endschema %}
