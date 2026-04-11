@@ -57,7 +57,7 @@ router.post('/save-views', (req, res) => {
       const base64Data = (view.png_base64 || '').replace(/^data:image\/\w+;base64,/, '');
       if (!base64Data) continue;
       const buffer   = Buffer.from(base64Data, 'base64');
-      const filename = `preview_d${design_id}_v${view.idx}_${Date.now()}.jpg`;
+      const filename = `preview_d${design_id}_v${view.idx}_${Date.now()}.png`;
       const filepath = path.join(RENDERS_DIR, filename);
       fs.writeFileSync(filepath, buffer);
       const absUrl = `${APP_URL}/uploads/renders/${filename}`;
