@@ -5118,12 +5118,25 @@ async function _checkoutShopifyDirect() {
         }, '*');
       }, 800);
     } else {
-      // Hors iframe : AJAX cross-origin impossible → redirect /cart
-      const _qs = Object.entries(propsObj)
-        .map(([k, v]) => `properties[${encodeURIComponent(k)}]=${encodeURIComponent(String(v))}`)
-        .join('&');
-      const cartUrl = `https://${window._TL_SHOP}/cart/${variantId}:1?${_qs}&note=${encodeURIComponent('Design TextileLab #' + (designId || ''))}`;
-      setTimeout(() => { window.location.href = cartUrl; }, 800);
+      // Hors iframe : form POST vers /cart/add (les query params properties[] sont invalides avec Shopify)
+      setTimeout(() => {
+        var _form = document.createElement('form');
+        _form.method = 'POST';
+        _form.action = 'https://' + window._TL_SHOP + '/cart/add';
+        var _fid = document.createElement('input');
+        _fid.type = 'hidden'; _fid.name = 'id'; _fid.value = String(variantId);
+        _form.appendChild(_fid);
+        var _fqty = document.createElement('input');
+        _fqty.type = 'hidden'; _fqty.name = 'quantity'; _fqty.value = '1';
+        _form.appendChild(_fqty);
+        Object.entries(propsObj).forEach(function([k, v]) {
+          var _fp = document.createElement('input');
+          _fp.type = 'hidden'; _fp.name = 'properties[' + k + ']'; _fp.value = String(v);
+          _form.appendChild(_fp);
+        });
+        document.body.appendChild(_form);
+        _form.submit();
+      }, 800);
     }
   } catch(e) {
     console.error('[TextileLab] _checkoutShopifyDirect:', e);
@@ -5343,8 +5356,25 @@ async function checkout() {
           // tl-modal.js appelle /cart/add.json puis ouvre le drawer
           setTimeout(() => { window.parent.postMessage({ type: 'tl-add-to-cart', variantId: String(_variant.id), quantity: 1, properties: _propsObj }, '*'); }, 500);
         } else {
-          const _qs = Object.entries(_propsObj).map(([k, v]) => `properties[${encodeURIComponent(k)}]=${encodeURIComponent(v)}`).join('&');
-          setTimeout(() => { window.location.href = `https://${_tlShop}/cart/${_variant.id}:1?${_qs}&note=${encodeURIComponent('Design TextileLab #' + (designId || ''))}`; }, 500);
+          // Hors iframe : form POST vers /cart/add (les query params properties[] sont invalides avec Shopify)
+          setTimeout(() => {
+            var _form = document.createElement('form');
+            _form.method = 'POST';
+            _form.action = 'https://' + _tlShop + '/cart/add';
+            var _fid = document.createElement('input');
+            _fid.type = 'hidden'; _fid.name = 'id'; _fid.value = String(_variant.id);
+            _form.appendChild(_fid);
+            var _fqty = document.createElement('input');
+            _fqty.type = 'hidden'; _fqty.name = 'quantity'; _fqty.value = '1';
+            _form.appendChild(_fqty);
+            Object.entries(_propsObj).forEach(function([k, v]) {
+              var _fp = document.createElement('input');
+              _fp.type = 'hidden'; _fp.name = 'properties[' + k + ']'; _fp.value = String(v);
+              _form.appendChild(_fp);
+            });
+            document.body.appendChild(_form);
+            _form.submit();
+          }, 500);
         }
         return;
       }
