@@ -148,13 +148,27 @@
       if (lastItem && !lastItem.dataset.tlImg) {
         lastItem.dataset.tlImg = '1';
 
+        // Fix layout drawer — texte à droite de la vignette
+        lastItem.style.display    = 'flex';
+        lastItem.style.alignItems = 'flex-start';
+        lastItem.style.gap        = '1rem';
+
         // Remplacer l'image produit par défaut par l'aperçu du design
         if (previewUrl) {
           var img = lastItem.querySelector('img.cart-item__image, img[loading="lazy"], img');
           if (img) {
-            img.src = previewUrl;
-            img.srcset = '';
+            img.src            = previewUrl;
+            img.srcset         = '';
             img.style.objectFit = 'cover';
+            // Fond transparent sur la vignette
+            img.style.background    = 'transparent';
+            img.style.mixBlendMode  = 'multiply';
+            if (img.parentElement) img.parentElement.style.background = 'transparent';
+            // Bloc texte à droite de l'image
+            var imgContainer = img.closest('.cart-item__image-container');
+            if (imgContainer && imgContainer.nextElementSibling) {
+              imgContainer.nextElementSibling.style.flex = '1';
+            }
           }
         }
 
