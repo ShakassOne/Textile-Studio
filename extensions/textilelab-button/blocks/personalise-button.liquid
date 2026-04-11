@@ -1,0 +1,64 @@
+{% comment %} TextileLab — Theme App Extension — Bouton Personnaliser {% endcomment %}
+
+{{ 'tl-modal.js' | asset_url | script_tag }}
+
+{%- assign tl_editor_url = product.metafields.textilelab.editor_url.value -%}
+
+{%- if tl_editor_url != blank -%}
+
+  <div id="tl-cta-{{ product.id }}">
+    <a
+      href="{{ tl_editor_url }}"
+      data-tl-editor="true"
+      class="button"
+      style="display:flex;width:100%;justify-content:center;align-items:center;gap:8px;margin-top:8px;text-decoration:none;"
+    >
+      <span>🎨</span>
+      <span>Personnaliser</span>
+    </a>
+  </div>
+
+{%- else -%}
+
+  {%- comment -%}
+    Fallback dynamique : si le metafield textilelab.editor_url n'est pas encore défini,
+    on reconstruit l'URL via l'API /api/product-links (même logique que le snippet thème).
+  {%- endcomment -%}
+  <div id="tl-cta-{{ product.id }}"></div>
+  <script>
+  (function() {
+    var handle = {{ product.handle | json }};
+    var shop   = {{ shop.permanent_domain | json }};
+    var appUrl = "https://textile-studio-production.up.railway.app";
+    var el     = document.getElementById('tl-cta-{{ product.id }}');
+    if (!el) return;
+
+    fetch(appUrl + '/api/product-links/by-product/' + encodeURIComponent(handle))
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(data) {
+        if (!data || !data.mockup_id) return;
+        var btn       = document.createElement('a');
+        btn.href      = appUrl + '/textilelab-studio.html'
+          + '?shop='    + encodeURIComponent(shop)
+          + '&product=' + encodeURIComponent(handle)
+          + '&mockup='  + encodeURIComponent(data.mockup_id);
+        btn.setAttribute('data-tl-editor', 'true');
+        btn.className  = 'button';
+        btn.style.cssText = 'display:flex;width:100%;justify-content:center;align-items:center;gap:8px;margin-top:8px;text-decoration:none;';
+        btn.innerHTML  = '<span>&#127912;</span><span>Personnaliser</span>';
+        el.appendChild(btn);
+      })
+      .catch(function() {});
+  })();
+  </script>
+
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Bouton Personnaliser",
+  "target": "section",
+  "javascript": "tl-modal.js",
+  "settings": []
+}
+{% endschema %}
