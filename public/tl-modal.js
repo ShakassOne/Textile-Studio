@@ -12,6 +12,10 @@
 (function () {
   'use strict';
 
+  // ── Guard anti-double-init (si le script est chargé deux fois) ──────────────
+  if (window.__TLModalInitialized) return;
+  window.__TLModalInitialized = true;
+
   // ── Styles injectés ─────────────────────────────────────────────────────────
   var CSS = '\
     #tl-modal-overlay {\
@@ -228,7 +232,6 @@
           break;
 
         case 'tl-add-to-cart': {
-          closeModal();
           var _vid   = e.data.variantId;
           var _props = e.data.properties;
           var _qty   = e.data.quantity || 1;
@@ -243,6 +246,9 @@
             })
             .then(function(r) { return r.json(); })
             .then(function() {
+              // Fermer le modal APRÈS succès (pas avant, sinon la boutique password redirect)
+              closeModal();
+
               // 1. Déclencher cart:update — component-cart-items.js va re-fetcher les sections automatiquement
               document.dispatchEvent(new CustomEvent('cart:update', {
                 bubbles: true,

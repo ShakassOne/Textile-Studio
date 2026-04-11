@@ -9,7 +9,6 @@
       href="{{ tl_editor_url }}"
       data-tl-editor="true"
       class="button"
-      onclick="if(window.TLModal){event.preventDefault();TLModal.open(this.getAttribute('href'));return false;}"
       style="display:flex;width:100%;justify-content:center;align-items:center;gap:8px;margin-top:8px;text-decoration:none;"
     >
       <span>🎨</span>
@@ -41,7 +40,6 @@
         btn.className  = 'button';
         btn.style.cssText = 'display:flex;width:100%;justify-content:center;align-items:center;gap:8px;margin-top:8px;text-decoration:none;';
         btn.innerHTML  = '<span>&#127912;</span><span>Personnaliser</span>';
-        btn.onclick = function(e) { if (window.TLModal) { e.preventDefault(); TLModal.open(this.href); return false; } };
         el.appendChild(btn);
       })
       .catch(function() {});
@@ -49,6 +47,16 @@
   </script>
 
 {%- endif -%}
+
+<script>
+(function() {
+  if (window.__tlModalLoaded) return;
+  window.__tlModalLoaded = true;
+  var s = document.createElement('script');
+  s.src = {{ 'tl-modal.js' | asset_url | json }};
+  document.head.appendChild(s);
+})();
+</script>
 
 {% schema %}
 {
