@@ -1,12 +1,12 @@
 /**
  * tl-modal.js — TextileLab Studio : ouverture de l'éditeur en modal plein écran
  *
- * À inclure dans le thème Shopify (layout/theme.liquid ou via snippet).
+ * À inclure dans le thème Shopify via l'App Embed Block (tl-embed.liquid).
  * Intercepte les liens "Personnalisé" et ouvre l'éditeur dans un overlay plein écran.
  *
  * Communication iframe ↔ parent via postMessage :
- *   - { type: 'tl-add-to-cart', variantId, quantity, properties } → AJAX cart + drawer
- *   - { type: 'tl-close-modal' }                                  → ferme le modal
+ *   - { type: 'tl-add-to-cart', variantId, quantity, properties, previewUrl } → AJAX cart + drawer
+ *   - { type: 'tl-close-modal' }                                               → ferme le modal
  */
 
 (function () {
@@ -77,17 +77,14 @@
   }
 
   // ── Mise à jour des sections Shopify (Dawn / OS 2.0) ───────────────────────
-  // Appelée avec data.sections retourné par /cart/add.json?sections=...
   function _tlUpdateCartSections(sections) {
     if (!sections) return;
     var parser = new DOMParser();
     Object.keys(sections).forEach(function(sectionId) {
-      var doc    = parser.parseFromString(sections[sectionId], 'text/html');
-      var newEl  = doc.getElementById(sectionId);
+      var doc     = parser.parseFromString(sections[sectionId], 'text/html');
+      var newEl   = doc.getElementById(sectionId);
       var existEl = document.getElementById(sectionId);
-      if (newEl && existEl) {
-        existEl.innerHTML = newEl.innerHTML;
-      }
+      if (newEl && existEl) existEl.innerHTML = newEl.innerHTML;
     });
   }
 
@@ -97,7 +94,6 @@
       .then(function(r) { return r.json(); })
       .then(function(cart) {
         var count = cart.item_count || 0;
-        // Sélecteurs communs pour le compteur panier
         var bubbles = document.querySelectorAll(
           '.cart-count-bubble span, #cart-icon-bubble .cart-count-bubble span, ' +
           '[data-cart-count], .header__cart-count'
@@ -111,11 +107,9 @@
 
   // ── Ouverture du drawer panier natif du thème ───────────────────────────────
   function _tlOpenCartDrawer() {
-    // Dawn / Shopify OS 2.0
     document.documentElement.dispatchEvent(new CustomEvent('cart:open', { bubbles: true }));
     document.dispatchEvent(new CustomEvent('cart:refresh', { bubbles: true }));
 
-    // Fallback universel : clic sur l'icône panier
     var _selectors = [
       '#cart-icon-bubble',
       '[data-cart-toggle]',
@@ -133,67 +127,49 @@
     }
   }
 
-  // ── Remplacement de l'image produit par l'aperçu design ────────────────────
-  // previewUrl = URL directe du PNG de prévisualisation (Railway CDN ou Shopify)
-  function _tlInjectCartImages(previewUrl) {
-    var _attempts = 0;
+  // ── Injection universelle de l'image design dans le panier ─────────────────
+  // Utilise [data-variant-id] que Shopify ajoute nativement sur tous les thèmes.
+  // MutationObserver pour couvrir les drawers lazy-loadés, timeout 5s.
+  function _tlInjectCartImage(variantId, previewUrl) {
+    if (!previewUrl || !variantId) return;
+    var vid = String(variantId);
 
-    function _try() {
-      _attempts++;
-      var cartItems = document.querySelectorAll(
-        '#cart-drawer .cart-item, .cart-drawer__content .cart-item, ' +
-        '[id*="CartDrawer"] .cart-item, .cart-items .cart-item, ' +
-        '.cart-drawer [class*="cart-item"]'
-      );
+    function _inject() {
+      // Chercher tous les éléments portant l'attribut natif Shopify data-variant-id
+      var nodes = document.querySelectorAll('[data-variant-id="' + vid + '"]');
+      nodes.forEach(function(node) {
+        if (node.dataset.tlImg) return; // déjà traité
+        node.dataset.tlImg = '1';
 
-      // Cibler le dernier item ajouté (le plus récent)
-      var lastItem = cartItems.length > 0 ? cartItems[cartItems.length - 1] : null;
-
-      if (lastItem && !lastItem.dataset.tlImg) {
-        lastItem.dataset.tlImg = '1';
-
-        // Fix layout drawer — texte à droite de la vignette
-        lastItem.style.display    = 'flex';
-        lastItem.style.alignItems = 'flex-start';
-        lastItem.style.gap        = '1rem';
-
-        // Remplacer l'image produit par défaut par l'aperçu du design
-        if (previewUrl) {
-          var img = lastItem.querySelector('img.cart-item__image, img[loading="lazy"], img');
-          if (img) {
-            img.src            = previewUrl;
-            img.srcset         = '';
-            img.style.objectFit = 'cover';
-            // Fond transparent sur la vignette
-            img.style.background    = 'transparent';
-            img.style.mixBlendMode  = 'multiply';
-            if (img.parentElement) img.parentElement.style.background = 'transparent';
-            // Bloc texte à droite de l'image
-            var imgContainer = img.closest('.cart-item__image-container');
-            if (imgContainer && imgContainer.nextElementSibling) {
-              imgContainer.nextElementSibling.style.flex = '1';
-            }
-          }
+        var img = node.querySelector('img');
+        if (img) {
+          img.src    = previewUrl;
+          img.srcset = '';
+          img.style.objectFit    = 'cover';
+          img.style.background   = 'transparent';
+          img.style.mixBlendMode = 'multiply';
         }
 
-        // Transformer les propriétés brutes en éléments lisibles
-        _tlFixLineItemProps(lastItem);
-
-      } else if (!lastItem && _attempts < 5) {
-        setTimeout(_try, 600);
-      }
-
-      // Passer aussi sur tous les items existants (cas page rafraîchie)
-      cartItems.forEach(function(item) { _tlFixLineItemProps(item); });
+        // Nettoyer les propriétés line item affichées
+        _tlFixLineItemProps(node);
+      });
     }
 
-    setTimeout(_try, 450);
+    // Premier essai immédiat
+    _inject();
+
+    // MutationObserver pour les drawers qui se chargent après (lazy render)
+    var _observer = new MutationObserver(function() { _inject(); });
+    _observer.observe(document.body, { childList: true, subtree: true });
+
+    // Déconnecter après 5 secondes
+    setTimeout(function() { _observer.disconnect(); }, 5000);
   }
 
   // ── Nettoyage des propriétés line item dans le drawer ─────────────────────
   function _tlFixLineItemProps(container) {
     if (!container) return;
-    var dts = container.querySelectorAll('dl dt, dl dt');
+    var dts = container.querySelectorAll('dl dt');
     dts.forEach(function(dt) {
       if (dt.dataset.tlFixed) return;
       dt.dataset.tlFixed = '1';
@@ -232,9 +208,13 @@
           break;
 
         case 'tl-add-to-cart': {
-          var _vid   = e.data.variantId;
-          var _props = e.data.properties;
-          var _qty   = e.data.quantity || 1;
+          var _vid        = e.data.variantId;
+          var _props      = e.data.properties || {};
+          var _qty        = e.data.quantity || 1;
+          var _previewUrl = e.data.previewUrl || _props['_preview_img'] || null;
+
+          // Stocker previewUrl dans les propriétés line item (masqué côté drawer via _tlFixLineItemProps)
+          if (_previewUrl) _props['_preview_img'] = _previewUrl;
 
           if (_vid && _props) {
             fetch('/cart/add.json', {
@@ -246,23 +226,28 @@
             })
             .then(function(r) { return r.json(); })
             .then(function() {
-              // Fermer le modal APRÈS succès (pas avant, sinon la boutique password redirect)
+              // Fermer le modal APRÈS succès
               closeModal();
 
-              // 1. Déclencher cart:update — component-cart-items.js va re-fetcher les sections automatiquement
+              // 1. Déclencher cart:update
               document.dispatchEvent(new CustomEvent('cart:update', {
                 bubbles: true,
                 detail: { source: 'tl-modal', data: { sections: {} } }
               }));
 
-              // 2. Ouvrir le drawer directement via l'API du composant
+              // 2. Ouvrir le drawer via l'API du composant
               var drawerEl = document.querySelector('cart-drawer-component');
               if (drawerEl) {
-                if (typeof drawerEl.open === 'function') { drawerEl.open(); }
+                if (typeof drawerEl.open === 'function')           { drawerEl.open(); }
                 else if (typeof drawerEl.showDialog === 'function') { drawerEl.showDialog(); }
               }
 
-              // 3. Nettoyer les propriétés _ sur les items après re-render
+              // 3. Injection universelle de l'image design via [data-variant-id]
+              if (_previewUrl) {
+                setTimeout(function() { _tlInjectCartImage(_vid, _previewUrl); }, 400);
+              }
+
+              // 4. Nettoyer les propriétés _ sur les items après re-render
               setTimeout(function() {
                 var cartItems = document.querySelectorAll(
                   '#cart-drawer .cart-item, .cart-drawer__content .cart-item, ' +
@@ -275,7 +260,6 @@
             .catch(function() { window.location.href = '/cart'; });
 
           } else if (e.data.cartUrl) {
-            // Rétrocompat : ancienne version avec cartUrl
             setTimeout(function() { window.location.href = e.data.cartUrl; }, 250);
           }
           break;

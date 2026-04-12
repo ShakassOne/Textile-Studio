@@ -6,6 +6,7 @@ const fs      = require('fs');
 const { requireAuth } = require('./auth');
 const { getDB } = require('../db/database');
 const { uploadToFtpAsync, isFtpConfigured } = require('../utils/ftp-upload');
+const { uploadToShopifyFiles } = require('../utils/shopify-files');
 
 // Utilise DATA_DIR si défini (prod Railway) sinon dossier projet
 const DATA_DIR    = process.env.DATA_DIR || path.join(__dirname, '..');
@@ -81,8 +82,9 @@ router.post('/save-views', (req, res) => {
   }
 });
 
-// ── POST /api/render/save ── reçoit base64, sauvegarde le fichier PNG (public — appelé par le studio)
-router.post('/save', (req, res) => {
+// ── POST /api/render/save ── reçoit base64, sauvegarde PNG, upload Shopify Files CDN
+// Retourne previewUrl = URL CDN Shopify (cdn.shopify.com) ou Railway en fallback
+router.post('/save', async (req, res) => {
   const { design_id, png_base64 } = req.body;
   if (!design_id || !png_base64) {
     return res.status(400).json({ error: 'design_id et png_base64 requis' });
@@ -96,37 +98,51 @@ router.post('/save', (req, res) => {
     const filepath = path.join(RENDERS_DIR, filename);
     fs.writeFileSync(filepath, buffer);
 
-    const url    = `/uploads/renders/${filename}`;
-    const sizeKb = Math.round(buffer.length / 1024);
+    const relUrl  = `/uploads/renders/${filename}`;
+    const APP_URL = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
+    const sizeKb  = Math.round(buffer.length / 1024);
 
-    // Mettre à jour le design avec l'URL du render HD
+    // ── Mise à jour DB avec l'URL Railway (disponible immédiatement) ─────
     const db = getDB();
-    try {
-      db.prepare('UPDATE designs SET render_url=?, render_size_kb=? WHERE id=?')
-        .run(url, sizeKb, design_id);
-    } catch(e) {
+    try { db.prepare('ALTER TABLE designs ADD COLUMN render_url TEXT').run(); }      catch { /* ok */ }
+    try { db.prepare('ALTER TABLE designs ADD COLUMN render_size_kb INTEGER').run(); } catch { /* ok */ }
+    try { db.prepare('ALTER TABLE designs ADD COLUMN preview_cdn_url TEXT').run(); }  catch { /* ok */ }
+
+    db.prepare('UPDATE designs SET render_url=?, render_size_kb=? WHERE id=?')
+      .run(relUrl, sizeKb, design_id);
+
+    console.log(`[render] PNG sauvegardé: ${filename} (${sizeKb} Ko)`);
+
+    // ── Upload Shopify Files CDN ──────────────────────────────────────────
+    const shop  = process.env.SHOPIFY_BOOTSTRAP_SHOP;
+    const token = process.env.SHOPIFY_ACCESS_TOKEN || process.env.SHOPIFY_BOOTSTRAP_TOKEN;
+
+    let previewUrl = `${APP_URL}${relUrl}`; // fallback Railway
+
+    if (shop && token) {
       try {
-        db.prepare('ALTER TABLE designs ADD COLUMN render_url TEXT').run();
-        db.prepare('ALTER TABLE designs ADD COLUMN render_size_kb INTEGER').run();
-        db.prepare('UPDATE designs SET render_url=?, render_size_kb=? WHERE id=?')
-          .run(url, sizeKb, design_id);
-      } catch(e2) { /* déjà ajoutées */ }
-    }
-
-    console.log(`[render] PNG HD sauvegardé: ${filename} (${sizeKb} Ko)`);
-
-    // ── Upload FTP asynchrone (fire-and-forget, ne bloque pas la réponse) ──
-    // Déclenché si FTP_HOST + FTP_USER + FTP_PASSWORD sont définis dans .env
-    if (isFtpConfigured()) {
+        const cdnUrl = await uploadToShopifyFiles(filepath, shop, token);
+        db.prepare('UPDATE designs SET preview_cdn_url=? WHERE id=?').run(cdnUrl, design_id);
+        try { fs.unlinkSync(filepath); } catch { /* pas bloquant */ }
+        previewUrl = cdnUrl;
+        console.log(`[render] CDN Shopify ✅ ${cdnUrl}`);
+      } catch (cdnErr) {
+        // Fallback Railway — fichier local conservé
+        console.warn(`[render] CDN Shopify échoué (fallback Railway) : ${cdnErr.message}`);
+        // FTP en fallback secondaire si configuré
+        if (isFtpConfigured()) {
+          uploadToFtpAsync(filepath, filename, 3);
+        }
+      }
+    } else if (isFtpConfigured()) {
       uploadToFtpAsync(filepath, filename, 3);
-      console.log(`[render] FTP upload planifié → ${filename}`);
     }
 
     res.json({
-      url,
+      url:        relUrl,
+      previewUrl, // cdn.shopify.com si OK, Railway sinon
       filename,
-      size_kb:     sizeKb,
-      ftp_queued:  isFtpConfigured(),
+      size_kb:    sizeKb,
     });
 
   } catch(err) {
@@ -185,31 +201,31 @@ router.get('/:design_id', (req, res) => {
   const db  = getDB();
   let design;
   try {
-    design = db.prepare('SELECT id, render_url, render_size_kb FROM designs WHERE id=?')
+    design = db.prepare('SELECT id, render_url, render_size_kb, preview_cdn_url FROM designs WHERE id=?')
                .get(req.params.design_id);
   } catch(e) {
     return res.json({ render_url: null });
   }
   if (!design) return res.status(404).json({ error: 'Design introuvable' });
 
-  // Construire l'URL absolue (render_url est un chemin relatif type /uploads/renders/...)
-  const APP_URL = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
+  const APP_URL     = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
   const relativeUrl = design.render_url || null;
   const absoluteUrl = relativeUrl
     ? (relativeUrl.startsWith('http') ? relativeUrl : `${APP_URL}${relativeUrl}`)
     : null;
+  // Préférer l'URL CDN Shopify si disponible
+  const previewUrl = design.preview_cdn_url || absoluteUrl;
 
-  // Mode JSON explicite (?json=1) ou pas de render disponible → JSON
   if (req.query.json === '1' || !absoluteUrl) {
     return res.json({
       design_id:      design.id,
       render_url:     absoluteUrl,
+      preview_url:    previewUrl,
       render_size_kb: design.render_size_kb || null,
     });
   }
 
-  // Défaut : redirection 302 → le navigateur/email ouvre directement l'image PNG
-  res.redirect(302, absoluteUrl);
+  res.redirect(302, previewUrl || absoluteUrl);
 });
 
 module.exports = router;
