@@ -7,7 +7,7 @@ const path = require('path');
  * uploadToShopifyFiles(localFilePath, shop, accessToken)
  *
  * 1. stagedUploadsCreate  → obtenir une URL signée AWS S3
- * 2. PUT du buffer PNG     → uploader le fichier vers S3
+ * 2. PUT du buffer PNG     → uploader directement vers S3 (URL présignée, ne pas modifier)
  * 3. fileCreate            → finaliser dans Shopify Files
  * 4. Retourne l'URL CDN   → https://cdn.shopify.com/s/files/...
  */
@@ -55,20 +55,31 @@ async function uploadToShopifyFiles(localFilePath, shop, accessToken) {
     throw err;
   }
 
-  // ── 2. PUT vers l'URL signée (AWS S3 presigned) ──────────────────────────
-  const params  = target.parameters || [];
-  let   putUrl  = target.url;
-  if (params.length) {
-    const qs = params.map(p => `${encodeURIComponent(p.name)}=${encodeURIComponent(p.value)}`).join('&');
-    putUrl  += (putUrl.includes('?') ? '&' : '?') + qs;
+  // ── 2. PUT vers l'URL S3 présignée ───────────────────────────────────────
+  // IMPORTANT : ne PAS modifier l'URL (pas de query params supplémentaires)
+  // Les paramètres retournés par Shopify sont des headers HTTP, pas des query params.
+  // Ajouter des params à une URL S3 présignée invalide la signature → 403.
+  const putHeaders = { 'Content-Type': 'image/png' };
+  for (const { name, value } of (target.parameters || [])) {
+    // Ne pas écraser Content-Type si déjà défini
+    if (name.toLowerCase() !== 'content-type') {
+      putHeaders[name] = value;
+    }
   }
 
-  const putRes = await fetch(putUrl, {
+  console.log(`[shopify-files] PUT → ${target.url.split('?')[0]}... (${fileSize} bytes)`);
+  const putRes = await fetch(target.url, {
     method:  'PUT',
-    headers: { 'Content-Type': 'image/png', 'Content-Length': String(fileSize) },
+    headers: putHeaders,
     body:    fileBuffer,
   });
-  if (!putRes.ok) throw new Error(`PUT S3 échoué : HTTP ${putRes.status}`);
+
+  if (!putRes.ok) {
+    const body = await putRes.text().catch(() => '');
+    console.error(`[shopify-files] PUT S3 échoué HTTP ${putRes.status}:`, body.slice(0, 300));
+    throw new Error(`PUT S3 échoué : HTTP ${putRes.status}`);
+  }
+  console.log(`[shopify-files] PUT S3 OK (${putRes.status})`);
 
   // ── 3. fileCreate — finaliser dans Shopify Files ─────────────────────────
   const createRes = await fetch(GQL, {
