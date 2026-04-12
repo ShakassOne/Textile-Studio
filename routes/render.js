@@ -128,7 +128,8 @@ router.post('/save', async (req, res) => {
         console.log(`[render] CDN Shopify ✅ ${cdnUrl}`);
       } catch (cdnErr) {
         // Fallback Railway — fichier local conservé
-        console.warn(`[render] CDN Shopify échoué (fallback Railway) : ${cdnErr.message}`);
+        console.error(`[render] CDN Shopify ERREUR : ${cdnErr.message}`);
+        if (cdnErr.graphqlErrors) console.error('[render] GraphQL errors :', JSON.stringify(cdnErr.graphqlErrors));
         // FTP en fallback secondaire si configuré
         if (isFtpConfigured()) {
           uploadToFtpAsync(filepath, filename, 3);

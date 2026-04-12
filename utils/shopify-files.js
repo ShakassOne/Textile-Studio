@@ -48,7 +48,12 @@ async function uploadToShopifyFiles(localFilePath, shop, accessToken) {
   const stageData  = await stageRes.json();
   const target     = stageData?.data?.stagedUploadsCreate?.stagedTargets?.[0];
   const stageErrs  = stageData?.data?.stagedUploadsCreate?.userErrors;
-  if (!target) throw new Error(stageErrs?.map(e => e.message).join(', ') || 'stagedUploadsCreate: pas de target');
+  if (!target) {
+    const err = new Error(stageErrs?.map(e => e.message).join(', ') || 'stagedUploadsCreate: pas de target');
+    err.graphqlErrors = stageErrs;
+    console.error('[shopify-files] stagedUploadsCreate raw:', JSON.stringify(stageData?.errors || stageErrs));
+    throw err;
+  }
 
   // ── 2. PUT vers l'URL signée (AWS S3 presigned) ──────────────────────────
   const params  = target.parameters || [];
@@ -92,7 +97,12 @@ async function uploadToShopifyFiles(localFilePath, shop, accessToken) {
   const createData = await createRes.json();
   const file       = createData?.data?.fileCreate?.files?.[0];
   const createErrs = createData?.data?.fileCreate?.userErrors;
-  if (!file) throw new Error(createErrs?.map(e => e.message).join(', ') || 'fileCreate: pas de fichier');
+  if (!file) {
+    const err = new Error(createErrs?.map(e => e.message).join(', ') || 'fileCreate: pas de fichier');
+    err.graphqlErrors = createErrs;
+    console.error('[shopify-files] fileCreate raw:', JSON.stringify(createData?.errors || createErrs));
+    throw err;
+  }
 
   const cdnUrl = file?.image?.url || file?.url || null;
   if (!cdnUrl) throw new Error('fileCreate: URL CDN absente');

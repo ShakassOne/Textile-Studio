@@ -5064,7 +5064,7 @@ async function _checkoutShopifyDirect() {
   }
   viewsCount = Math.max(1, viewsCount);
 
-  // ── 4. Uploader les thumbnails de chaque vue (fire-and-forget) ──
+  // ── 4. Uploader les thumbnails de chaque vue ──
   let viewsPreview = {}; // { idx: { url, name } }
   if (designId && viewsToUpload.length) {
     try {
@@ -5075,6 +5075,24 @@ async function _checkoutShopifyDirect() {
       viewsPreview = r?.views || {};
     } catch(e) {
       console.warn('[TextileLab] save-views:', e.message);
+    }
+  }
+
+  // ── 4b. Upload CDN Shopify — appel séquentiel, résultat utilisé pour _preview_img ──
+  // /api/render/save retourne previewUrl = cdn.shopify.com (ou Railway en fallback)
+  let _cdnPreviewUrl = null;
+  const _firstViewBase64 = viewsToUpload[0]?.png_base64 || null;
+  if (designId && _firstViewBase64) {
+    try {
+      const _saveRes = await apiFetch('/api/render/save', {
+        method: 'POST',
+        body: JSON.stringify({ design_id: designId, png_base64: _firstViewBase64 }),
+      });
+      _cdnPreviewUrl = _saveRes?.previewUrl || null;
+      if (_cdnPreviewUrl) console.log('[TextileLab] previewUrl CDN ✅', _cdnPreviewUrl);
+      else console.warn('[TextileLab] render/save : previewUrl absent de la réponse', _saveRes);
+    } catch(e) {
+      console.warn('[TextileLab] render/save CDN :', e.message);
     }
   }
 
@@ -5094,11 +5112,11 @@ async function _checkoutShopifyDirect() {
   }
   // ── UID unique pour éviter la fusion des lignes dans le panier Shopify ──
   propsObj['_design_uid'] = Date.now() + '-' + Math.random().toString(36).slice(2, 7);
-  // ── Image prévisualisation (1ère vue uploadée) — affichée dans le panier ──
+  // ── Image prévisualisation — CDN Shopify en priorité, Railway en fallback ──
   const _firstViewUrl = Object.values(viewsPreview)[0]?.url || null;
-  if (_firstViewUrl) {
-    propsObj['_preview_img'] = _firstViewUrl.startsWith('http') ? _firstViewUrl : `${APP_ORIGIN}${_firstViewUrl}`;
-  }
+  const _previewImgUrl = _cdnPreviewUrl
+    || (_firstViewUrl ? (_firstViewUrl.startsWith('http') ? _firstViewUrl : `${APP_ORIGIN}${_firstViewUrl}`) : null);
+  if (_previewImgUrl) propsObj['_preview_img'] = _previewImgUrl;
 
   try {
     const pRes = await fetch(`${APP_ORIGIN}/api/shopify/product-variant?handle=${encodeURIComponent(window._TL_PRODUCT_HANDLE)}`);
@@ -5115,6 +5133,7 @@ async function _checkoutShopifyDirect() {
           variantId:  String(variantId),
           quantity:   1,
           properties: propsObj,
+          previewUrl: _previewImgUrl || null,
         }, '*');
       }, 800);
     } else {
