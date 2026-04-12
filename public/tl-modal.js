@@ -128,19 +128,20 @@
   }
 
   // ── Injection universelle de l'image design dans le panier ─────────────────
-  // Utilise [data-variant-id] que Shopify ajoute nativement sur tous les thèmes.
+  // Double approche :
+  //   1. [data-variant-id] — attribut natif Shopify (Dawn, Debut, la plupart des thèmes)
+  //   2. /cart.js + index — pour les thèmes table-based sans [data-variant-id] sur les lignes
   // MutationObserver pour couvrir les drawers lazy-loadés, timeout 5s.
   function _tlInjectCartImage(variantId, previewUrl) {
     if (!previewUrl || !variantId) return;
     var vid = String(variantId);
 
-    function _inject() {
-      // Chercher tous les éléments portant l'attribut natif Shopify data-variant-id
+    // Approche 1 : sélecteur [data-variant-id] natif Shopify
+    function _injectByVariantId() {
       var nodes = document.querySelectorAll('[data-variant-id="' + vid + '"]');
       nodes.forEach(function(node) {
-        if (node.dataset.tlImg) return; // déjà traité
+        if (node.dataset.tlImg) return;
         node.dataset.tlImg = '1';
-
         var img = node.querySelector('img');
         if (img) {
           img.src    = previewUrl;
@@ -149,17 +150,54 @@
           img.style.background   = 'transparent';
           img.style.mixBlendMode = 'multiply';
         }
-
-        // Nettoyer les propriétés line item affichées
         _tlFixLineItemProps(node);
       });
     }
 
-    // Premier essai immédiat
-    _inject();
+    // Approche 2 : /cart.js + correspondance par index (thèmes table-based)
+    function _injectByCartIndex() {
+      fetch('/cart.js')
+        .then(function(r) { return r.json(); })
+        .then(function(cart) {
+          var items = cart.items || [];
+          // Sélecteurs couvrant les drawers table-based courants
+          var rows = Array.from(document.querySelectorAll(
+            'cart-drawer tbody tr, ' +
+            '.cart-drawer tbody tr, ' +
+            '[id*="CartDrawer"] tbody tr, ' +
+            '[id*="cart-drawer"] tbody tr, ' +
+            '[id*="cart"] tbody tr'
+          ));
+          if (!rows.length) return;
+          items.forEach(function(item, idx) {
+            var url = (item.properties && item.properties['_preview_img']) || null;
+            if (!url) return;
+            var row = rows[idx];
+            if (!row || row.dataset.tlImg) return;
+            row.dataset.tlImg = '1';
+            var img = row.querySelector('img');
+            if (img) {
+              img.src    = url;
+              img.srcset = '';
+              img.style.objectFit    = 'cover';
+              img.style.background   = 'transparent';
+              img.style.mixBlendMode = 'multiply';
+            }
+            _tlFixLineItemProps(row);
+          });
+        })
+        .catch(function() {});
+    }
+
+    // Exécuter les deux approches immédiatement
+    _injectByVariantId();
+    _injectByCartIndex();
 
     // MutationObserver pour les drawers qui se chargent après (lazy render)
-    var _observer = new MutationObserver(function() { _inject(); });
+    var _observer = new MutationObserver(function() {
+      _injectByVariantId();
+      _injectByCartIndex();
+    });
     _observer.observe(document.body, { childList: true, subtree: true });
 
     // Déconnecter après 5 secondes
