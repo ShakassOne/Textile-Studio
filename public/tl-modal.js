@@ -150,8 +150,52 @@
   //   - MutationObserver permanent debouncé (200ms) → couvre les rendus
   //     dynamiques du drawer (open/close, quantity change, etc.)
 
+  // ── Fix layout du <tr>/<div> grid panier ───────────────────────────────────
+  // Bug observé sur les thèmes Shopify modernes (notamment Studio) : le row
+  // utilise display:grid avec grid-template-columns dynamique (ex: "53px 1fr
+  // 96px") MAIS la <td> de l'image a un style HTML inline width:140px;
+  // min-width:140px qui force la cellule à 140px → la cellule déborde de la
+  // colonne grid prévue (53px) et chevauche la cellule details voisine, qui
+  // contient le titre du produit + line item properties.
+  //
+  // Fix universel : sur les <tr>/<div> grid contenant une <img>, on
+  // neutralise les widths inline des cellules ET on élargit la 1ère colonne
+  // grid à 120px si elle calculait moins de 80px (signature du bug). Aucun
+  // effet sur les thèmes sains où grid-template-columns est cohérent avec
+  // le contenu.
+  function _tlFixCartGridConflict(rowEl) {
+    if (!rowEl) return;
+    var cs = window.getComputedStyle(rowEl);
+    if (cs.display !== 'grid') return;
+    if (!rowEl.querySelector('img')) return;
+    if (rowEl.dataset.tlGridFixed) return;
+    rowEl.dataset.tlGridFixed = '1';
+
+    // Neutraliser les widths inline des cellules directes — le grid prendra
+    // le relais pour calculer leur largeur.
+    Array.prototype.forEach.call(rowEl.children, function(cell) {
+      cell.style.setProperty('width', 'auto', 'important');
+      cell.style.setProperty('min-width', '0', 'important');
+    });
+
+    // Si la 1ère colonne calculée fait < 80px (signe que le grid a sous-
+    // dimensionné l'image), élargir à 120px. On préserve les colonnes
+    // suivantes telles quelles.
+    var cols = (cs.gridTemplateColumns || '').split(' ');
+    if (cols.length >= 2) {
+      var firstColPx = parseFloat(cols[0]);
+      if (!isNaN(firstColPx) && firstColPx < 80) {
+        var rest = cols.slice(1).join(' ');
+        rowEl.style.setProperty('grid-template-columns', '120px ' + rest, 'important');
+      }
+    }
+  }
+
   function _tlInjectOverlay(rowEl, previewUrl) {
     if (!rowEl || !previewUrl) return;
+    // Fix layout AVANT d'injecter l'overlay — sinon l'overlay hérite du
+    // container chevauchant et le bug visuel persiste.
+    _tlFixCartGridConflict(rowEl);
     var img = rowEl.querySelector('img');
     if (!img) return;
     var container = img.parentElement;
