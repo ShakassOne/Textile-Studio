@@ -134,11 +134,12 @@ function initDB() {
       created_at TEXT DEFAULT (datetime('now'))
     )
   `);
-  // Migrer les catégories existantes issues des placeholders
+  // Migrer les catégories existantes issues des placeholders (legacy, exécuté une fois)
+  // Désormais scopé via le shop bootstrap pour cohérence avec la migration 001.
   try {
-    const existing = db.prepare("SELECT DISTINCT category FROM library WHERE filename LIKE '__cat_placeholder_%'").all();
-    const insertCat = db.prepare("INSERT OR IGNORE INTO categories (name) VALUES (?)");
-    for (const row of existing) { try { insertCat.run(row.category); } catch {} }
+    const existing = db.prepare("SELECT DISTINCT category, shop_id FROM library WHERE filename LIKE '__cat_placeholder_%'").all();
+    const insertCat = db.prepare("INSERT OR IGNORE INTO categories (shop_id, name) VALUES (?, ?)");
+    for (const row of existing) { try { if (row.shop_id && row.category) insertCat.run(row.shop_id, row.category); } catch {} }
     // Nettoyer tous les placeholders existants (fichiers + DB)
     const placeholders = db.prepare("SELECT * FROM library WHERE filename LIKE '__cat_placeholder_%'").all();
     const fs2 = require('fs');
@@ -149,16 +150,30 @@ function initDB() {
     }
     if (placeholders.length) console.log(`🧹 ${placeholders.length} cat_placeholder(s) supprimé(s) définitivement`);
   } catch {}
-  // Également migrer les catégories venant des images réelles
+  // Migrer les catégories venant des images réelles (scopé shop)
   try {
-    const realCats = db.prepare("SELECT DISTINCT category FROM library").all();
-    const insertCat = db.prepare("INSERT OR IGNORE INTO categories (name) VALUES (?)");
-    for (const row of realCats) { try { if(row.category) insertCat.run(row.category); } catch {} }
+    const realCats = db.prepare("SELECT DISTINCT category, shop_id FROM library WHERE shop_id IS NOT NULL").all();
+    const insertCat = db.prepare("INSERT OR IGNORE INTO categories (shop_id, name) VALUES (?, ?)");
+    for (const row of realCats) { try { if (row.category) insertCat.run(row.shop_id, row.category); } catch {} }
   } catch {}
 
-  // ── Table: settings (clés/valeurs de configuration) ──────────────────
+  // ── Table: settings (clés/valeurs scopées par shop) ──────────────────
+  // Audit B1 : multi-tenant scoping. La migration 001 recrée cette table avec
+  // PRIMARY KEY (shop_id, key) si elle a encore l'ancienne PK(key).
   db.exec(`
     CREATE TABLE IF NOT EXISTS settings (
+      key        TEXT PRIMARY KEY,
+      value      TEXT NOT NULL DEFAULT '',
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
+  // ── Table: admin_settings (config GLOBALE non scopée par shop) ───────
+  // Stocke le hash du mot de passe admin TextileLab (super-admin),
+  // et autres clés non multi-tenant. Audit B1 : settings devient scopé par shop,
+  // donc il faut une table dédiée pour les clés globales.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS admin_settings (
       key        TEXT PRIMARY KEY,
       value      TEXT NOT NULL DEFAULT '',
       updated_at TEXT DEFAULT (datetime('now'))
@@ -176,17 +191,28 @@ function initDB() {
       created_at TEXT DEFAULT (datetime('now'))
     )
   `);
-  // Seeder avec les 4 catégories par défaut si la table est vide
+  // Seeder pour le shop bootstrap si la table est vide (audit B1 : multi-tenant scoping).
+  // Ce seed est appliqué uniquement quand le shop bootstrap existe en DB ; les autres
+  // marchands déclencheront leur propre seed lors de l'installation OAuth (à implémenter
+  // dans routes/oauth.js si besoin — pour l'instant ils héritent à la 1ère création via API).
   const catCount = db.prepare('SELECT COUNT(*) as n FROM product_categories').get();
   if (catCount.n === 0) {
-    const insertCat = db.prepare('INSERT OR IGNORE INTO product_categories (key, name, emoji, sort_order) VALUES (?, ?, ?, ?)');
-    [
-      ['tshirt',  'T-Shirt',   '👕', 0],
-      ['hoodie',  'Hoodie',    '🧥', 1],
-      ['cap',     'Casquette', '🧢', 2],
-      ['totebag', 'Tote Bag',  '👜', 3],
-    ].forEach(([k, n, e, s]) => { try { insertCat.run(k, n, e, s); } catch {} });
-    console.log('🏷  product_categories seeded with 4 defaults');
+    const bootstrapDomain = (process.env.SHOPIFY_BOOTSTRAP_SHOP || '').toLowerCase().trim();
+    const bootstrapRow = bootstrapDomain
+      ? db.prepare('SELECT id FROM shops WHERE shop_domain=?').get(bootstrapDomain)
+      : db.prepare('SELECT id FROM shops WHERE is_active=1 ORDER BY id ASC LIMIT 1').get();
+    if (bootstrapRow?.id) {
+      const insertCat = db.prepare('INSERT OR IGNORE INTO product_categories (shop_id, key, name, emoji, sort_order) VALUES (?, ?, ?, ?, ?)');
+      [
+        ['tshirt',  'T-Shirt',   '👕', 0],
+        ['hoodie',  'Hoodie',    '🧥', 1],
+        ['cap',     'Casquette', '🧢', 2],
+        ['totebag', 'Tote Bag',  '👜', 3],
+      ].forEach(([k, n, e, s]) => { try { insertCat.run(bootstrapRow.id, k, n, e, s); } catch {} });
+      console.log('🏷  product_categories seeded with 4 defaults (shop bootstrap)');
+    } else {
+      console.log('🏷  product_categories seed skipped — no bootstrap shop yet (will seed at OAuth install)');
+    }
   }
 
   // ── Table: product_mockup_links (liaisons Produit Shopify ↔ Mockup) ──────
@@ -201,6 +227,15 @@ function initDB() {
     )
   `);
 
+  // ── Migration 001 : multi-tenant scoping (shop_id) ──────────────────────
+  // Audit B1 (2026-04-19) : voir db/migrations/001_multi_tenant.js
+  try {
+    const migration001 = require('./migrations/001_multi_tenant');
+    migration001.run(db);
+  } catch (e) {
+    console.error('❌  Migration 001 (multi-tenant) failed:', e.message);
+  }
+
   console.log('✅  DB initialised — 10 tables ready');
   return db;
 }
@@ -214,9 +249,33 @@ function getShop(shopDomain) {
   return db.prepare('SELECT * FROM shops WHERE shop_domain = ? AND is_active = 1').get(shopDomain) || null;
 }
 
+/**
+ * Retourne l'ID du shop bootstrap (SHOPIFY_BOOTSTRAP_SHOP), ou null.
+ * Utilisé en fallback pour les routes publiques sans contexte Shopify.
+ */
+function getBootstrapShopId() {
+  const domain = (process.env.SHOPIFY_BOOTSTRAP_SHOP || '').toLowerCase().trim();
+  if (!domain) return null;
+  const row = getDB()
+    .prepare('SELECT id FROM shops WHERE shop_domain = ? AND is_active = 1')
+    .get(domain);
+  return row?.id || null;
+}
+
+/**
+ * Résout shop_id depuis un domain. Retourne null si introuvable.
+ */
+function getShopIdByDomain(shopDomain) {
+  if (!shopDomain) return null;
+  const row = getDB()
+    .prepare('SELECT id FROM shops WHERE shop_domain = ? AND is_active = 1')
+    .get(String(shopDomain).toLowerCase().trim());
+  return row?.id || null;
+}
+
 function getDB() {
   if (!db) initDB();
   return db;
 }
 
-module.exports = { initDB, getDB, getShop };
+module.exports = { initDB, getDB, getShop, getBootstrapShopId, getShopIdByDomain };

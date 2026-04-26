@@ -215,6 +215,22 @@ router.get('/callback', async (req, res) => {
         installed_at   = datetime('now')
     `).run(shop, access_token, scope || '');
 
+    // Audit B1 : seeder les catégories produits par défaut pour le nouveau shop
+    const shopRow = db.prepare('SELECT id FROM shops WHERE shop_domain = ?').get(shop);
+    if (shopRow?.id) {
+      const existing = db.prepare('SELECT COUNT(*) as n FROM product_categories WHERE shop_id=?').get(shopRow.id);
+      if (existing.n === 0) {
+        const insertCat = db.prepare('INSERT OR IGNORE INTO product_categories (shop_id, key, name, emoji, sort_order) VALUES (?, ?, ?, ?, ?)');
+        [
+          ['tshirt',  'T-Shirt',   '👕', 0],
+          ['hoodie',  'Hoodie',    '🧥', 1],
+          ['cap',     'Casquette', '🧢', 2],
+          ['totebag', 'Tote Bag',  '👜', 3],
+        ].forEach(([k, n, e, s]) => { try { insertCat.run(shopRow.id, k, n, e, s); } catch {} });
+        console.log(`🏷  product_categories seedées pour ${shop} (shop_id=${shopRow.id})`);
+      }
+    }
+
     const user = associated_user ? `${associated_user.first_name} ${associated_user.last_name}`.trim() : 'owner';
     console.log(`✅  OAuth — shop ${shop} installé (user: ${user}), token stocké.`);
   } catch (err) {

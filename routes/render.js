@@ -5,6 +5,7 @@ const path    = require('path');
 const fs      = require('fs');
 const { requireAuth } = require('./auth');
 const { getDB } = require('../db/database');
+const { attachShopId, attachShopIdSoft } = require('./_shop-context');
 const { uploadToFtpAsync, isFtpConfigured } = require('../utils/ftp-upload');
 const { uploadToShopifyFiles } = require('../utils/shopify-files');
 
@@ -13,17 +14,17 @@ const DATA_DIR    = process.env.DATA_DIR || path.join(__dirname, '..');
 const RENDERS_DIR = path.join(DATA_DIR, 'uploads', 'renders');
 fs.mkdirSync(RENDERS_DIR, { recursive: true });
 
-// ── GET /api/render ── liste tous les designs ayant un render HD (admin)
-router.get('/', requireAuth, (req, res) => {
+// ── GET /api/render ── liste tous les designs ayant un render HD (admin, scopé shop)
+router.get('/', requireAuth, attachShopId, (req, res) => {
   const db = getDB();
   let rows;
   try {
     rows = db.prepare(`
       SELECT id, name, product, format, render_url, render_size_kb, updated_at
       FROM designs
-      WHERE render_url IS NOT NULL AND render_url != ''
+      WHERE shop_id = ? AND render_url IS NOT NULL AND render_url != ''
       ORDER BY updated_at DESC
-    `).all();
+    `).all(req.shopId);
   } catch(e) {
     rows = [];
   }
@@ -43,13 +44,17 @@ router.get('/', requireAuth, (req, res) => {
 // ── POST /api/render/save-views ── sauvegarde les thumbnails de TOUTES les vues d'un design
 // Body: { design_id, views: [{ idx, name, png_base64 }] }
 // Stocke chaque image dans uploads/renders et met à jour views_preview_json dans la table designs
-router.post('/save-views', (req, res) => {
+// Scopé shop : on vérifie que design_id appartient bien au shop courant.
+router.post('/save-views', attachShopId, (req, res) => {
   const { design_id, views } = req.body;
   if (!design_id || !Array.isArray(views) || !views.length) {
     return res.status(400).json({ error: 'design_id et views[] requis' });
   }
 
-  const db      = getDB();
+  const db = getDB();
+  // Vérifier ownership avant tout traitement (sinon DoS possible : on accepte des PNG pour rien)
+  const owner = db.prepare('SELECT id FROM designs WHERE id=? AND shop_id=?').get(design_id, req.shopId);
+  if (!owner) return res.status(404).json({ error: 'Design introuvable pour ce shop' });
   const APP_URL = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
   const result  = {};
 
@@ -72,8 +77,8 @@ router.post('/save-views', (req, res) => {
   try { db.prepare('ALTER TABLE designs ADD COLUMN views_preview_json TEXT').run(); } catch { /* ok */ }
 
   try {
-    db.prepare('UPDATE designs SET views_preview_json=?, updated_at=datetime(\'now\') WHERE id=?')
-      .run(JSON.stringify(result), design_id);
+    db.prepare('UPDATE designs SET views_preview_json=?, updated_at=datetime(\'now\') WHERE id=? AND shop_id=?')
+      .run(JSON.stringify(result), design_id, req.shopId);
     console.log(`[render] ${Object.keys(result).length} thumbnail(s) sauvegardé(s) pour design #${design_id}`);
     res.json({ ok: true, views: result });
   } catch(e) {
@@ -84,11 +89,17 @@ router.post('/save-views', (req, res) => {
 
 // ── POST /api/render/save ── reçoit base64, sauvegarde PNG, upload Shopify Files CDN
 // Retourne previewUrl = URL CDN Shopify (cdn.shopify.com) ou Railway en fallback
-router.post('/save', async (req, res) => {
+// Scopé shop : on vérifie l'ownership du design avant d'accepter le payload.
+router.post('/save', attachShopId, async (req, res) => {
   const { design_id, png_base64 } = req.body;
   if (!design_id || !png_base64) {
     return res.status(400).json({ error: 'design_id et png_base64 requis' });
   }
+
+  // ── Vérification ownership avant écriture disque (anti-DoS B5) ────────
+  const dbCheck = getDB();
+  const ownerCheck = dbCheck.prepare('SELECT id FROM designs WHERE id=? AND shop_id=?').get(design_id, req.shopId);
+  if (!ownerCheck) return res.status(404).json({ error: 'Design introuvable pour ce shop' });
 
   try {
     const base64Data = png_base64.replace(/^data:image\/\w+;base64,/, '');
@@ -108,8 +119,8 @@ router.post('/save', async (req, res) => {
     try { db.prepare('ALTER TABLE designs ADD COLUMN render_size_kb INTEGER').run(); } catch { /* ok */ }
     try { db.prepare('ALTER TABLE designs ADD COLUMN preview_cdn_url TEXT').run(); }  catch { /* ok */ }
 
-    db.prepare('UPDATE designs SET render_url=?, render_size_kb=? WHERE id=?')
-      .run(relUrl, sizeKb, design_id);
+    db.prepare('UPDATE designs SET render_url=?, render_size_kb=? WHERE id=? AND shop_id=?')
+      .run(relUrl, sizeKb, design_id, req.shopId);
 
     console.log(`[render] PNG sauvegardé: ${filename} (${sizeKb} Ko)`);
 
@@ -122,7 +133,7 @@ router.post('/save', async (req, res) => {
     if (shop && token) {
       try {
         const cdnUrl = await uploadToShopifyFiles(filepath, shop, token);
-        db.prepare('UPDATE designs SET preview_cdn_url=? WHERE id=?').run(cdnUrl, design_id);
+        db.prepare('UPDATE designs SET preview_cdn_url=? WHERE id=? AND shop_id=?').run(cdnUrl, design_id, req.shopId);
         try { fs.unlinkSync(filepath); } catch { /* pas bloquant */ }
         previewUrl = cdnUrl;
         console.log(`[render] CDN Shopify ✅ ${cdnUrl}`);
@@ -153,14 +164,14 @@ router.post('/save', async (req, res) => {
 });
 
 // ── POST /api/render/ftp-retry/:design_id ── relancer l'upload FTP manuellement
-router.post('/ftp-retry/:design_id', requireAuth, (req, res) => {
+router.post('/ftp-retry/:design_id', requireAuth, attachShopId, (req, res) => {
   if (!isFtpConfigured()) {
     return res.status(400).json({ error: 'FTP non configuré dans .env' });
   }
   const db     = getDB();
   let design;
   try {
-    design = db.prepare('SELECT render_url FROM designs WHERE id=?').get(req.params.design_id);
+    design = db.prepare('SELECT render_url FROM designs WHERE id=? AND shop_id=?').get(req.params.design_id, req.shopId);
   } catch { return res.status(404).json({ error: 'Design introuvable' }); }
 
   if (!design?.render_url) {
@@ -176,12 +187,12 @@ router.post('/ftp-retry/:design_id', requireAuth, (req, res) => {
   res.json({ ok: true, message: 'FTP upload relancé en arrière-plan' });
 });
 
-// ── GET /api/render/download/:design_id ── téléchargement direct (doit être avant /:design_id)
-router.get('/download/:design_id', (req, res) => {
+// ── GET /api/render/download/:design_id ── téléchargement direct (scopé shop, doit être avant /:design_id)
+router.get('/download/:design_id', attachShopId, (req, res) => {
   const db = getDB();
   let design;
   try {
-    design = db.prepare('SELECT render_url FROM designs WHERE id=?').get(req.params.design_id);
+    design = db.prepare('SELECT render_url FROM designs WHERE id=? AND shop_id=?').get(req.params.design_id, req.shopId);
   } catch(e) {
     return res.status(404).json({ error: 'Design introuvable' });
   }
@@ -198,12 +209,19 @@ router.get('/download/:design_id', (req, res) => {
 // ── GET /api/render/:design_id ──
 // • Sans ?json=1  → redirection 302 vers l'image PNG absolue (cliquable depuis email/admin)
 // • Avec  ?json=1 → réponse JSON avec URL absolue (rétro-compat API)
-router.get('/:design_id', (req, res) => {
+// Scoping soft : si un shop est résolvable, on filtre ; sinon on autorise (ex : email transactionnel
+// qui pointe vers /api/render/:id sans contexte shop).
+router.get('/:design_id', attachShopIdSoft, (req, res) => {
   const db  = getDB();
   let design;
   try {
-    design = db.prepare('SELECT id, render_url, render_size_kb, preview_cdn_url FROM designs WHERE id=?')
-               .get(req.params.design_id);
+    if (req.shopId) {
+      design = db.prepare('SELECT id, render_url, render_size_kb, preview_cdn_url FROM designs WHERE id=? AND shop_id=?')
+                 .get(req.params.design_id, req.shopId);
+    } else {
+      design = db.prepare('SELECT id, render_url, render_size_kb, preview_cdn_url FROM designs WHERE id=?')
+                 .get(req.params.design_id);
+    }
   } catch(e) {
     return res.json({ render_url: null });
   }

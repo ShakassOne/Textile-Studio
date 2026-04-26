@@ -3,6 +3,7 @@ const express  = require('express');
 const router   = express.Router();
 const { requireAuth } = require('./auth');
 const { getDB } = require('../db/database');
+const { attachShopId } = require('./_shop-context');
 
 // These could be moved to DB for admin-editable pricing
 let PRICING = {
@@ -38,13 +39,13 @@ function buildFormatsObj() {
   return obj;
 }
 
-// GET /api/pricing
-// Fusionne les catégories en DB avec les produits en mémoire
-// → toute nouvelle catégorie admin apparaît automatiquement dans la tarification
-router.get('/', (_req, res) => {
+// GET /api/pricing — scopé shop (audit B1)
+// Fusionne les catégories du shop courant avec les produits en mémoire.
+// → toute nouvelle catégorie admin apparaît automatiquement dans la tarification.
+router.get('/', attachShopId, (req, res) => {
   try {
     const db   = getDB();
-    const cats = db.prepare('SELECT * FROM product_categories ORDER BY sort_order, id').all();
+    const cats = db.prepare('SELECT * FROM product_categories WHERE shop_id=? ORDER BY sort_order, id').all(req.shopId);
     cats.forEach(c => {
       if (!PRICING.products.find(p => p.key === c.key)) {
         // Nouvelle catégorie : l'ajouter avec prix de base 0

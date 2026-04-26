@@ -6,6 +6,7 @@ const path    = require('path');
 const fs      = require('fs');
 const { requireAuth } = require('./auth');
 const { getDB } = require('../db/database');
+const { attachShopId } = require('./_shop-context');
 
 const DEFAULT_CATEGORIES = ['logos', 'illustrations', 'patterns', 'textes', 'divers', 'Dall-E'];
 
@@ -33,45 +34,49 @@ const upload = multer({
 });
 
 // ── Copier l'original comme thumbnail ──────────────────────────────────────
-// sharp (module natif) incompatible avec cet environnement.
-// La compression Canvas API (côté client) garantit que les fichiers uploadés
-// sont déjà de taille raisonnable — on copie simplement l'original.
 function generateThumb(srcPath, thumbPath) {
   fs.copyFileSync(srcPath, thumbPath);
 }
 
-// GET /api/library/categories — retourne les catégories de la table dédiée + celles des items
-router.get('/categories', (req, res) => {
+// GET /api/library/categories — scopé shop
+router.get('/categories', attachShopId, (req, res) => {
   const db = getDB();
-  // Union: table categories + catégories distinctes des images (sans placeholders)
-  const fromTable = db.prepare("SELECT name FROM categories ORDER BY name").all().map(r => r.name);
-  const fromItems = db.prepare("SELECT DISTINCT category FROM library WHERE filename NOT LIKE '__cat_placeholder_%' ORDER BY category").all().map(r => r.category).filter(Boolean);
+  // Union: table categories + catégories distinctes des images du shop
+  const fromTable = db
+    .prepare("SELECT name FROM categories WHERE shop_id=? ORDER BY name")
+    .all(req.shopId)
+    .map(r => r.name);
+  const fromItems = db
+    .prepare("SELECT DISTINCT category FROM library WHERE shop_id=? AND filename NOT LIKE '__cat_placeholder_%' ORDER BY category")
+    .all(req.shopId)
+    .map(r => r.category)
+    .filter(Boolean);
   const merged = [...new Set([...fromTable, ...fromItems])].sort();
   res.json(merged);
 });
 
-// POST /api/library/categories — crée une catégorie SANS placeholder SVG
-router.post('/categories', (req, res) => {
+// POST /api/library/categories — crée une catégorie (scopé shop)
+router.post('/categories', attachShopId, (req, res) => {
   const name = (req.body?.name || '').trim();
   if (!name) return res.status(400).json({ error: 'Nom requis' });
   const db = getDB();
-  const existing = db.prepare('SELECT id FROM categories WHERE name=?').get(name);
+  const existing = db.prepare('SELECT id FROM categories WHERE name=? AND shop_id=?').get(name, req.shopId);
   if (existing) return res.status(409).json({ error: 'Catégorie déjà existante', category: name });
-  const info = db.prepare('INSERT INTO categories (name) VALUES (?)').run(name);
+  const info = db.prepare('INSERT INTO categories (shop_id, name) VALUES (?, ?)').run(req.shopId, name);
   res.status(201).json({ id: info.lastInsertRowid, category: name });
 });
 
-// GET /api/library — exclut les cat_placeholder côté serveur
-router.get('/', (req, res) => {
+// GET /api/library — exclut les cat_placeholder côté serveur (scopé shop)
+router.get('/', attachShopId, (req, res) => {
   const db = getDB();
   const { category, limit = 200 } = req.query;
   const rows = category
-    ? db.prepare("SELECT * FROM library WHERE category=? AND filename NOT LIKE '__cat_placeholder_%' ORDER BY created_at DESC LIMIT ?").all(category, Number(limit))
-    : db.prepare("SELECT * FROM library WHERE filename NOT LIKE '__cat_placeholder_%' ORDER BY created_at DESC LIMIT ?").all(Number(limit));
+    ? db.prepare("SELECT * FROM library WHERE shop_id=? AND category=? AND filename NOT LIKE '__cat_placeholder_%' ORDER BY created_at DESC LIMIT ?").all(req.shopId, category, Number(limit))
+    : db.prepare("SELECT * FROM library WHERE shop_id=? AND filename NOT LIKE '__cat_placeholder_%' ORDER BY created_at DESC LIMIT ?").all(req.shopId, Number(limit));
   res.json(rows);
 });
 
-// POST /api/library — upload avec génération thumb automatique
+// POST /api/library — upload (admin + shop scopé)
 const handleUpload = upload.single('file');
 
 function processUpload(req, res) {
@@ -95,12 +100,12 @@ function processUpload(req, res) {
       console.warn('Thumb copy failed (non-bloquant):', e.message);
     }
 
-    // S'assurer que la catégorie est enregistrée dans la table categories
-    try { db.prepare('INSERT OR IGNORE INTO categories (name) VALUES (?)').run(cat); } catch {}
+    // S'assurer que la catégorie est enregistrée dans la table categories (scopée shop)
+    try { db.prepare('INSERT OR IGNORE INTO categories (shop_id, name) VALUES (?, ?)').run(req.shopId, cat); } catch {}
 
     const info = db.prepare(
-      'INSERT INTO library (filename, url, thumb_url, category, mimetype, size) VALUES (?,?,?,?,?,?)'
-    ).run(req.file.filename, url, thumbUrl, cat, req.file.mimetype, req.file.size);
+      'INSERT INTO library (shop_id, filename, url, thumb_url, category, mimetype, size) VALUES (?,?,?,?,?,?,?)'
+    ).run(req.shopId, req.file.filename, url, thumbUrl, cat, req.file.mimetype, req.file.size);
 
     res.status(201).json({
       ...db.prepare('SELECT * FROM library WHERE id=?').get(info.lastInsertRowid),
@@ -112,33 +117,34 @@ function processUpload(req, res) {
   }
 }
 
-router.post('/',       requireAuth, (req, res) => handleUpload(req, res, err => { if(err) return res.status(400).json({error:err.message}); processUpload(req, res); }));
-router.post('/upload', requireAuth, (req, res) => handleUpload(req, res, err => { if(err) return res.status(400).json({error:err.message}); processUpload(req, res); }));
+router.post('/',       requireAuth, attachShopId, (req, res) => handleUpload(req, res, err => { if(err) return res.status(400).json({error:err.message}); processUpload(req, res); }));
+router.post('/upload', requireAuth, attachShopId, (req, res) => handleUpload(req, res, err => { if(err) return res.status(400).json({error:err.message}); processUpload(req, res); }));
 
-// PATCH /api/library/:id (admin)
-router.patch('/:id', requireAuth, (req, res) => {
+// PATCH /api/library/:id (admin, scopé shop)
+router.patch('/:id', requireAuth, attachShopId, (req, res) => {
   const db  = getDB();
-  const row = db.prepare('SELECT * FROM library WHERE id=?').get(req.params.id);
+  const row = db.prepare('SELECT * FROM library WHERE id=? AND shop_id=?').get(req.params.id, req.shopId);
   if (!row) return res.status(404).json({ error: 'Not found' });
   const cat = (req.body.category || '').trim() || row.category;
-  db.prepare('UPDATE library SET category=? WHERE id=?').run(cat, req.params.id);
+  db.prepare('UPDATE library SET category=? WHERE id=? AND shop_id=?').run(cat, req.params.id, req.shopId);
   res.json({ ...row, category: cat });
 });
 
-// DELETE /api/library/:id (admin)
-router.delete('/:id', requireAuth, (req, res) => {
+// DELETE /api/library/:id (admin, scopé shop)
+router.delete('/:id', requireAuth, attachShopId, (req, res) => {
   const db  = getDB();
-  const row = db.prepare('SELECT * FROM library WHERE id=?').get(req.params.id);
+  const row = db.prepare('SELECT * FROM library WHERE id=? AND shop_id=?').get(req.params.id, req.shopId);
   if (!row) return res.status(404).json({ error: 'Not found' });
   try { fs.unlinkSync(path.join(__dirname, '..', row.url)); } catch {}
   if (row.thumb_url) {
     try { fs.unlinkSync(path.join(__dirname, '..', row.thumb_url)); } catch {}
   }
-  db.prepare('DELETE FROM library WHERE id=?').run(req.params.id);
+  db.prepare('DELETE FROM library WHERE id=? AND shop_id=?').run(req.params.id, req.shopId);
   res.json({ deleted: true });
 });
 
 // ── Migration auto : copier les thumbs manquants au démarrage ────────────
+// (Indépendant du shop : balaye toutes les lignes quel que soit shop_id)
 setTimeout(() => {
   try {
     const db      = getDB();

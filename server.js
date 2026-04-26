@@ -347,18 +347,19 @@ app.use('/api/shopify-session', require('./routes/shopify-session'));
 app.use('/api/admin',          require('./routes/admin-graphql'));
 app.use('/proxy',             require('./routes/app-proxy'));
 
-// ── Stats (admin) ──────────────────────────────────────────────────────
+// ── Stats (admin, scopé shop — audit B1) ───────────────────────────────
 const { requireAuth } = require('./routes/auth');
-app.get('/api/stats', requireAuth, (req, res) => {
+const { attachShopId } = require('./routes/_shop-context');
+app.get('/api/stats', requireAuth, attachShopId, (req, res) => {
   const db = require('./db/database').getDB();
-  const orders   = db.prepare('SELECT COUNT(*) as count, COALESCE(SUM(total_price),0) as revenue FROM orders').get();
-  const designs  = db.prepare('SELECT COUNT(*) as count FROM designs').get();
+  const orders   = db.prepare('SELECT COUNT(*) as count, COALESCE(SUM(total_price),0) as revenue FROM orders WHERE shop_id=?').get(req.shopId);
+  const designs  = db.prepare('SELECT COUNT(*) as count FROM designs WHERE shop_id=?').get(req.shopId);
   const byProduct = db.prepare(`
     SELECT product, COUNT(*) as count, COALESCE(SUM(total_price),0) as revenue
-    FROM orders GROUP BY product
-  `).all();
-  const pending  = db.prepare("SELECT COUNT(*) as count FROM orders WHERE status='pending'").get();
-  const recent   = db.prepare('SELECT * FROM orders ORDER BY created_at DESC LIMIT 5').all();
+    FROM orders WHERE shop_id=? GROUP BY product
+  `).all(req.shopId);
+  const pending  = db.prepare("SELECT COUNT(*) as count FROM orders WHERE shop_id=? AND status='pending'").get(req.shopId);
+  const recent   = db.prepare('SELECT * FROM orders WHERE shop_id=? ORDER BY created_at DESC LIMIT 5').all(req.shopId);
   res.json({ orders, designs, byProduct, pending, recent });
 });
 

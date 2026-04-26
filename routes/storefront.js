@@ -3,6 +3,7 @@ const express = require('express');
 const router  = express.Router();
 const https   = require('https');
 const { requireAuth } = require('./auth');
+const { attachShopId, attachShopIdSoft } = require('./_shop-context');
 
 const STORE_DOMAIN      = process.env.SHOPIFY_STORE_DOMAIN      || '';
 const STOREFRONT_TOKEN  = process.env.SHOPIFY_STOREFRONT_TOKEN  || '';
@@ -77,13 +78,27 @@ router.get('/products', async (req, res) => {
     }
   }
 
-  // 2. Fallback : Admin REST API via token OAuth stocké en DB
+  // 2. Fallback : Admin REST API via token OAuth du shop courant (audit B1)
   try {
-    const { getDB } = require('../db/database');
+    const { getDB, getShopIdByDomain, getBootstrapShopId } = require('../db/database');
     const db        = getDB();
+
+    // Résoudre le shop courant : header > query > bootstrap (PLUS de LIMIT 1 sur shops)
+    const headerShop = (req.headers['x-shop-domain'] || '').toLowerCase().trim();
+    const queryShop  = (req.query?.shop || '').toLowerCase().trim();
+    let shopId = null;
+    if (req.shopRecord?.id) shopId = req.shopRecord.id;
+    else if (queryShop)     shopId = getShopIdByDomain(queryShop);
+    else if (headerShop)    shopId = getShopIdByDomain(headerShop);
+    else                    shopId = getBootstrapShopId();
+
+    if (!shopId) {
+      return res.status(503).json({ error: 'Aucun shop installé — installez l\'app via OAuth', configured: false });
+    }
+
     const shopRecord = db.prepare(
-      'SELECT shop_domain, access_token FROM shops WHERE is_active = 1 ORDER BY id DESC LIMIT 1'
-    ).get();
+      'SELECT shop_domain, access_token FROM shops WHERE id = ? AND is_active = 1'
+    ).get(shopId);
 
     if (!shopRecord || !shopRecord.access_token) {
       return res.status(503).json({ error: 'Shopify non configuré — installez l\'app via OAuth', configured: false });
@@ -334,11 +349,25 @@ router.get('/product-variant', async (req, res) => {
   if (!handle) return res.status(400).json({ error: 'handle requis' });
 
   try {
-    const { getDB } = require('../db/database');
+    const { getDB, getShopIdByDomain, getBootstrapShopId } = require('../db/database');
     const db = getDB();
+
+    // Résoudre le shop courant (audit B1 : plus de LIMIT 1)
+    const headerShop = (req.headers['x-shop-domain'] || '').toLowerCase().trim();
+    const queryShop  = (req.query?.shop || '').toLowerCase().trim();
+    let shopId = null;
+    if (req.shopRecord?.id) shopId = req.shopRecord.id;
+    else if (queryShop)     shopId = getShopIdByDomain(queryShop);
+    else if (headerShop)    shopId = getShopIdByDomain(headerShop);
+    else                    shopId = getBootstrapShopId();
+
+    if (!shopId) {
+      return res.status(503).json({ error: 'Aucun shop installé — installez l\'app via OAuth' });
+    }
+
     const shopRecord = db.prepare(
-      'SELECT shop_domain, access_token FROM shops WHERE is_active = 1 ORDER BY id DESC LIMIT 1'
-    ).get();
+      'SELECT shop_domain, access_token FROM shops WHERE id = ? AND is_active = 1'
+    ).get(shopId);
 
     if (!shopRecord?.access_token) {
       return res.status(503).json({ error: 'Shopify non configuré — OAuth requis' });

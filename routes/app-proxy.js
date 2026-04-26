@@ -28,7 +28,7 @@ const express = require('express');
 const router  = express.Router();
 const crypto  = require('crypto');
 const path    = require('path');
-const { getDB } = require('../db/database');
+const { getDB, getShopIdByDomain } = require('../db/database');
 
 // ── Vérification HMAC des requêtes App Proxy ─────────────────────────────────
 // Shopify signe le query string avec SHOPIFY_API_SECRET
@@ -201,17 +201,22 @@ router.get('/editor', requireProxyHMAC, (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /proxy/designs/:id — API publique : récupère un design (lecture seule)
+// GET /proxy/designs/:id — API publique : récupère un design (lecture seule, scopé shop)
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/designs/:id', requireProxyHMAC, (req, res) => {
   const id = parseInt(req.params.id);
   if (!id) return res.status(400).json({ error: 'ID invalide' });
 
+  // Le shop est fourni par Shopify dans la query string signée HMAC
+  const shopDomain = (req.query.shop || '').toLowerCase().trim();
+  const shopId     = getShopIdByDomain(shopDomain);
+  if (!shopId) return res.status(403).json({ error: 'Shop non installé ou introuvable' });
+
   const db = getDB();
   const design = db.prepare(`
     SELECT id, name, product, color, format, thumbnail, created_at
-    FROM designs WHERE id = ?
-  `).get(id);
+    FROM designs WHERE id = ? AND shop_id = ?
+  `).get(id, shopId);
 
   if (!design) return res.status(404).json({ error: 'Design introuvable' });
 

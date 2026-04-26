@@ -162,6 +162,7 @@ function requireShopifySession(req, res, next) {
 
   req.shopDomain = shop;
   req.shopRecord = record; // { id, shop_domain, access_token, scope, ... }
+  req.shopId     = record.id; // Audit B1 : injection multi-tenant
   next();
 }
 

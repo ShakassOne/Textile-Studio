@@ -20,6 +20,7 @@ const path     = require('path');
 const fs       = require('fs');
 const sharp    = require('sharp');
 const { getDB } = require('../db/database');
+const { attachShopId } = require('./_shop-context');
 
 const DATA_DIR   = process.env.DATA_DIR || path.join(__dirname, '..');
 const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
@@ -33,13 +34,13 @@ const BACK_W = 440, BACK_H = 340;
 // Créer le dossier generated au démarrage
 if (!fs.existsSync(GEN_DIR)) fs.mkdirSync(GEN_DIR, { recursive: true });
 
-// ── POST /api/mockup-gen/generate-all ────────────────────────────────────────
-router.post('/generate-all', async (req, res) => {
+// ── POST /api/mockup-gen/generate-all (scopé shop, audit B5) ──────────────
+router.post('/generate-all', attachShopId, async (req, res) => {
   const { design_png, format = 'A4', view_name = null } = req.body;
   if (!design_png) return res.status(400).json({ error: 'design_png required' });
 
   const db = getDB();
-  const mockups = db.prepare('SELECT * FROM mockups').all();
+  const mockups = db.prepare('SELECT * FROM mockups WHERE shop_id=?').all(req.shopId);
   if (!mockups.length) return res.status(404).json({ error: 'Aucun mockup disponible' });
 
   const designBuffer = b64ToBuffer(design_png);

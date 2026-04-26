@@ -3,13 +3,31 @@ const express = require('express');
 const router  = express.Router();
 const { requireAuth } = require('./auth');
 const { getDB } = require('../db/database');
+const { attachShopId } = require('./_shop-context');
 
-// Helper : lire/écrire une clé dans la table settings
-function getSetting(key)        { try { return getDB().prepare('SELECT value FROM settings WHERE key=?').get(key)?.value || ''; } catch { return ''; } }
-function setSetting(key, value) { getDB().prepare("INSERT INTO settings(key,value,updated_at) VALUES(?,?,datetime('now')) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')").run(key, value); }
+// Helpers : lire/écrire une clé dans la table settings, scopée par shop_id (audit B1).
+function getSetting(shopId, key) {
+  try {
+    return getDB()
+      .prepare('SELECT value FROM settings WHERE shop_id=? AND key=?')
+      .get(shopId, key)?.value || '';
+  } catch {
+    return '';
+  }
+}
+function setSetting(shopId, key, value) {
+  getDB().prepare(
+    "INSERT INTO settings (shop_id, key, value, updated_at) VALUES (?, ?, ?, datetime('now')) " +
+    "ON CONFLICT(shop_id, key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')"
+  ).run(shopId, key, value);
+}
 
-// Résoudre la clé OpenAI : DB en priorité (installée par le marchand), sinon .env (développement)
-function resolveOpenAIKey() { return getSetting('openai_api_key') || process.env.OPENAI_API_KEY || ''; }
+// Résoudre la clé OpenAI : DB du shop courant en priorité, sinon .env (développement).
+// Attention sécurité : la clé .env est partagée — en prod chaque shop devrait avoir
+// sa propre clé en DB pour éviter qu'un marchand consomme la facturation d'un autre.
+function resolveOpenAIKey(shopId) {
+  return getSetting(shopId, 'openai_api_key') || process.env.OPENAI_API_KEY || '';
+}
 
 const STYLE_PROMPTS = {
   cartoon:    'Transform this photo into a vibrant cartoon illustration, bold outlines, flat bright colors, expressive, transparent background, DTF print ready, no background',
@@ -24,9 +42,9 @@ const STYLE_PROMPTS = {
   lego:       'Transform this photo into a LEGO minifigure style character, blocky proportions, simple iconic face, plastic toy aesthetic, transparent background, DTF print ready',
 };
 
-// ── GET  /api/ai/settings — Lire la config IA (admin) ───────────────
-router.get('/settings', requireAuth, (req, res) => {
-  const key = getSetting('openai_api_key');
+// ── GET  /api/ai/settings — Lire la config IA (admin, scopé shop) ───────────────
+router.get('/settings', requireAuth, attachShopId, (req, res) => {
+  const key = getSetting(req.shopId, 'openai_api_key');
   res.json({
     openai_configured: !!(key || process.env.OPENAI_API_KEY),
     openai_key_masked: key ? `sk-...${key.slice(-4)}` : (process.env.OPENAI_API_KEY ? `sk-...${process.env.OPENAI_API_KEY.slice(-4)}` : ''),
@@ -34,8 +52,8 @@ router.get('/settings', requireAuth, (req, res) => {
   });
 });
 
-// ── POST /api/ai/settings — Sauvegarder la clé OpenAI (admin) ────────
-router.post('/settings', requireAuth, async (req, res) => {
+// ── POST /api/ai/settings — Sauvegarder la clé OpenAI (admin, scopé shop) ────────
+router.post('/settings', requireAuth, attachShopId, async (req, res) => {
   const { openai_api_key } = req.body;
   if (!openai_api_key || !openai_api_key.startsWith('sk-')) {
     return res.status(400).json({ error: 'Clé invalide — doit commencer par sk-' });
@@ -49,22 +67,26 @@ router.post('/settings', requireAuth, async (req, res) => {
   } catch (e) {
     return res.status(500).json({ error: 'Impossible de joindre OpenAI : ' + e.message });
   }
-  setSetting('openai_api_key', openai_api_key.trim());
+  setSetting(req.shopId, 'openai_api_key', openai_api_key.trim());
   res.json({ ok: true, masked: `sk-...${openai_api_key.slice(-4)}` });
 });
 
-// ── DELETE /api/ai/settings/openai — Supprimer la clé stockée ────────
-router.delete('/settings/openai', requireAuth, (req, res) => {
-  try { getDB().prepare("DELETE FROM settings WHERE key='openai_api_key'").run(); } catch {}
+// ── DELETE /api/ai/settings/openai — Supprimer la clé stockée (admin, scopé shop) ─
+router.delete('/settings/openai', requireAuth, attachShopId, (req, res) => {
+  try {
+    getDB().prepare("DELETE FROM settings WHERE shop_id=? AND key='openai_api_key'").run(req.shopId);
+  } catch {}
   res.json({ ok: true });
 });
 
-// ── POST /api/ai/dalle — Génération IA depuis texte (studio public) ──
-router.post('/dalle', async (req, res) => {
+// ── POST /api/ai/dalle — Génération IA depuis texte (scopé shop) ────────
+// NOTE B3 (audit) : auth complémentaire (requireShopifySession ou App Proxy HMAC) +
+// rate-limit par shop à ajouter dans le prochain bloquant.
+router.post('/dalle', attachShopId, async (req, res) => {
   const { prompt, size = '1024x1024', quality = 'high', transparent = true } = req.body;
   if (!prompt) return res.status(400).json({ error: 'prompt requis' });
 
-  const apiKey = resolveOpenAIKey();
+  const apiKey = resolveOpenAIKey(req.shopId);
   if (!apiKey) return res.status(500).json({ error: 'Clé OpenAI non configurée — rendez-vous dans Paramètres → IA' });
 
   try {
@@ -93,12 +115,12 @@ router.post('/dalle', async (req, res) => {
   }
 });
 
-// ── POST /api/ai/transform — Photo → Art (studio public) ─────────────
-router.post('/transform', async (req, res) => {
+// ── POST /api/ai/transform — Photo → Art (scopé shop) ─────────────
+router.post('/transform', attachShopId, async (req, res) => {
   const { imageBase64, style = 'cartoon' } = req.body;
   if (!imageBase64) return res.status(400).json({ error: 'imageBase64 requis' });
 
-  const apiKey = resolveOpenAIKey();
+  const apiKey = resolveOpenAIKey(req.shopId);
   if (!apiKey) return res.status(500).json({ error: 'Clé OpenAI non configurée — rendez-vous dans Paramètres → IA' });
 
   const prompt = STYLE_PROMPTS[style] || STYLE_PROMPTS.cartoon;
@@ -139,9 +161,9 @@ router.post('/transform', async (req, res) => {
   }
 });
 
-// ── GET /api/ai/status ────────────────────────────────────────────────
-router.get('/status', (req, res) => {
-  const key = resolveOpenAIKey();
+// ── GET /api/ai/status (scopé shop) ─────────────────────────────────────
+router.get('/status', attachShopId, (req, res) => {
+  const key = resolveOpenAIKey(req.shopId);
   res.json({ dalle: !!key, model: 'gpt-image-1', configured: !!key });
 });
 

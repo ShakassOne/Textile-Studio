@@ -14,7 +14,7 @@
 const express = require('express');
 const router  = express.Router();
 const crypto  = require('crypto');
-const { getDB } = require('../db/database');
+const { getDB, getShopIdByDomain } = require('../db/database');
 
 // Raw body obligatoire AVANT tout json middleware — nécessaire pour HMAC
 router.use(express.raw({ type: 'application/json' }));
@@ -77,7 +77,7 @@ router.post('/webhook', (req, res) => {
   const shop  = req.headers['x-shopify-shop-domain'] || '';
   console.log(`📦  Shopify webhook: [${topic}] shop=${shop}`);
 
-  // Dispatch par topic
+  // Dispatch par topic — passe shop pour multi-tenant scoping (audit B1)
   if (topic === 'orders/paid')      handleOrderPaid(payload, shop);
   if (topic === 'app/uninstalled')  handleAppUninstalled(payload, shop);
 
@@ -131,29 +131,53 @@ router.post('/gdpr/customers/redact', (req, res) => {
     const db = getDB();
     const shopifyCustomerId = String(customer.id || '');
 
+    // Audit B1 : scoping shop pour éviter qu'un payload GDPR signé pour shop A
+    // touche les données du shop B en cas de collision d'email/order id.
+    const shopId = getShopIdByDomain(shop);
+
     if (ordersToRedact.length > 0) {
-      // Anonymiser uniquement les commandes listées
+      // Anonymiser uniquement les commandes listées (du shop courant)
       for (const orderId of ordersToRedact) {
-        db.prepare(`
-          UPDATE orders
-          SET customer_name  = '[REDACTED]',
-              customer_email = '[REDACTED]',
-              notes          = '[REDACTED - GDPR]'
-          WHERE shopify_id = ?
-        `).run(String(orderId));
+        if (shopId) {
+          db.prepare(`
+            UPDATE orders
+            SET customer_name  = '[REDACTED]',
+                customer_email = '[REDACTED]',
+                notes          = '[REDACTED - GDPR]'
+            WHERE shopify_id = ? AND shop_id = ?
+          `).run(String(orderId), shopId);
+        } else {
+          db.prepare(`
+            UPDATE orders
+            SET customer_name  = '[REDACTED]',
+                customer_email = '[REDACTED]',
+                notes          = '[REDACTED - GDPR]'
+            WHERE shopify_id = ?
+          `).run(String(orderId));
+        }
       }
     } else if (shopifyCustomerId) {
       // Aucune commande spécifique : anonymiser toutes les commandes du client
-      // (on ne stocke pas le shopify_customer_id → on utilise l'email)
+      // (on ne stocke pas le shopify_customer_id → on utilise l'email + shop_id)
       const email = customer.email || '';
       if (email) {
-        db.prepare(`
-          UPDATE orders
-          SET customer_name  = '[REDACTED]',
-              customer_email = '[REDACTED]',
-              notes          = '[REDACTED - GDPR]'
-          WHERE customer_email = ?
-        `).run(email);
+        if (shopId) {
+          db.prepare(`
+            UPDATE orders
+            SET customer_name  = '[REDACTED]',
+                customer_email = '[REDACTED]',
+                notes          = '[REDACTED - GDPR]'
+            WHERE customer_email = ? AND shop_id = ?
+          `).run(email, shopId);
+        } else {
+          db.prepare(`
+            UPDATE orders
+            SET customer_name  = '[REDACTED]',
+                customer_email = '[REDACTED]',
+                notes          = '[REDACTED - GDPR]'
+            WHERE customer_email = ?
+          `).run(email);
+        }
       }
     }
 
@@ -219,8 +243,15 @@ function handleAppUninstalled(payload, shopDomain) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Handler — orders/paid
 // ─────────────────────────────────────────────────────────────────────────────
-function handleOrderPaid(payload) {
+function handleOrderPaid(payload, shopDomain) {
   const db = getDB();
+  // Audit B1 : multi-tenant scoping. Sans shop_id résolu, on saute l'enregistrement
+  // plutôt que de polluer la DB d'un autre shop.
+  const shopId = getShopIdByDomain(shopDomain);
+  if (!shopId) {
+    console.warn(`⚠️  orders/paid : shop "${shopDomain}" introuvable, webhook ignoré`);
+    return;
+  }
 
   // Extract design_id — 1) note_attributes  2) line item properties (nouveau flow cart direct)
   const attrs      = payload.note_attributes || [];
@@ -255,24 +286,24 @@ function handleOrderPaid(payload) {
 
   const info = db.prepare(`
     INSERT INTO orders
-      (shopify_id, design_id, product, color, format, quantity,
+      (shop_id, shopify_id, design_id, product, color, format, quantity,
        unit_price, format_price, total_price,
        customer_name, customer_email, status)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,'confirmed')
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'confirmed')
   `).run(
-    String(payload.id), design_id, product, color, format, quantity,
+    shopId, String(payload.id), design_id, product, color, format, quantity,
     unitPrice, formatPrice, totalPrice,
     customerName, customerEmail
   );
 
   const newOrderId = info.lastInsertRowid;
-  console.log(`✅  Order #${newOrderId} from ${customerEmail} saved (design #${design_id})`);
+  console.log(`✅  Order #${newOrderId} (shop ${shopId}) from ${customerEmail} saved (design #${design_id})`);
 
   // Envoyer l'email de confirmation automatiquement
   if (customerEmail) {
     const { sendEmail, buildOrderConfirmationHTML } = require('./email');
     const newOrder = db.prepare('SELECT * FROM orders WHERE id=?').get(newOrderId);
-    const design   = design_id ? db.prepare('SELECT * FROM designs WHERE id=?').get(design_id) : null;
+    const design   = design_id ? db.prepare('SELECT * FROM designs WHERE id=? AND shop_id=?').get(design_id, shopId) : null;
     sendEmail({
       to: customerEmail,
       subject: `✅ Votre commande TextileLab #${newOrderId} est confirmée`,
@@ -280,14 +311,5 @@ function handleOrderPaid(payload) {
     }).catch(err => console.error('Email send failed:', err.message));
   }
 }
-
-// ── TEMP DEV ROUTE — récupère le token admin pour setup (à supprimer après) ──
-const { requireAuth } = require('./auth');
-const { getShop }     = require('../db/database');
-router.get('/dev-token', requireAuth, (req, res) => {
-  const record = getShop('textile-studio-lab.myshopify.com');
-  if (!record) return res.status(404).json({ error: 'Shop non trouvé' });
-  res.json({ shop: record.shop_domain, token: record.access_token });
-});
 
 module.exports = router;

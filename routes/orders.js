@@ -4,6 +4,7 @@ const router  = express.Router();
 const { requireAuth } = require('./auth');
 const { getDB } = require('../db/database');
 const { getProductPrice, getFormatExtra } = require('./pricing');
+const { attachShopId } = require('./_shop-context');
 
 // GET /api/orders/meta/pricing — legacy pricing grid (doit être avant /:id)
 router.get('/meta/pricing', (_req, res) => {
@@ -13,8 +14,8 @@ router.get('/meta/pricing', (_req, res) => {
   });
 });
 
-// GET /api/orders (admin — contient des données clients)
-router.get('/', requireAuth, (req, res) => {
+// GET /api/orders (admin — données clients, scopé shop)
+router.get('/', requireAuth, attachShopId, (req, res) => {
   const db = getDB();
   const { status } = req.query;
 
@@ -23,31 +24,31 @@ router.get('/', requireAuth, (req, res) => {
   try {
     const q = status
       ? `SELECT o.*, d.views_preview_json, d.thumbnail AS design_thumb
-         FROM orders o LEFT JOIN designs d ON d.id = o.design_id
-         WHERE o.status=? ORDER BY o.created_at DESC`
+         FROM orders o LEFT JOIN designs d ON d.id = o.design_id AND d.shop_id = o.shop_id
+         WHERE o.status=? AND o.shop_id=? ORDER BY o.created_at DESC`
       : `SELECT o.*, d.views_preview_json, d.thumbnail AS design_thumb
-         FROM orders o LEFT JOIN designs d ON d.id = o.design_id
-         ORDER BY o.created_at DESC`;
-    rows = status ? db.prepare(q).all(status) : db.prepare(q).all();
+         FROM orders o LEFT JOIN designs d ON d.id = o.design_id AND d.shop_id = o.shop_id
+         WHERE o.shop_id=? ORDER BY o.created_at DESC`;
+    rows = status ? db.prepare(q).all(status, req.shopId) : db.prepare(q).all(req.shopId);
   } catch {
     // Fallback sans join (colonne views_preview_json peut ne pas exister encore)
     rows = status
-      ? db.prepare('SELECT * FROM orders WHERE status=? ORDER BY created_at DESC').all(status)
-      : db.prepare('SELECT * FROM orders ORDER BY created_at DESC').all();
+      ? db.prepare('SELECT * FROM orders WHERE status=? AND shop_id=? ORDER BY created_at DESC').all(status, req.shopId)
+      : db.prepare('SELECT * FROM orders WHERE shop_id=? ORDER BY created_at DESC').all(req.shopId);
   }
   res.json(rows);
 });
 
-// GET /api/orders/:id (admin)
-router.get('/:id', requireAuth, (req, res) => {
+// GET /api/orders/:id (admin, scopé shop)
+router.get('/:id', requireAuth, attachShopId, (req, res) => {
   const db  = getDB();
-  const row = db.prepare('SELECT * FROM orders WHERE id=?').get(req.params.id);
+  const row = db.prepare('SELECT * FROM orders WHERE id=? AND shop_id=?').get(req.params.id, req.shopId);
   if (!row) return res.status(404).json({ error: 'Order not found' });
   res.json(row);
 });
 
-// POST /api/orders — create (public — studio customers can submit orders without admin auth)
-router.post('/', (req, res) => {
+// POST /api/orders — create (public — studio customers, shop_id requis)
+router.post('/', attachShopId, (req, res) => {
   const db = getDB();
   const {
     design_id, product, color = '#FFFFFF', format = 'A4',
@@ -61,12 +62,12 @@ router.post('/', (req, res) => {
 
   const info = db.prepare(`
     INSERT INTO orders
-      (design_id, product, color, format, quantity,
+      (shop_id, design_id, product, color, format, quantity,
        unit_price, format_price, total_price,
        customer_name, customer_email,
        ticket_from, ticket_to, notes)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-  `).run(design_id, product, color, format, quantity,
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `).run(req.shopId, design_id, product, color, format, quantity,
          unit_price, format_price, total_price,
          customer_name, customer_email,
          ticket_from, ticket_to, notes);
@@ -74,10 +75,10 @@ router.post('/', (req, res) => {
   res.status(201).json(db.prepare('SELECT * FROM orders WHERE id=?').get(info.lastInsertRowid));
 });
 
-// PATCH /api/orders/:id — update status or notes (admin)
-router.patch('/:id', requireAuth, (req, res) => {
+// PATCH /api/orders/:id — update status or notes (admin, scopé shop)
+router.patch('/:id', requireAuth, attachShopId, (req, res) => {
   const db  = getDB();
-  const row = db.prepare('SELECT id FROM orders WHERE id=?').get(req.params.id);
+  const row = db.prepare('SELECT id FROM orders WHERE id=? AND shop_id=?').get(req.params.id, req.shopId);
   if (!row) return res.status(404).json({ error: 'Order not found' });
 
   const allowed = ['status', 'notes', 'render_url', 'shopify_id'];
@@ -94,9 +95,9 @@ router.patch('/:id', requireAuth, (req, res) => {
   if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
 
   updates.push("updated_at=datetime('now')");
-  values.push(req.params.id);
+  values.push(req.params.id, req.shopId);
 
-  db.prepare(`UPDATE orders SET ${updates.join(',')} WHERE id=?`).run(...values);
+  db.prepare(`UPDATE orders SET ${updates.join(',')} WHERE id=? AND shop_id=?`).run(...values);
   res.json(db.prepare('SELECT * FROM orders WHERE id=?').get(req.params.id));
 });
 

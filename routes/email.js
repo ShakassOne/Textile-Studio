@@ -3,6 +3,7 @@ const express = require('express');
 const router  = express.Router();
 const https   = require('https');
 const { requireAuth } = require('./auth');
+const { attachShopId } = require('./_shop-context');
 
 // ── Config ────────────────────────────────────────────────────────────
 const RESEND_KEY    = process.env.RESEND_API_KEY    || '';
@@ -44,19 +45,19 @@ function _getSmtpTransport() {
 const PRODUCTS = { tshirt:'T-Shirt', hoodie:'Hoodie', cap:'Casquette', totebag:'Tote Bag' };
 const STATUS_FR = { pending:'En attente', confirmed:'Confirmée', printing:'En impression', shipped:'Expédiée', done:'Terminée' };
 
-// ── POST /api/email/order-confirmation (public — called by studio after order creation) ──
-router.post('/order-confirmation', async (req, res) => {
+// ── POST /api/email/order-confirmation (public, scopé shop) ──
+router.post('/order-confirmation', attachShopId, async (req, res) => {
   const { order_id } = req.body;
   if (!order_id) return res.status(400).json({ error: 'order_id required' });
 
   const { getDB } = require('../db/database');
   const db    = getDB();
-  const order = db.prepare('SELECT * FROM orders WHERE id=?').get(order_id);
+  const order = db.prepare('SELECT * FROM orders WHERE id=? AND shop_id=?').get(order_id, req.shopId);
   if (!order)  return res.status(404).json({ error: 'Order not found' });
   if (!order.customer_email) return res.status(400).json({ error: 'No customer email' });
 
   const design = order.design_id
-    ? db.prepare('SELECT * FROM designs WHERE id=?').get(order.design_id)
+    ? db.prepare('SELECT * FROM designs WHERE id=? AND shop_id=?').get(order.design_id, req.shopId)
     : null;
 
   const html = buildOrderConfirmationHTML(order, design);
@@ -65,7 +66,7 @@ router.post('/order-confirmation', async (req, res) => {
   try {
     await sendEmail({ to: order.customer_email, subject, html });
     // Mark email sent
-    db.prepare("UPDATE orders SET notes=COALESCE(notes||' | ','')|| 'email_sent:' || datetime('now') WHERE id=?").run(order_id);
+    db.prepare("UPDATE orders SET notes=COALESCE(notes||' | ','')|| 'email_sent:' || datetime('now') WHERE id=? AND shop_id=?").run(order_id, req.shopId);
     res.json({ ok: true, to: order.customer_email });
   } catch (err) {
     console.error('Email error:', err.message);
@@ -73,14 +74,14 @@ router.post('/order-confirmation', async (req, res) => {
   }
 });
 
-// ── POST /api/email/shipping-update (admin) ───────────────────────────
-router.post('/shipping-update', requireAuth, async (req, res) => {
+// ── POST /api/email/shipping-update (admin, scopé shop) ───────────────────
+router.post('/shipping-update', requireAuth, attachShopId, async (req, res) => {
   const { order_id, tracking_number, carrier } = req.body;
   if (!order_id) return res.status(400).json({ error: 'order_id required' });
 
   const { getDB } = require('../db/database');
   const db    = getDB();
-  const order = db.prepare('SELECT * FROM orders WHERE id=?').get(order_id);
+  const order = db.prepare('SELECT * FROM orders WHERE id=? AND shop_id=?').get(order_id, req.shopId);
   if (!order || !order.customer_email) return res.status(400).json({ error: 'Order not found or no email' });
 
   const html = buildShippingHTML(order, tracking_number, carrier);
