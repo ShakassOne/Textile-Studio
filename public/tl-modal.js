@@ -142,6 +142,10 @@
     // thème qui contrôle la taille de la cellule — on laisse son CSS faire son
     // boulot. On ajoute juste un fond blanc opaque pour que les rendus PNG sur
     // fond transparent restent lisibles sur les drawers à fond sombre.
+    //
+    // max-width:100% / max-height:100% : protection universelle contre les
+    // <img> sans contrainte CSS qui déborderaient du container quand on
+    // remplace src par une image de grande dimension (rendu HD 2000x2000).
     function _injectByVariantId() {
       var nodes = document.querySelectorAll('[data-variant-id="' + vid + '"]');
       nodes.forEach(function(node) {
@@ -151,6 +155,10 @@
         if (img) {
           img.src    = previewUrl;
           img.srcset = '';
+          img.style.maxWidth     = '100%';
+          img.style.maxHeight    = '100%';
+          img.style.width        = '100%';
+          img.style.height       = '100%';
           img.style.background   = '#ffffff';
           img.style.mixBlendMode = 'normal';
           img.style.objectFit    = 'contain';
@@ -184,6 +192,10 @@
             if (img) {
               img.src    = url;
               img.srcset = '';
+              img.style.maxWidth     = '100%';
+              img.style.maxHeight    = '100%';
+              img.style.width        = '100%';
+              img.style.height       = '100%';
               img.style.background   = '#ffffff';
               img.style.mixBlendMode = 'normal';
               img.style.objectFit    = 'contain';
