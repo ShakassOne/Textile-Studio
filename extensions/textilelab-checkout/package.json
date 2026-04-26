@@ -1,0 +1,12 @@
+{
+  "name": "textilelab-checkout",
+  "private": true,
+  "version": "1.0.0",
+  "license": "UNLICENSED",
+  "description": "Checkout UI extension TextileLab — aperçu design + lien cliquable.",
+  "dependencies": {
+    "@shopify/ui-extensions": "2024.10.x",
+    "@shopify/ui-extensions-react": "2024.10.x",
+    "react": "^18.2.0"
+  }
+}

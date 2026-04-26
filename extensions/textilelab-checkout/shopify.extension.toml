@@ -1,0 +1,18 @@
+api_version = "2024-10"
+
+[[extensions]]
+type = "ui_extension"
+name = "TextileLab — Aperçu design checkout"
+handle = "textilelab-checkout"
+
+# Cible : insérer un bloc APRÈS le rendu natif de chaque ligne du panier sur
+# la page checkout. Donne accès aux line item properties pour rendre l'URL
+# "Voir mon design" cliquable + afficher la miniature `_preview_img`.
+[[extensions.targeting]]
+module = "./src/Checkout.jsx"
+target = "purchase.checkout.cart-line-item.render-after"
+
+[extensions.capabilities]
+network_access = false
+block_progress = false
+api_access     = true
