@@ -128,97 +128,150 @@
   }
 
   // ── Injection universelle de l'image design dans le panier ─────────────────
-  // Double approche :
-  //   1. [data-variant-id] — attribut natif Shopify (Dawn, Debut, la plupart des thèmes)
-  //   2. /cart.js + index — pour les thèmes table-based sans [data-variant-id] sur les lignes
-  // MutationObserver pour couvrir les drawers lazy-loadés, timeout 5s.
-  function _tlInjectCartImage(variantId, previewUrl) {
-    if (!previewUrl || !variantId) return;
-    var vid = String(variantId);
+  //
+  // STRATÉGIE OVERLAY (thème-agnostique, non-invasive) :
+  //
+  // On ne touche JAMAIS à l'<img> originale du thème (pas de src, pas de
+  // style, pas de removeAttribute). À la place, on insère un <div> overlay
+  // en position:absolute; inset:0 dans le container parent de l'image.
+  // L'overlay contient notre rendu HD et masque visuellement l'image native
+  // sans altérer le DOM du thème.
+  //
+  // Avantages :
+  //   - Aucun risque de débordement (l'overlay s'adapte au container)
+  //   - Pas de carré blanc fantôme (le container du thème reste maître)
+  //   - Au refresh / re-render : l'image native revient proprement, et la
+  //     fonction _tlSyncCartImages() ré-injecte les overlays si nécessaire
+  //   - Compatible avec tous les thèmes (Dawn, Sense, Studio, table-based…)
+  //
+  // Synchronisation persistante :
+  //   - DOMContentLoaded → premier sync
+  //   - cart:update / cart:refresh → re-sync
+  //   - MutationObserver permanent debouncé (200ms) → couvre les rendus
+  //     dynamiques du drawer (open/close, quantity change, etc.)
 
-    // Approche 1 : sélecteur [data-variant-id] natif Shopify
-    // Stratégie thème-agnostique : on REMPLACE seulement la source de l'image,
-    // sans toucher aux attributs width/height/class ni au container. C'est le
-    // thème qui contrôle la taille de la cellule — on laisse son CSS faire son
-    // boulot. On ajoute juste un fond blanc opaque pour que les rendus PNG sur
-    // fond transparent restent lisibles sur les drawers à fond sombre.
-    //
-    // max-width:100% / max-height:100% : protection universelle contre les
-    // <img> sans contrainte CSS qui déborderaient du container quand on
-    // remplace src par une image de grande dimension (rendu HD 2000x2000).
-    function _injectByVariantId() {
-      var nodes = document.querySelectorAll('[data-variant-id="' + vid + '"]');
-      nodes.forEach(function(node) {
-        if (node.dataset.tlImg) return;
-        node.dataset.tlImg = '1';
-        var img = node.querySelector('img');
-        if (img) {
-          img.src    = previewUrl;
-          img.srcset = '';
-          img.style.maxWidth     = '100%';
-          img.style.maxHeight    = '100%';
-          img.style.width        = '100%';
-          img.style.height       = '100%';
-          img.style.background   = '#ffffff';
-          img.style.mixBlendMode = 'normal';
-          img.style.objectFit    = 'contain';
-        }
-        _tlFixLineItemProps(node);
-      });
-    }
+  function _tlInjectOverlay(rowEl, previewUrl) {
+    if (!rowEl || !previewUrl) return;
+    var img = rowEl.querySelector('img');
+    if (!img) return;
+    var container = img.parentElement;
+    if (!container) return;
+    // Si un overlay TL existe déjà dans le container, on n'en remet pas un
+    if (container.querySelector(':scope > .tl-design-overlay')) return;
 
-    // Approche 2 : /cart.js + correspondance par index (thèmes table-based)
-    function _injectByCartIndex() {
-      fetch('/cart.js')
-        .then(function(r) { return r.json(); })
-        .then(function(cart) {
-          var items = cart.items || [];
-          // Sélecteurs couvrant les drawers table-based courants
-          var rows = Array.from(document.querySelectorAll(
-            'cart-drawer tbody tr, ' +
-            '.cart-drawer tbody tr, ' +
-            '[id*="CartDrawer"] tbody tr, ' +
-            '[id*="cart-drawer"] tbody tr, ' +
-            '[id*="cart"] tbody tr'
-          ));
+    // Ancrer l'overlay en absolute via position:relative sur le container.
+    // On ne change la position QUE si elle est static (default).
+    var pos = window.getComputedStyle(container).position;
+    if (pos === 'static') container.style.position = 'relative';
+
+    var overlay = document.createElement('div');
+    overlay.className = 'tl-design-overlay';
+    overlay.style.cssText =
+      'position:absolute;' +
+      'inset:0;' +
+      'background:#ffffff;' +
+      'z-index:2;' +
+      'pointer-events:none;' +
+      'overflow:hidden;' +
+      'display:flex;' +
+      'align-items:center;' +
+      'justify-content:center;';
+
+    var ovImg = document.createElement('img');
+    ovImg.src = previewUrl;
+    ovImg.alt = '';
+    ovImg.loading = 'lazy';
+    ovImg.style.cssText =
+      'width:100%;' +
+      'height:100%;' +
+      'object-fit:contain;' +
+      'display:block;' +
+      'background:#ffffff;';
+    overlay.appendChild(ovImg);
+    container.appendChild(overlay);
+  }
+
+  // Synchronisation : fetch /cart.js, puis pour chaque cart-item du DOM ayant
+  // une key correspondante avec un _preview_img, injecter overlay + nettoyer
+  // les properties préfixées '_'.
+  var _tlSyncing = false;
+  var _tlSyncTimeout = null;
+  function _tlSyncCartImages() {
+    if (_tlSyncing) return;
+    _tlSyncing = true;
+    fetch('/cart.js', { credentials: 'same-origin' })
+      .then(function(r) { return r.json(); })
+      .then(function(cart) {
+        var items = cart.items || [];
+        if (!items.length) return;
+
+        // Map: key → { url } (item.key = "<variantId>:<hash>")
+        var byKey = {};
+        items.forEach(function(item) {
+          var url = (item.properties && item.properties['_preview_img']) || null;
+          if (url) byKey[item.key] = { url: url };
+        });
+
+        // Approche A : matching par data-key (Dawn 2024+, plupart des thèmes modernes)
+        Object.keys(byKey).forEach(function(key) {
+          var rows = document.querySelectorAll(
+            '[data-key="' + CSS.escape(key) + '"], ' +
+            '[data-cart-item-key="' + CSS.escape(key) + '"]'
+          );
+          rows.forEach(function(row) {
+            _tlInjectOverlay(row, byKey[key].url);
+            _tlFixLineItemProps(row);
+          });
+        });
+
+        // Approche B : matching par index dans les tbody (thèmes table-based legacy)
+        // Pour chaque tbody distinct, on aligne les <tr> avec l'ordre des items.
+        var tbodies = document.querySelectorAll(
+          'cart-drawer tbody, .cart-drawer tbody, ' +
+          '[id*="CartDrawer"] tbody, [id*="cart-drawer"] tbody, ' +
+          '.cart-items__table tbody, [class*="cart-items"] tbody'
+        );
+        tbodies.forEach(function(tbody) {
+          var rows = tbody.querySelectorAll(':scope > tr');
           if (!rows.length) return;
           items.forEach(function(item, idx) {
             var url = (item.properties && item.properties['_preview_img']) || null;
-            if (!url) return;
-            var row = rows[idx];
-            if (!row || row.dataset.tlImg) return;
-            row.dataset.tlImg = '1';
-            var img = row.querySelector('img');
-            if (img) {
-              img.src    = url;
-              img.srcset = '';
-              img.style.maxWidth     = '100%';
-              img.style.maxHeight    = '100%';
-              img.style.width        = '100%';
-              img.style.height       = '100%';
-              img.style.background   = '#ffffff';
-              img.style.mixBlendMode = 'normal';
-              img.style.objectFit    = 'contain';
-            }
-            _tlFixLineItemProps(row);
+            if (!url || !rows[idx]) return;
+            _tlInjectOverlay(rows[idx], url);
+            _tlFixLineItemProps(rows[idx]);
           });
-        })
-        .catch(function() {});
-    }
+        });
 
-    // Exécuter les deux approches immédiatement
-    _injectByVariantId();
-    _injectByCartIndex();
+        // Approche C : matching par variant-id (fallback ancien)
+        Object.keys(byKey).forEach(function(key) {
+          var vid = String(key).split(':')[0];
+          if (!vid) return;
+          var nodes = document.querySelectorAll('[data-variant-id="' + CSS.escape(vid) + '"]');
+          nodes.forEach(function(node) {
+            _tlInjectOverlay(node, byKey[key].url);
+            _tlFixLineItemProps(node);
+          });
+        });
+      })
+      .catch(function() {})
+      .finally(function() { _tlSyncing = false; });
+  }
 
-    // MutationObserver pour les drawers qui se chargent après (lazy render)
-    var _observer = new MutationObserver(function() {
-      _injectByVariantId();
-      _injectByCartIndex();
-    });
-    _observer.observe(document.body, { childList: true, subtree: true });
+  // Debounce la sync pour les rafales de mutations DOM.
+  function _tlScheduleSync() {
+    clearTimeout(_tlSyncTimeout);
+    _tlSyncTimeout = setTimeout(_tlSyncCartImages, 200);
+  }
 
-    // Déconnecter après 5 secondes
-    setTimeout(function() { _observer.disconnect(); }, 5000);
+  // Exposé pour réutilisation depuis le handler tl-add-to-cart.
+  function _tlInjectCartImage(/* variantId, previewUrl */) {
+    // Le payload arrive juste avant que le drawer Shopify ne soit re-render.
+    // On déclenche plusieurs syncs étalées pour couvrir tous les timings de
+    // re-render du thème.
+    _tlSyncCartImages();
+    setTimeout(_tlSyncCartImages, 300);
+    setTimeout(_tlSyncCartImages, 800);
+    setTimeout(_tlSyncCartImages, 1500);
   }
 
   // ── Nettoyage des propriétés line item dans le drawer ─────────────────────
@@ -367,6 +420,32 @@
     injectDOM();
     listenMessages();
     interceptLinks();
+    _tlInitCartSync();
+  }
+
+  // ── Synchronisation persistante des images du panier ───────────────────────
+  // Branche tous les déclencheurs qui peuvent re-render le drawer panier :
+  //   - Premier load de page → restaurer overlays sur items déjà au panier
+  //   - Évènements thème (cart:update, cart:refresh, theme:cart:update)
+  //   - MutationObserver permanent, debouncé à 200ms — couvre les ouvertures/
+  //     fermetures de drawer, changements de quantité, etc.
+  // Comme _tlSyncCartImages() est idempotent (skip si overlay existe déjà),
+  // appeler plusieurs fois est sans coût.
+  function _tlInitCartSync() {
+    // Premier sync au load
+    _tlSyncCartImages();
+
+    // Évènements émis par les thèmes Shopify modernes
+    ['cart:update', 'cart:refresh', 'theme:cart:update', 'cart-drawer:open']
+      .forEach(function(ev) {
+        document.addEventListener(ev, _tlScheduleSync);
+      });
+
+    // Observer permanent — debounce 200ms via _tlScheduleSync
+    try {
+      var obs = new MutationObserver(_tlScheduleSync);
+      obs.observe(document.body, { childList: true, subtree: true });
+    } catch (e) { /* sandbox sans MutationObserver — ignoré */ }
   }
 
   if (document.readyState === 'loading') {
