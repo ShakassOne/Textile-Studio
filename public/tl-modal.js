@@ -17,6 +17,55 @@
   window.__TLModalInitialized = true;
 
   // ── Styles injectés ─────────────────────────────────────────────────────────
+  // Le bloc CART_FIX_CSS résout le bug de chevauchement image/titre dans les
+  // drawers panier des thèmes Shopify modernes (Studio, Sense, etc.) où une
+  // <td> a un width inline (ex: width:140px) qui contredit le grid-template-
+  // columns calculé par le thème. On neutralise les widths inline sur les
+  // cellules de cart rows ; le grid CSS prend alors le relais et tout
+  // s'aligne. Approche purement CSS = pas de timing JS à gérer.
+  var CART_FIX_CSS = [
+    /* 1. Cellules <td> de rows de panier : neutraliser tous les widths inline */
+    '.cart-items__table-row > td,',
+    'tr[class*="cart-item"][class*="row"] > td,',
+    'tr[class*="line-item"] > td {',
+    '  width: auto !important;',
+    '  min-width: 0 !important;',
+    '}',
+    /* 2. Container interne <a class="*media-container"> qui a aussi un width inline */
+    '.cart-items__media-container,',
+    '[class*="cart-items__media"] > a,',
+    '[class*="cart-item__image"] > a {',
+    '  width: 100% !important;',
+    '  height: auto !important;',
+    '  max-width: 100% !important;',
+    '  min-width: 0 !important;',
+    '}',
+    /* 3. Forcer une largeur minimale raisonnable pour la 1ère colonne quand le */
+    /*    thème la sous-dimensionne (signature : tr en grid avec image dedans)  */
+    '.cart-items__table-row {',
+    '  grid-template-columns: minmax(80px, max-content) minmax(0, 1fr) minmax(80px, auto) !important;',
+    '}',
+    /* 4. Notre overlay : pleine cellule, fond blanc opaque, contain ratio */
+    '.tl-design-overlay {',
+    '  position: absolute !important;',
+    '  inset: 0 !important;',
+    '  background: #ffffff !important;',
+    '  z-index: 2 !important;',
+    '  pointer-events: none !important;',
+    '  overflow: hidden !important;',
+    '  display: flex !important;',
+    '  align-items: center !important;',
+    '  justify-content: center !important;',
+    '}',
+    '.tl-design-overlay > img {',
+    '  width: 100% !important;',
+    '  height: 100% !important;',
+    '  object-fit: contain !important;',
+    '  display: block !important;',
+    '  background: #ffffff !important;',
+    '}',
+  ].join('\n');
+
   var CSS = '\
     #tl-modal-overlay {\
       display: none;\
@@ -34,7 +83,7 @@
       border: none;\
       display: block;\
     }\
-  ';
+  ' + CART_FIX_CSS;
 
   // ── Injection des éléments DOM ──────────────────────────────────────────────
   function injectDOM() {
@@ -485,11 +534,42 @@
         document.addEventListener(ev, _tlScheduleSync);
       });
 
-    // Observer permanent — debounce 200ms via _tlScheduleSync
+    // Observer permanent sur le DOM body — mutations enfants/sous-arbre +
+    // changements d'attributs (couvre l'ouverture du <dialog> via 'open',
+    // les classes 'is-open' sur les drawers, etc.)
     try {
       var obs = new MutationObserver(_tlScheduleSync);
-      obs.observe(document.body, { childList: true, subtree: true });
+      obs.observe(document.body, {
+        childList:        true,
+        subtree:          true,
+        attributes:       true,
+        attributeFilter:  ['open', 'class', 'aria-hidden', 'aria-expanded']
+      });
     } catch (e) { /* sandbox sans MutationObserver — ignoré */ }
+
+    // Hook spécifique : intercepter dialog.showModal() / show() sur tous les
+    // <dialog> de la page. Quand un drawer s'ouvre, on relance la sync.
+    try {
+      var origShowModal = HTMLDialogElement.prototype.showModal;
+      var origShow      = HTMLDialogElement.prototype.show;
+      HTMLDialogElement.prototype.showModal = function() {
+        var r = origShowModal.apply(this, arguments);
+        _tlScheduleSync();
+        setTimeout(_tlSyncCartImages, 300);
+        setTimeout(_tlSyncCartImages, 800);
+        return r;
+      };
+      HTMLDialogElement.prototype.show = function() {
+        var r = origShow.apply(this, arguments);
+        _tlScheduleSync();
+        setTimeout(_tlSyncCartImages, 300);
+        setTimeout(_tlSyncCartImages, 800);
+        return r;
+      };
+    } catch (e) { /* HTMLDialogElement non dispo (vieux navigateur) — ignoré */ }
+
+    // Sync au focus de la fenêtre (cas : retour sur l'onglet après ajout)
+    window.addEventListener('focus', _tlScheduleSync);
   }
 
   if (document.readyState === 'loading') {
