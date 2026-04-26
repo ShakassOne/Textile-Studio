@@ -137,6 +137,11 @@
     var vid = String(variantId);
 
     // Approche 1 : sélecteur [data-variant-id] natif Shopify
+    // Stratégie thème-agnostique : on REMPLACE seulement la source de l'image,
+    // sans toucher aux attributs width/height/class ni au container. C'est le
+    // thème qui contrôle la taille de la cellule — on laisse son CSS faire son
+    // boulot. On ajoute juste un fond blanc opaque pour que les rendus PNG sur
+    // fond transparent restent lisibles sur les drawers à fond sombre.
     function _injectByVariantId() {
       var nodes = document.querySelectorAll('[data-variant-id="' + vid + '"]');
       nodes.forEach(function(node) {
@@ -146,11 +151,9 @@
         if (img) {
           img.src    = previewUrl;
           img.srcset = '';
-          img.style.objectFit    = 'contain';
           img.style.background   = '#ffffff';
           img.style.mixBlendMode = 'normal';
-          img.removeAttribute('width');
-          img.removeAttribute('height');
+          img.style.objectFit    = 'contain';
         }
         _tlFixLineItemProps(node);
       });
@@ -181,11 +184,9 @@
             if (img) {
               img.src    = url;
               img.srcset = '';
-              img.style.objectFit    = 'contain';
               img.style.background   = '#ffffff';
               img.style.mixBlendMode = 'normal';
-              img.removeAttribute('width');
-              img.removeAttribute('height');
+              img.style.objectFit    = 'contain';
             }
             _tlFixLineItemProps(row);
           });
