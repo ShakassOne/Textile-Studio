@@ -146,9 +146,11 @@
         if (img) {
           img.src    = previewUrl;
           img.srcset = '';
-          img.style.objectFit    = 'cover';
-          img.style.background   = 'transparent';
-          img.style.mixBlendMode = 'multiply';
+          img.style.objectFit    = 'contain';
+          img.style.background   = '#ffffff';
+          img.style.mixBlendMode = 'normal';
+          img.removeAttribute('width');
+          img.removeAttribute('height');
         }
         _tlFixLineItemProps(node);
       });
@@ -179,9 +181,11 @@
             if (img) {
               img.src    = url;
               img.srcset = '';
-              img.style.objectFit    = 'cover';
-              img.style.background   = 'transparent';
-              img.style.mixBlendMode = 'multiply';
+              img.style.objectFit    = 'contain';
+              img.style.background   = '#ffffff';
+              img.style.mixBlendMode = 'normal';
+              img.removeAttribute('width');
+              img.removeAttribute('height');
             }
             _tlFixLineItemProps(row);
           });
@@ -230,6 +234,21 @@
             'style="color:inherit;font-size:11px;text-decoration:underline;opacity:0.75">' +
             '👁\u00a0Voir le design</a>';
         }
+      }
+    });
+
+    // ─ Pattern 2 : balayage texte brut "_key: value" sur les éléments feuilles ─
+    // Masque tout élément dont le texte commence par "_xxx:" ou "_xxx="
+    // (signe d'une property interne non traitée par le pattern <dl>).
+    var leafEls = container.querySelectorAll('li, p, span, div, td');
+    leafEls.forEach(function(el) {
+      if (el.dataset.tlFixed2) return;
+      if (el.children.length > 2) return;
+      var t = (el.textContent || '').trim();
+      if (!t) return;
+      if (/^_[a-z_]+\s*[:=]/i.test(t)) {
+        el.dataset.tlFixed2 = '1';
+        el.style.display = 'none';
       }
     });
   }

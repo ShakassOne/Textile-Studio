@@ -5197,13 +5197,16 @@ async function _checkoutShopifyDirect() {
   }
 
   // ── 5. Construire les properties Shopify ──
+  // Toutes les props techniques sont préfixées '_' → invisibles dans le drawer client
+  // mais accessibles au merchant côté admin Shopify (orders, line items).
+  // Seul "Voir mon design" reste visible client.
   const APP_ORIGIN = window.location.origin;
   const propsObj = {
-    'design_id': String(designId || ''),
-    'Produit':   STATE.product,
-    'Format':    STATE.format,
-    'Couleur':   STATE.textileColor,
-    'Faces':     String(viewsCount),
+    '_design_id': String(designId || ''),
+    '_product':   STATE.product,
+    '_format':    STATE.format,
+    '_color':     STATE.textileColor,
+    '_faces':     String(viewsCount),
   };
 
   // Un seul lien "Voir mon design" → page HTML belle avec recto+verso cliquable
