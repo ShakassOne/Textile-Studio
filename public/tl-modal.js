@@ -385,13 +385,16 @@
         return;
       }
 
-      // "Voir mon design" → lien cliquable propre
-      if (key === 'Voir mon design') {
+      // "_voir_mon_design" → lien cliquable propre dans le drawer panier
+      // (clé préfixée '_' = invisible nativement dans le checkout Shopify,
+      //  tl-modal.js la rend visible ici sous forme de lien)
+      if (key === '_voir_mon_design') {
         var url = dd.textContent.trim();
+        dt.style.display = 'none'; // masquer la key technique
         if (url.startsWith('http')) {
           dd.innerHTML = '<a href="' + url + '" target="_blank" rel="noopener" ' +
             'style="color:inherit;font-size:11px;text-decoration:underline;opacity:0.75">' +
-            '👁\u00a0Voir le design</a>';
+            '👁 Voir le design</a>';
         }
       }
     });

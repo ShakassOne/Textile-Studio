@@ -5209,9 +5209,10 @@ async function _checkoutShopifyDirect() {
     '_faces':     String(viewsCount),
   };
 
-  // Un seul lien "Voir mon design" → page HTML belle avec recto+verso cliquable
+  // Lien "Voir mon design" — préfixé '_' pour masquer du rendu natif Shopify checkout.
+  // L'affichage est géré par la Checkout UI Extension (lien cliquable) et tl-modal.js (drawer panier).
   if (designId) {
-    propsObj['Voir mon design'] = `${APP_ORIGIN}/design-preview/${designId}`;
+    propsObj['_voir_mon_design'] = `${APP_ORIGIN}/design-preview/${designId}`;
   }
   // ── UID unique pour éviter la fusion des lignes dans le panier Shopify ──
   propsObj['_design_uid'] = Date.now() + '-' + Math.random().toString(36).slice(2, 7);
