@@ -5,8 +5,8 @@
   "license": "UNLICENSED",
   "description": "Checkout UI extension TextileLab — aperçu design + lien cliquable.",
   "dependencies": {
-    "@shopify/ui-extensions": "^2024.10.0",
-    "@shopify/ui-extensions-react": "^2024.10.0",
+    "@shopify/ui-extensions": "^2025.7.0",
+    "@shopify/ui-extensions-react": "^2025.7.0",
     "react": "^18.2.0",
     "react-reconciler": "^0.29.0"
   }

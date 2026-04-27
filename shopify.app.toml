@@ -1,18 +1,21 @@
-name       = "Textile Studio Lab"
-client_id  = "9f77ba5672b593f4e6a5d32d2093e460"
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "9f77ba5672b593f4e6a5d32d2093e460"
+name = "Textile Studio Lab"
 application_url = "https://textile-studio-production.up.railway.app"
-embedded   = true
-
-[access_scopes]
-  scopes = "read_products,write_products,read_orders,write_orders,read_customers"
-
-[auth]
-  redirect_urls = [
-    "https://textile-studio-production.up.railway.app/oauth/callback"
-  ]
+embedded = true
 
 [webhooks]
-  api_version = "2024-01"
+api_version = "2024-01"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_customers,read_orders,read_products,write_orders,write_products"
+
+[auth]
+redirect_urls = [
+  "https://textile-studio-production.up.railway.app/oauth/callback"
+]
 
 [pos]
-  embedded = false
+embedded = false
