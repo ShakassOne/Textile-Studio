@@ -49,7 +49,9 @@
     '}',
   ].join('\n');
 
-  var CSS = '\
+  // NOTE : ne pas nommer cette variable "CSS" — cela écraserait window.CSS
+  // (l'API globale) dans le scope de l'IIFE et ferait planter CSS.escape().
+  var TL_STYLES = '\
     #tl-modal-overlay {\
       display: none;\
       position: fixed;\
@@ -71,7 +73,7 @@
   // ── Injection des éléments DOM ──────────────────────────────────────────────
   function injectDOM() {
     var style = document.createElement('style');
-    style.textContent = CSS;
+    style.textContent = TL_STYLES;
     document.head.appendChild(style);
 
     var overlay = document.createElement('div');
