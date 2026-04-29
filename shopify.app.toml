@@ -16,9 +16,8 @@ uri = "/shopify/webhook"
 # compliance_topics (GDPR) : à déclarer dans Partners Dashboard > App setup > GDPR webhooks
 # (Shopify requiert l'approbation "Protected Customer Data" avant de les accepter dans le TOML)
 
-[[webhooks.subscriptions]]
-topics = ["orders/paid"]
-uri = "/shopify/webhook"
+# orders/paid : contient des données client protégées → approbation requise avant ajout ici
+# Webhook enregistré dynamiquement au bootstrap (server.js) en attendant l'approbation
 
 [app_proxy]
 url = "https://textile-studio-production.up.railway.app/proxy"
