@@ -23,29 +23,12 @@
   // columns calculé par le thème. On neutralise les widths inline sur les
   // cellules de cart rows ; le grid CSS prend alors le relais et tout
   // s'aligne. Approche purement CSS = pas de timing JS à gérer.
+  // Seuls les styles de l'overlay TL sont déclarés en CSS global.
+  // Les corrections de grid/width sont gérées par JS (_tlFixCartGridConflict)
+  // de façon ciblée (uniquement sur les rows qui en ont besoin), pour ne pas
+  // perturber la mise en page native des thèmes Shopify (Studio, Dawn, etc.).
   var CART_FIX_CSS = [
-    /* 1. Cellules <td> de rows de panier : neutraliser tous les widths inline */
-    '.cart-items__table-row > td,',
-    'tr[class*="cart-item"][class*="row"] > td,',
-    'tr[class*="line-item"] > td {',
-    '  width: auto !important;',
-    '  min-width: 0 !important;',
-    '}',
-    /* 2. Container interne <a class="*media-container"> qui a aussi un width inline */
-    '.cart-items__media-container,',
-    '[class*="cart-items__media"] > a,',
-    '[class*="cart-item__image"] > a {',
-    '  width: 100% !important;',
-    '  height: auto !important;',
-    '  max-width: 100% !important;',
-    '  min-width: 0 !important;',
-    '}',
-    /* 3. Forcer une largeur minimale raisonnable pour la 1ère colonne quand le */
-    /*    thème la sous-dimensionne (signature : tr en grid avec image dedans)  */
-    '.cart-items__table-row {',
-    '  grid-template-columns: minmax(80px, max-content) minmax(0, 1fr) minmax(80px, auto) !important;',
-    '}',
-    /* 4. Notre overlay : pleine cellule, fond blanc opaque, contain ratio */
+    /* Overlay design TL : pleine cellule, fond blanc opaque, contain ratio */
     '.tl-design-overlay {',
     '  position: absolute !important;',
     '  inset: 0 !important;',
