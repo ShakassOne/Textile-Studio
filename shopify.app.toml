@@ -8,9 +8,29 @@ embedded = true
 [webhooks]
 api_version = "2024-01"
 
+# Audit B8 — déclarations statiques exigées par Shopify review depuis 2024
+[[webhooks.subscriptions]]
+topics = ["app/uninstalled"]
+uri = "/shopify/webhook"
+
+# compliance_topics (GDPR) : à déclarer dans Partners Dashboard > App setup > GDPR webhooks
+# (Shopify requiert l'approbation "Protected Customer Data" avant de les accepter dans le TOML)
+
+[[webhooks.subscriptions]]
+topics = ["orders/paid"]
+uri = "/shopify/webhook"
+
+[app_proxy]
+url = "https://textile-studio-production.up.railway.app/proxy"
+subpath = "textilelab"
+prefix = "apps"
+
 [access_scopes]
-# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_customers,read_orders,read_products,write_orders,write_products"
+# Audit B7 — principe du moindre privilège : write_products/write_orders/read_customers retirés
+# write_products : non utilisé dans le flow merchant principal (feature admin optionnelle)
+# write_orders   : aucune mutation order dans le code
+# read_customers : non nécessaire, Shopify fournit l'email dans le payload GDPR directement
+scopes = "read_products,read_orders"
 
 [auth]
 redirect_urls = [

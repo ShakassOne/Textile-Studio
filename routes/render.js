@@ -1,13 +1,37 @@
 'use strict';
-const express = require('express');
-const router  = express.Router();
-const path    = require('path');
-const fs      = require('fs');
+const express   = require('express');
+const router    = express.Router();
+const path      = require('path');
+const fs        = require('fs');
+const rateLimit = require('express-rate-limit');
 const { requireAuth } = require('./auth');
+const { requireShopifySession } = require('./shopify-session');
 const { getDB } = require('../db/database');
 const { attachShopId, attachShopIdSoft } = require('./_shop-context');
 const { uploadToFtpAsync, isFtpConfigured } = require('../utils/ftp-upload');
 const { uploadToShopifyFiles } = require('../utils/shopify-files');
+
+// ── Rate-limit render : 200 saves/heure/shop (audit B5) ──────────────────────
+const renderRateLimiter = rateLimit({
+  windowMs:        60 * 60 * 1000,
+  max:             200,
+  keyGenerator:    (req) => String(req.shopId || req.ip),
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message:         { error: 'Quota render dépassé (200/h) — réessayez dans une heure' },
+});
+
+// ── Vérification taille body PNG base64 (max 10 Mo) ─────────────────────────
+const PNG_B64_MAX = 10 * 1024 * 1024; // 10 Mo
+function checkBodySize(field) {
+  return (req, res, next) => {
+    const val = req.body?.[field];
+    if (val && Buffer.byteLength(val, 'utf8') > PNG_B64_MAX) {
+      return res.status(413).json({ error: `Payload trop grand — max 10 Mo pour ${field}` });
+    }
+    next();
+  };
+}
 
 // Utilise DATA_DIR si défini (prod Railway) sinon dossier projet
 const DATA_DIR    = process.env.DATA_DIR || path.join(__dirname, '..');
@@ -45,7 +69,8 @@ router.get('/', requireAuth, attachShopId, (req, res) => {
 // Body: { design_id, views: [{ idx, name, png_base64 }] }
 // Stocke chaque image dans uploads/renders et met à jour views_preview_json dans la table designs
 // Scopé shop : on vérifie que design_id appartient bien au shop courant.
-router.post('/save-views', attachShopId, (req, res) => {
+// Auth Shopify session token + rate-limit + body size check (audit B5)
+router.post('/save-views', requireShopifySession, attachShopId, renderRateLimiter, (req, res) => {
   const { design_id, views } = req.body;
   if (!design_id || !Array.isArray(views) || !views.length) {
     return res.status(400).json({ error: 'design_id et views[] requis' });
@@ -90,7 +115,8 @@ router.post('/save-views', attachShopId, (req, res) => {
 // ── POST /api/render/save ── reçoit base64, sauvegarde PNG, upload Shopify Files CDN
 // Retourne previewUrl = URL CDN Shopify (cdn.shopify.com) ou Railway en fallback
 // Scopé shop : on vérifie l'ownership du design avant d'accepter le payload.
-router.post('/save', attachShopId, async (req, res) => {
+// Auth Shopify session token + rate-limit + body size check (audit B5)
+router.post('/save', requireShopifySession, attachShopId, renderRateLimiter, checkBodySize('png_base64'), async (req, res) => {
   const { design_id, png_base64 } = req.body;
   if (!design_id || !png_base64) {
     return res.status(400).json({ error: 'design_id et png_base64 requis' });

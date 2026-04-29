@@ -1,9 +1,22 @@
 'use strict';
-const express = require('express');
-const router  = express.Router();
+const express   = require('express');
+const router    = express.Router();
+const rateLimit = require('express-rate-limit');
 const { requireAuth } = require('./auth');
+const { requireShopifySession } = require('./shopify-session');
 const { getDB } = require('../db/database');
 const { attachShopId } = require('./_shop-context');
+
+// ── Rate-limit IA : 50 générations/heure/shop (audit B3) ─────────────────────
+const aiRateLimiter = rateLimit({
+  windowMs:        60 * 60 * 1000,        // 1 heure
+  max:             50,                     // 50 requêtes/heure/shop
+  keyGenerator:    (req) => String(req.shopId || req.ip),
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message:         { error: 'Quota IA dépassé (50 générations/h) — réessayez dans une heure' },
+  skip:            (req) => !req.shopId,   // si shopId pas encore posé, IP prend le relais
+});
 
 // Helpers : lire/écrire une clé dans la table settings, scopée par shop_id (audit B1).
 function getSetting(shopId, key) {
@@ -80,9 +93,8 @@ router.delete('/settings/openai', requireAuth, attachShopId, (req, res) => {
 });
 
 // ── POST /api/ai/dalle — Génération IA depuis texte (scopé shop) ────────
-// NOTE B3 (audit) : auth complémentaire (requireShopifySession ou App Proxy HMAC) +
-// rate-limit par shop à ajouter dans le prochain bloquant.
-router.post('/dalle', attachShopId, async (req, res) => {
+// Auth Shopify session token (App Bridge 4) + rate-limit par shop (audit B3)
+router.post('/dalle', requireShopifySession, attachShopId, aiRateLimiter, async (req, res) => {
   const { prompt, size = '1024x1024', quality = 'high', transparent = true } = req.body;
   if (!prompt) return res.status(400).json({ error: 'prompt requis' });
 
@@ -116,7 +128,8 @@ router.post('/dalle', attachShopId, async (req, res) => {
 });
 
 // ── POST /api/ai/transform — Photo → Art (scopé shop) ─────────────
-router.post('/transform', attachShopId, async (req, res) => {
+// Auth Shopify session token (App Bridge 4) + rate-limit par shop (audit B3)
+router.post('/transform', requireShopifySession, attachShopId, aiRateLimiter, async (req, res) => {
   const { imageBase64, style = 'cartoon' } = req.body;
   if (!imageBase64) return res.status(400).json({ error: 'imageBase64 requis' });
 

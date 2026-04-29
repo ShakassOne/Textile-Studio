@@ -14,13 +14,36 @@
  *  4. Design sur fond blanc → composite Multiply sur mockup → PNG 2000×2000
  */
 
-const express  = require('express');
-const router   = express.Router();
-const path     = require('path');
-const fs       = require('fs');
-const sharp    = require('sharp');
+const express   = require('express');
+const router    = express.Router();
+const path      = require('path');
+const fs        = require('fs');
+const sharp     = require('sharp');
+const rateLimit = require('express-rate-limit');
+const { requireAuth } = require('./auth');
+const { requireShopifySession } = require('./shopify-session');
 const { getDB } = require('../db/database');
 const { attachShopId } = require('./_shop-context');
+
+// ── Rate-limit mockup-gen : 100 générations/heure/shop (audit B5) ────────────
+const mockupRateLimiter = rateLimit({
+  windowMs:        60 * 60 * 1000,
+  max:             100,
+  keyGenerator:    (req) => String(req.shopId || req.ip),
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message:         { error: 'Quota mockup dépassé (100/h) — réessayez dans une heure' },
+});
+
+// ── Vérification taille body PNG base64 (max 10 Mo) ─────────────────────────
+const PNG_B64_MAX = 10 * 1024 * 1024;
+function checkDesignSize(req, res, next) {
+  const val = req.body?.design_png;
+  if (val && Buffer.byteLength(val, 'utf8') > PNG_B64_MAX) {
+    return res.status(413).json({ error: 'Payload trop grand — max 10 Mo pour design_png' });
+  }
+  next();
+}
 
 const DATA_DIR   = process.env.DATA_DIR || path.join(__dirname, '..');
 const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
@@ -35,7 +58,8 @@ const BACK_W = 440, BACK_H = 340;
 if (!fs.existsSync(GEN_DIR)) fs.mkdirSync(GEN_DIR, { recursive: true });
 
 // ── POST /api/mockup-gen/generate-all (scopé shop, audit B5) ──────────────
-router.post('/generate-all', attachShopId, async (req, res) => {
+// Auth Shopify session token + rate-limit + body size check
+router.post('/generate-all', requireShopifySession, attachShopId, mockupRateLimiter, checkDesignSize, async (req, res) => {
   const { design_png, format = 'A4', view_name = null } = req.body;
   if (!design_png) return res.status(400).json({ error: 'design_png required' });
 
@@ -127,7 +151,8 @@ router.post('/generate-all', attachShopId, async (req, res) => {
 });
 
 // ── DELETE /api/mockup-gen/cleanup — nettoyer les vieux fichiers générés ──────
-router.delete('/cleanup', async (req, res) => {
+// Auth admin requise (audit B5 : sans auth, un attaquant peut effacer tous les renders)
+router.delete('/cleanup', requireAuth, async (req, res) => {
   try {
     const maxAgeMs = 24 * 60 * 60 * 1000; // 24h
     const now = Date.now();
