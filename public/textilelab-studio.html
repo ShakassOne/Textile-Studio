@@ -6552,8 +6552,11 @@ let _clipboard       = null; // Ctrl+C / Ctrl+V
 
 async function apiFetch(path, opts = {}) {
   try {
+    // X-Shop-Domain : permet à attachShopId de résoudre le shop côté serveur
+    // même depuis un iframe storefront (sans App Bridge, sans session token JWT).
+    const shopHeader = window._TL_SHOP ? { 'X-Shop-Domain': window._TL_SHOP } : {};
     const res = await fetch(API_BASE + path, {
-      headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
+      headers: { 'Content-Type': 'application/json', ...shopHeader, ...(opts.headers || {}) },
       ...opts,
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);

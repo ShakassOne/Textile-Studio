@@ -69,8 +69,9 @@ router.get('/', requireAuth, attachShopId, (req, res) => {
 // Body: { design_id, views: [{ idx, name, png_base64 }] }
 // Stocke chaque image dans uploads/renders et met à jour views_preview_json dans la table designs
 // Scopé shop : on vérifie que design_id appartient bien au shop courant.
-// Auth Shopify session token + rate-limit + body size check (audit B5)
-router.post('/save-views', requireShopifySession, attachShopId, renderRateLimiter, (req, res) => {
+// Auth : attachShopId (X-Shop-Domain depuis l'éditeur storefront) + rate-limit + ownership check (audit B5)
+// requireShopifySession retiré : l'éditeur tourne dans un iframe storefront sans App Bridge.
+router.post('/save-views', attachShopId, renderRateLimiter, (req, res) => {
   const { design_id, views } = req.body;
   if (!design_id || !Array.isArray(views) || !views.length) {
     return res.status(400).json({ error: 'design_id et views[] requis' });
@@ -115,8 +116,9 @@ router.post('/save-views', requireShopifySession, attachShopId, renderRateLimite
 // ── POST /api/render/save ── reçoit base64, sauvegarde PNG, upload Shopify Files CDN
 // Retourne previewUrl = URL CDN Shopify (cdn.shopify.com) ou Railway en fallback
 // Scopé shop : on vérifie l'ownership du design avant d'accepter le payload.
-// Auth Shopify session token + rate-limit + body size check (audit B5)
-router.post('/save', requireShopifySession, attachShopId, renderRateLimiter, checkBodySize('png_base64'), async (req, res) => {
+// Auth : attachShopId (X-Shop-Domain depuis l'éditeur storefront) + rate-limit + body size check + ownership check (audit B5)
+// requireShopifySession retiré : l'éditeur tourne dans un iframe storefront sans App Bridge.
+router.post('/save', attachShopId, renderRateLimiter, checkBodySize('png_base64'), async (req, res) => {
   const { design_id, png_base64 } = req.body;
   if (!design_id || !png_base64) {
     return res.status(400).json({ error: 'design_id et png_base64 requis' });

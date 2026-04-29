@@ -58,8 +58,8 @@ const BACK_W = 440, BACK_H = 340;
 if (!fs.existsSync(GEN_DIR)) fs.mkdirSync(GEN_DIR, { recursive: true });
 
 // ── POST /api/mockup-gen/generate-all (scopé shop, audit B5) ──────────────
-// Auth Shopify session token + rate-limit + body size check
-router.post('/generate-all', requireShopifySession, attachShopId, mockupRateLimiter, checkDesignSize, async (req, res) => {
+// Auth : attachShopId (X-Shop-Domain) + rate-limit + body size check (audit B5)
+router.post('/generate-all', attachShopId, mockupRateLimiter, checkDesignSize, async (req, res) => {
   const { design_png, format = 'A4', view_name = null } = req.body;
   if (!design_png) return res.status(400).json({ error: 'design_png required' });
 
