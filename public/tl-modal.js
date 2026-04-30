@@ -48,24 +48,33 @@
     '.cart-items__table-row {',
     '  grid-template-columns: minmax(80px, max-content) minmax(0, 1fr) minmax(80px, auto) !important;',
     '}',
-    /* 4. Forcer le container media et l'image native à 160×160 (au lieu de 140×140
-          imposé par le thème Studio via inline style) — pour un visuel plus généreux. */
+    /* 4. Forcer le container media à 160px de large MAIS hauteur auto pour
+          préserver le ratio naturel de l\'image mockup (rectangulaire, pas carrée).
+          Le _tlInjectOverlay() applique ensuite aspect-ratio dynamiquement quand
+          l\'image overlay charge — cf. _tlApplyAspectRatio(). */
     '.cart-items__media-container,',
     '[class*="cart-items__media-container"],',
     '[class*="cart-item__image"] > a {',
     '  width: 160px !important;',
-    '  height: 160px !important;',
+    '  height: auto !important;',
     '  max-width: 160px !important;',
     '  min-width: 160px !important;',
     '}',
     '.cart-items__media-image,',
     '[class*="cart-items__media-image"] {',
-    '  width: 160px !important;',
-    '  height: 160px !important;',
+    '  width: 100% !important;',
+    '  height: auto !important;',
     '  object-fit: contain !important;',
     '}',
-    /* 5. Notre overlay : pleine cellule, fond TRANSPARENT, image en COVER pour
-          remplir tout l\'espace (pas de bandes blanches latérales). */
+    /* Quand un overlay TL est présent, on cache l\'image native du tshirt rouge
+       (sinon on la verrait à travers les bandes transparentes haut/bas du contain). */
+    '.cart-items__media-container:has(.tl-design-overlay) > img,',
+    '[class*="cart-items__media-container"]:has(.tl-design-overlay) > img,',
+    '[class*="cart-item__image"] > a:has(.tl-design-overlay) > img {',
+    '  visibility: hidden !important;',
+    '}',
+    /* 5. Notre overlay : pleine cellule, fond TRANSPARENT, image en CONTAIN
+          (préserve le ratio naturel du mockup, pas de crop). */
     '.tl-design-overlay {',
     '  position: absolute !important;',
     '  inset: 0 !important;',
@@ -78,7 +87,7 @@
     '.tl-design-overlay > img {',
     '  width: 100% !important;',
     '  height: 100% !important;',
-    '  object-fit: cover !important;',
+    '  object-fit: contain !important;',
     '  display: block !important;',
     '  background: transparent !important;',
     '}',
@@ -291,13 +300,35 @@
     var ovImg = document.createElement('img');
     ovImg.src = previewUrl;
     ovImg.alt = '';
-    ovImg.loading = 'lazy';
+    ovImg.loading = 'eager';
     ovImg.style.cssText =
       'width:100%;' +
       'height:100%;' +
-      'object-fit:cover;' +
+      'object-fit:contain;' +
       'display:block;' +
       'background:transparent;';
+
+    // Quand l'image mockup est chargée, on applique son aspect-ratio naturel
+    // au container parent → le container suit le ratio du mockup au lieu d'être
+    // forcé en carré (et donc plus de crop, plus de bandes vides).
+    var applyAspectRatio = function() {
+      var nw = ovImg.naturalWidth, nh = ovImg.naturalHeight;
+      if (nw > 0 && nh > 0 && container) {
+        var ratio = (nw / nh).toFixed(4);
+        container.style.setProperty('aspect-ratio', ratio, 'important');
+        container.style.setProperty('height', 'auto', 'important');
+        // L'image native (cachée par CSS visibility:hidden) doit aussi suivre
+        // sinon elle réserve une hauteur 0 et le container collapse.
+        if (img && img !== ovImg) {
+          img.style.setProperty('aspect-ratio', ratio, 'important');
+          img.style.setProperty('height', 'auto', 'important');
+          img.style.setProperty('width', '100%', 'important');
+        }
+      }
+    };
+    if (ovImg.complete && ovImg.naturalWidth) applyAspectRatio();
+    else ovImg.addEventListener('load', applyAspectRatio, { once: true });
+
     overlay.appendChild(ovImg);
     container.appendChild(overlay);
   }
@@ -403,10 +434,12 @@
         return;
       }
 
-      // "_voir_mon_design" → lien cliquable propre dans le drawer panier
-      // (clé préfixée '_' = invisible nativement dans le checkout Shopify,
-      //  tl-modal.js la rend visible ici sous forme de lien)
-      if (key === '_voir_mon_design') {
+      // "Voir mon design" → lien cliquable propre dans le drawer panier.
+      // Cette clé n'est PAS préfixée '_' afin que Shopify affiche aussi
+      // nativement un lien dans le checkout (fallback si la Checkout UI
+      // Extension n'est pas déployée). Côté drawer, on remplace le rendu
+      // natif <dt><dd> par un bouton stylé.
+      if (key === 'Voir mon design' || key === '_voir_mon_design') {
         var url = dd.textContent.trim();
         dt.style.display = 'none'; // masquer la key technique
         if (url.startsWith('http')) {
