@@ -48,24 +48,39 @@
     '.cart-items__table-row {',
     '  grid-template-columns: minmax(80px, max-content) minmax(0, 1fr) minmax(80px, auto) !important;',
     '}',
-    /* 4. Notre overlay : pleine cellule, fond blanc opaque, contain ratio */
+    /* 4. Forcer le container media et l'image native à 160×160 (au lieu de 140×140
+          imposé par le thème Studio via inline style) — pour un visuel plus généreux. */
+    '.cart-items__media-container,',
+    '[class*="cart-items__media-container"],',
+    '[class*="cart-item__image"] > a {',
+    '  width: 160px !important;',
+    '  height: 160px !important;',
+    '  max-width: 160px !important;',
+    '  min-width: 160px !important;',
+    '}',
+    '.cart-items__media-image,',
+    '[class*="cart-items__media-image"] {',
+    '  width: 160px !important;',
+    '  height: 160px !important;',
+    '  object-fit: contain !important;',
+    '}',
+    /* 5. Notre overlay : pleine cellule, fond TRANSPARENT, image en COVER pour
+          remplir tout l\'espace (pas de bandes blanches latérales). */
     '.tl-design-overlay {',
     '  position: absolute !important;',
     '  inset: 0 !important;',
-    '  background: #ffffff !important;',
+    '  background: transparent !important;',
     '  z-index: 2 !important;',
     '  pointer-events: none !important;',
     '  overflow: hidden !important;',
-    '  display: flex !important;',
-    '  align-items: center !important;',
-    '  justify-content: center !important;',
+    '  display: block !important;',
     '}',
     '.tl-design-overlay > img {',
     '  width: 100% !important;',
     '  height: 100% !important;',
-    '  object-fit: contain !important;',
+    '  object-fit: cover !important;',
     '  display: block !important;',
-    '  background: #ffffff !important;',
+    '  background: transparent !important;',
     '}',
   ].join('\n');
 
@@ -267,13 +282,11 @@
     overlay.style.cssText =
       'position:absolute;' +
       'inset:0;' +
-      'background:#ffffff;' +
+      'background:transparent;' +
       'z-index:2;' +
       'pointer-events:none;' +
       'overflow:hidden;' +
-      'display:flex;' +
-      'align-items:center;' +
-      'justify-content:center;';
+      'display:block;';
 
     var ovImg = document.createElement('img');
     ovImg.src = previewUrl;
@@ -282,9 +295,9 @@
     ovImg.style.cssText =
       'width:100%;' +
       'height:100%;' +
-      'object-fit:contain;' +
+      'object-fit:cover;' +
       'display:block;' +
-      'background:#ffffff;';
+      'background:transparent;';
     overlay.appendChild(ovImg);
     container.appendChild(overlay);
   }
