@@ -571,9 +571,29 @@
   //   <a data-tsl-open="123456789">Créer</a>                — product_id
   //   <a data-tsl-open="t-shirt-personnalise">Créer</a>     — product handle
   //   <a data-tsl-open data-tsl-url="/...">Créer</a>        — URL custom
-  //
-  // Le handler construit l'URL App Proxy (/apps/textilelab/editor?...) et
-  // ouvre le studio dans le modal plein écran. Aucun setup côté thème.
+
+  // Origin du backend TextileLab. URL directe (pas /apps/textilelab) car les
+  // responses de l'App Proxy sont servies avec X-Frame-Options: SAMEORIGIN par
+  // Shopify, ce qui bloque l'embed iframe. La route /textilelab-studio.html
+  // côté Railway envoie au contraire une CSP frame-ancestors qui autorise
+  // *.myshopify.com → embed iframe OK.
+  var TSL_BACKEND_ORIGIN = 'https://textile-studio-production.up.railway.app';
+
+  function buildStudioUrl(idOrHandle) {
+    var shop = (window.Shopify && window.Shopify.shop)
+            || window._TL_SHOP
+            || window.location.hostname;
+    var params = new URLSearchParams({ shop: shop, embed: '1' });
+    if (idOrHandle) {
+      var v = String(idOrHandle).trim();
+      if (v) {
+        if (/^\d+$/.test(v)) params.set('product_id', v);
+        else                 params.set('product', v);
+      }
+    }
+    return TSL_BACKEND_ORIGIN + '/textilelab-studio.html?' + params.toString();
+  }
+
   function interceptTslButtons() {
     document.addEventListener('click', function(e) {
       var btn = e.target.closest('[data-tsl-open]');
@@ -582,32 +602,14 @@
       e.stopPropagation();
 
       var customUrl = btn.dataset.tslUrl;
-      var url;
-      if (customUrl) {
-        url = customUrl;
-      } else {
-        var val = btn.getAttribute('data-tsl-open') || '';
-        var params = new URLSearchParams();
-        if (val) {
-          if (/^\d+$/.test(val.trim())) params.set('product_id', val.trim());
-          else                          params.set('product', val.trim());
-        }
-        url = '/apps/textilelab/editor' + (params.toString() ? '?' + params.toString() : '');
-      }
-
+      var url = customUrl ? customUrl : buildStudioUrl(btn.getAttribute('data-tsl-open'));
       openModal(url);
     }, true);
   }
 
   // Helper exposé pour usage JS direct : TLModal.openProduct('123' | 'handle')
   function openProduct(idOrHandle) {
-    var params = new URLSearchParams();
-    if (idOrHandle) {
-      var v = String(idOrHandle).trim();
-      if (/^\d+$/.test(v)) params.set('product_id', v);
-      else                 params.set('product', v);
-    }
-    openModal('/apps/textilelab/editor' + (params.toString() ? '?' + params.toString() : ''));
+    openModal(buildStudioUrl(idOrHandle));
   }
 
   // ── Init ────────────────────────────────────────────────────────────────────

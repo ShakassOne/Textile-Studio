@@ -57,9 +57,16 @@ const BACK_W = 440, BACK_H = 340;
 // Créer le dossier generated au démarrage
 if (!fs.existsSync(GEN_DIR)) fs.mkdirSync(GEN_DIR, { recursive: true });
 
-// ── POST /api/mockup-gen/generate-all (scopé shop, audit B5) ──────────────
-// Auth : attachShopId (X-Shop-Domain) + rate-limit + body size check (audit B5)
+// ── POST /api/mockup-gen/generate-all (scopé shop, audit B3/B5) ──────────────
+// Auth : attachShopId strict (X-Shop-Domain vérifié en DB) + rate-limit + body size check
+// Pas de fallback bootstrap en production : le header X-Shop-Domain est obligatoire.
+// Le frontend injecte window._TL_SHOP → header X-Shop-Domain à chaque appel.
 router.post('/generate-all', attachShopId, mockupRateLimiter, checkDesignSize, async (req, res) => {
+  // Refus explicite du fallback bootstrap en production multi-shop
+  if (!req.headers['x-shop-domain'] && !req.query.shop && process.env.NODE_ENV === 'production') {
+    return res.status(401).json({ error: 'X-Shop-Domain header requis' });
+  }
+
   const { design_png, format = 'A4', view_name = null } = req.body;
   if (!design_png) return res.status(400).json({ error: 'design_png required' });
 
