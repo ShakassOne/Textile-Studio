@@ -1121,6 +1121,9 @@
     flex-direction: column;
     padding-bottom: var(--safe-bottom);
   }
+  #drawer-image, #drawer-layers {
+    max-height: 72dvh;
+  }
   .drawer.open {
     transform: translateY(0);
     /* Casser le compositing layer GPU après l'animation pour permettre les repaints */
@@ -2421,7 +2424,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="22" height="22"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
       <span>Texte</span>
     </button>
-    <button class="bnav-btn" onclick="openMobileToolDirect('image')" id="bnav-image">
+    <button class="bnav-btn" onclick="openDrawer('image')" id="bnav-image">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="22" height="22"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
       <span>Image</span>
     </button>
@@ -2590,14 +2593,14 @@
 </div>
 
 <!-- Drawer: Layers -->
-<div class="drawer" id="drawer-layers" style="position:relative">
+<div class="drawer" id="drawer-layers">
   <div class="drawer-handle"></div>
   <div class="drawer-title"><span>Calques</span><button class="drawer-close" onclick="closeDrawer()">✕</button></div>
-  <div class="drawer-body" id="drawer-layers-body" style="padding-bottom:72px">
+  <div class="drawer-body" id="drawer-layers-body">
     <div style="color:var(--text3);font-size:12px;text-align:center;padding:20px">Aucun calque</div>
   </div>
-  <!-- Barre d'actions sticky calque sélectionné -->
-  <div id="layers-action-bar" style="position:absolute;bottom:0;left:0;right:0;background:var(--bg);border-top:1px solid var(--border);padding:8px 10px;display:grid;grid-template-columns:repeat(4,1fr);gap:6px;z-index:2">
+  <!-- Barre d'actions en flex (pas absolute) -->
+  <div id="layers-action-bar" style="flex-shrink:0;background:var(--bg2);border-top:1px solid var(--border);padding:8px 10px;display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding-bottom:calc(8px + var(--safe-bottom,0px))">
     <button onclick="duplicateSelectedLayer()"
       style="display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 4px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;cursor:pointer;color:var(--text);font-size:10px;font-family:'DM Sans',sans-serif;-webkit-tap-highlight-color:transparent">
       <span style="font-size:17px">⧉</span>Dupliquer
@@ -2614,6 +2617,32 @@
       style="display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 4px;background:transparent;border:1px solid var(--danger);border-radius:10px;cursor:pointer;color:var(--danger);font-size:10px;font-family:'DM Sans',sans-serif;-webkit-tap-highlight-color:transparent">
       <span style="font-size:17px">🗑</span>Supprimer
     </button>
+  </div>
+</div>
+
+<!-- Drawer: Image (dédié — ouvre directement depuis le bnav) -->
+<div class="drawer" id="drawer-image">
+  <div class="drawer-handle"></div>
+  <div class="drawer-title"><span>Images</span><button class="drawer-close" onclick="closeDrawer()">✕</button></div>
+  <div class="drawer-body" id="drawer-image-body" style="padding:14px 14px 0;display:flex;flex-direction:column;gap:0">
+    <!-- 2 CTAs -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;flex-shrink:0">
+      <button onclick="addMobileImage()"
+        style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:16px 8px;background:var(--bg3);border:1.5px solid var(--border);border-radius:14px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;font-family:'DM Sans',sans-serif;min-height:80px;-webkit-tap-highlight-color:transparent">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Importer<span style="font-size:9px;font-weight:400;color:var(--text3)">PNG, JPG, SVG, WEBP</span>
+      </button>
+      <button onclick="closeDrawer();openMobileToolDirect('ai')"
+        style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:16px 8px;background:var(--amber-dim);border:1.5px solid var(--amber);border-radius:14px;cursor:pointer;color:var(--amber);font-size:12px;font-weight:600;font-family:'DM Sans',sans-serif;min-height:80px;-webkit-tap-highlight-color:transparent">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        Générer avec IA<span style="font-size:9px;font-weight:400;color:var(--amber);opacity:.75">Illustration unique</span>
+      </button>
+    </div>
+    <!-- Chips catégories scrollables -->
+    <div id="m-lib-cats"
+      style="display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:12px;margin:0 -14px;padding-left:14px;padding-right:14px;scrollbar-width:none;-ms-overflow-style:none;flex-shrink:0"></div>
+    <!-- Grille images — défile avec le reste -->
+    <div id="m-lib-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding-bottom:16px"></div>
   </div>
 </div>
 
@@ -4864,6 +4893,7 @@ function openDrawer(name) {
   document.getElementById(map[name])?.classList.add('active');
 
   if (name === 'layers') updateLayerBar();
+  if (name === 'image')  setTimeout(_renderMobileLibGrid, 60);
   if (name === 'tools') {
     const sel   = canvas?.getActiveObject();
     const isImg = sel && (sel.type === 'image' || sel.__isLibraryImg);
