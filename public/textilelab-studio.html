@@ -852,19 +852,20 @@
     .topbar-action-btn { padding: 5px 8px !important; font-size: 11px; flex-shrink: 0; }
     .btn-cart { flex-shrink: 0; }
 
-    /* MOBILE BOTTOM NAV */
+    /* MOBILE BOTTOM NAV — 6 boutons directs */
     #bottom-nav {
       display: flex !important;
       height: calc(var(--bottom-nav-h) + var(--safe-bottom));
       padding-bottom: var(--safe-bottom);
     }
-    .bnav-cart {
-      display: flex !important;
-      flex: 1.6;
-    }
-    #bnav-vue {
-      display: flex !important;
-    }
+    /* Cart déplacé dans la topbar — masqué dans la bottom nav */
+    .bnav-cart { display: none !important; }
+    #bnav-vue { display: none !important; }
+    /* IA : accent amber */
+    #bnav-ai svg { color: var(--amber); }
+    #bnav-ai.active svg { color: var(--amber); }
+    #bnav-ai { color: var(--text3); }
+    #bnav-ai.active { color: var(--amber); }
 
     /* MOBILE LAYERS BAR */
     #mobile-layers {
@@ -1000,6 +1001,8 @@
     z-index: 200;
     align-items: center;
     justify-content: space-around;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
   }
 
   .bnav-btn {
@@ -1008,19 +1011,22 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 3px;
+    gap: 2px;
     height: 100%;
     background: transparent;
     border: none;
     color: var(--text3);
     font-size: 9px;
-    font-family: 'DM Mono', monospace;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 500;
+    letter-spacing: 0.2px;
     cursor: pointer;
     transition: color 0.15s;
-    padding-bottom: 4px;
+    padding: 6px 2px 4px;
+    -webkit-tap-highlight-color: transparent;
+    min-width: 0;
   }
+  .bnav-btn:active { opacity: 0.7; }
   .bnav-cart {
     flex: 1.6;
     display: flex;
@@ -1828,37 +1834,15 @@
       <!-- Canvas -->
       <div id="canvas-wrap">
         <!-- MOBILE OVERLAY : undo/redo flottants + badge zoom viewport -->
+        <!-- Badge zoom — affiché brièvement pendant le pinch -->
         <div id="mobile-canvas-overlay" style="
           display:none;
           position:absolute;
           bottom:10px;
-          left:0; right:0;
+          right:10px;
           z-index:300;
           pointer-events:none;
-          padding:0 10px;
-          justify-content:space-between;
-          align-items:flex-end;
         ">
-          <!-- Undo / Redo -->
-          <div style="display:flex;gap:6px;pointer-events:all;">
-            <button onclick="historyUndo()" title="Annuler" style="
-              width:40px;height:40px;border-radius:50%;
-              background:var(--glass);border:1px solid var(--border);
-              color:var(--text2);font-size:18px;display:flex;
-              align-items:center;justify-content:center;cursor:pointer;
-              backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
-              box-shadow:0 2px 8px rgba(0,0,0,.3);
-            ">↩</button>
-            <button onclick="historyRedo()" title="Rétablir" style="
-              width:40px;height:40px;border-radius:50%;
-              background:var(--glass);border:1px solid var(--border);
-              color:var(--text2);font-size:18px;display:flex;
-              align-items:center;justify-content:center;cursor:pointer;
-              backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
-              box-shadow:0 2px 8px rgba(0,0,0,.3);
-            ">↪</button>
-          </div>
-          <!-- Badge zoom -->
           <div id="mobile-zoom-badge" style="
             display:none;
             background:rgba(0,0,0,.65);
@@ -2433,17 +2417,25 @@
 
   <!-- BOTTOM NAV (mobile only) -->
   <nav id="bottom-nav">
-    <button class="bnav-btn" onclick="openDrawer('product')" id="bnav-product">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="22" height="22"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>
-      <span>Produit</span>
+    <button class="bnav-btn" onclick="openMobileToolDirect('text')" id="bnav-text">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="22" height="22"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
+      <span>Texte</span>
     </button>
-    <button class="bnav-btn" onclick="openDrawer('tools')" id="bnav-tools">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="22" height="22"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
-      <span>Créer</span>
+    <button class="bnav-btn" onclick="openMobileToolDirect('image')" id="bnav-image">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="22" height="22"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+      <span>Image</span>
     </button>
-    <button class="bnav-btn" onclick="openDrawer('vue')" id="bnav-vue">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="22" height="22"><rect x="3" y="3" width="18" height="11" rx="2"/><path d="M3 14h18M7 19l-4 2M17 19l4 2M12 14v7"/></svg>
-      <span>Vues</span>
+    <button class="bnav-btn" onclick="openMobileToolDirect('color')" id="bnav-color">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="22" height="22"><circle cx="13.5" cy="6.5" r="3.5" fill="currentColor" fill-opacity=".25"/><circle cx="17.5" cy="10.5" r="3.5" fill="currentColor" fill-opacity=".25"/><circle cx="8.5" cy="10.5" r="3.5" fill="currentColor" fill-opacity=".25"/><circle cx="13.5" cy="14.5" r="3.5" fill="currentColor" fill-opacity=".25"/><path d="M7 18.5a5.5 5.5 0 1 1 11 0v.5a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-.5Z"/></svg>
+      <span>Couleur</span>
+    </button>
+    <button class="bnav-btn" onclick="openMobileToolDirect('ai')" id="bnav-ai">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="22" height="22"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      <span>IA</span>
+    </button>
+    <button class="bnav-btn" onclick="openMobileToolDirect('photo')" id="bnav-photo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="22" height="22"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      <span>Photo</span>
     </button>
     <button class="bnav-btn" onclick="openDrawer('layers')" id="bnav-layers">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="22" height="22"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
@@ -2598,11 +2590,30 @@
 </div>
 
 <!-- Drawer: Layers -->
-<div class="drawer" id="drawer-layers">
+<div class="drawer" id="drawer-layers" style="position:relative">
   <div class="drawer-handle"></div>
   <div class="drawer-title"><span>Calques</span><button class="drawer-close" onclick="closeDrawer()">✕</button></div>
-  <div class="drawer-body" id="drawer-layers-body">
+  <div class="drawer-body" id="drawer-layers-body" style="padding-bottom:72px">
     <div style="color:var(--text3);font-size:12px;text-align:center;padding:20px">Aucun calque</div>
+  </div>
+  <!-- Barre d'actions sticky calque sélectionné -->
+  <div id="layers-action-bar" style="position:absolute;bottom:0;left:0;right:0;background:var(--bg);border-top:1px solid var(--border);padding:8px 10px;display:grid;grid-template-columns:repeat(4,1fr);gap:6px;z-index:2">
+    <button onclick="duplicateSelectedLayer()"
+      style="display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 4px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;cursor:pointer;color:var(--text);font-size:10px;font-family:'DM Sans',sans-serif;-webkit-tap-highlight-color:transparent">
+      <span style="font-size:17px">⧉</span>Dupliquer
+    </button>
+    <button onclick="renameSelectedLayer()"
+      style="display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 4px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;cursor:pointer;color:var(--text);font-size:10px;font-family:'DM Sans',sans-serif;-webkit-tap-highlight-color:transparent">
+      <span style="font-size:17px">✏</span>Renommer
+    </button>
+    <button onclick="moveSelectedLayerUp()"
+      style="display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 4px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;cursor:pointer;color:var(--text);font-size:10px;font-family:'DM Sans',sans-serif;-webkit-tap-highlight-color:transparent">
+      <span style="font-size:17px">↑</span>Monter
+    </button>
+    <button onclick="deleteSelectedLayer()"
+      style="display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 4px;background:transparent;border:1px solid var(--danger);border-radius:10px;cursor:pointer;color:var(--danger);font-size:10px;font-family:'DM Sans',sans-serif;-webkit-tap-highlight-color:transparent">
+      <span style="font-size:17px">🗑</span>Supprimer
+    </button>
   </div>
 </div>
 
@@ -3403,34 +3414,48 @@ function _ctxDuplicate() {
 // ============================================
 // LAYER BAR
 // ============================================
+// Génère un thumbnail 40×40 pour un calque (pas de toDataURL = rapide)
+function _getLayerThumb(obj) {
+  const B = 'border-radius:8px;width:40px;height:40px;flex-shrink:0;overflow:hidden;border:1px solid var(--border)';
+  if (obj.type === 'i-text' || obj.__isText) {
+    const raw = obj.fill || '#888';
+    const col = (raw === '#FFFFFF' || raw === 'white' || raw === '#fff') ? '#555' : raw;
+    const letter = (obj.text || obj.__txtContent || 'T').charAt(0).toUpperCase();
+    return `<div style="${B};background:${col};display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.5)">${letter}</div>`;
+  }
+  if (obj.__isQR) return `<div style="${B};background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:22px">⊞</div>`;
+  // Image : essayer de récupérer la source déjà chargée
+  const src = (obj._element && obj._element.src) ? obj._element.src : (typeof obj.getSrc === 'function' ? obj.getSrc() : null);
+  if (src) return `<img src="${src}" style="${B};object-fit:cover" onerror="this.style.display='none'">`;
+  return `<div style="${B};background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:20px">🖼</div>`;
+}
+
 function _renderLayerItems(layers, selected) {
   return [...layers].reverse().map((obj, ri) => {
     const i = layers.length - 1 - ri;
     const isSelected = obj === selected;
     const isLocked   = !!obj.__locked;
-    const label = obj.type === 'i-text'  ? `✏ ${(obj.text||'Texte').slice(0,14)}` :
-                  obj.__isText ? `✏ ${(obj.__txtContent||'Texte').slice(0,14)}` :
-                  obj.__isQR   ? '⊞ QR Code' :
-                  obj.__isAI   ? '✦ IA' :
-                  obj.__isLibrary ? '🖼 Bibliothèque' :
-                  `🖼 Image ${i+1}`;
+    const label = obj.type === 'i-text'  ? (obj.text||'Texte').slice(0,16) :
+                  obj.__isText ? (obj.__txtContent||'Texte').slice(0,16) :
+                  obj.__isQR   ? 'QR Code' :
+                  obj.__isAI   ? 'Design IA' :
+                  obj.__isLibrary ? 'Bibliothèque' :
+                  `Image ${i+1}`;
+    const thumb = _getLayerThumb(obj);
+    const selBorder = isSelected ? 'border:1.5px solid var(--amber)' : 'border:1.5px solid transparent';
     return `
-      <div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer;opacity:${isLocked?'.5':'1'}"
-           onclick="selectLayer(${i})">
-        <span style="font-size:12px;flex:1;${isSelected?'color:var(--amber);font-weight:600':''}">${label}</span>
-        <div style="display:flex;gap:4px;flex-shrink:0">
-          <button title="${isLocked?'Déverrouiller':'Verrouiller'}"
-            style="background:transparent;border:1px solid ${isLocked?'var(--amber)':'var(--border)'};border-radius:6px;color:${isLocked?'var(--amber)':'var(--text2)'};padding:3px 7px;cursor:pointer;font-size:11px"
-            onclick="event.stopPropagation();toggleLockLayer(${i})">
-            ${isLocked ? '🔒' : '🔓'}
-          </button>
-          <button style="background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text2);padding:3px 7px;cursor:pointer;font-size:11px"
-            onclick="event.stopPropagation();moveLayerUp(${i})" ${isLocked?'disabled':''}>↑</button>
-          <button style="background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text2);padding:3px 7px;cursor:pointer;font-size:11px"
-            onclick="event.stopPropagation();moveLayerDown(${i})" ${isLocked?'disabled':''}>↓</button>
-          <button style="background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--danger);padding:3px 7px;cursor:pointer;font-size:11px"
-            onclick="event.stopPropagation();deleteLayer(${i})" ${isLocked?'disabled':''}>✕</button>
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;cursor:pointer;background:${isSelected?'var(--amber-dim)':'transparent'};${selBorder};transition:background .15s;opacity:${isLocked?'.55':'1'}"
+           onclick="selectLayerForActions(${i})">
+        ${thumb}
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:${isSelected?'700':'500'};color:${isSelected?'var(--amber)':'var(--text)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:1px">${obj.type==='i-text'||obj.__isText?'Texte':obj.__isQR?'QR':'Image'}</div>
         </div>
+        <button title="${isLocked?'Déverrouiller':'Verrouiller'}"
+          style="background:transparent;border:none;padding:6px;cursor:pointer;font-size:16px;color:${isLocked?'var(--amber)':'var(--text3)'};flex-shrink:0"
+          onclick="event.stopPropagation();toggleLockLayer(${i});updateLayerBar();updateDesktopLayerPanel()">
+          ${isLocked ? '🔒' : '🔓'}
+        </button>
       </div>`;
   }).join('');
 }
@@ -3493,6 +3518,71 @@ function deleteLayer(i) {
     updateDesktopLayerPanel();
     clearPanelEditing();
   }
+}
+
+// ── Sélection de calque depuis le drawer (active l'objet + rafraîchit la barre) ──
+function selectLayerForActions(i) {
+  const layers = canvas.getObjects().filter(o => !o.__isFrame && !o.__isMockupBg && !o.__isColorOverlay && !o.__isPrintMask);
+  if (!layers[i]) return;
+  canvas.setActiveObject(layers[i]);
+  canvas.renderAll();
+  updateLayerBar();
+  updateDesktopLayerPanel();
+}
+
+// ── Actions de la barre sticky calques ───────────────────────────────────────
+function _getSelectedLayerIndex() {
+  const layers = canvas.getObjects().filter(o => !o.__isFrame && !o.__isMockupBg && !o.__isColorOverlay && !o.__isPrintMask);
+  const sel = canvas.getActiveObject();
+  return layers.indexOf(sel);
+}
+
+function duplicateSelectedLayer() {
+  const i = _getSelectedLayerIndex();
+  if (i < 0) { showToast('Sélectionnez un calque d\'abord'); return; }
+  const layers = canvas.getObjects().filter(o => !o.__isFrame && !o.__isMockupBg && !o.__isColorOverlay && !o.__isPrintMask);
+  const obj = layers[i];
+  obj.clone(cloned => {
+    cloned.set({ left: (obj.left || 0) + 18, top: (obj.top || 0) + 18 });
+    // Copier les propriétés custom
+    ['__isText','__isQR','__isAI','__isLibrary','__locked','__txtContent'].forEach(k => { if (obj[k] !== undefined) cloned[k] = obj[k]; });
+    canvas.add(cloned);
+    canvas.setActiveObject(cloned);
+    canvas.renderAll();
+    updateLayerBar();
+    updateDesktopLayerPanel();
+    showToast('Calque dupliqué');
+  });
+}
+
+function renameSelectedLayer() {
+  const i = _getSelectedLayerIndex();
+  if (i < 0) { showToast('Sélectionnez un calque d\'abord'); return; }
+  const layers = canvas.getObjects().filter(o => !o.__isFrame && !o.__isMockupBg && !o.__isColorOverlay && !o.__isPrintMask);
+  const obj = layers[i];
+  const current = obj.__customName || '';
+  const name = prompt('Nom du calque :', current);
+  if (name === null) return;
+  obj.__customName = name.trim();
+  // Mettre à jour le label pour l'affichage
+  if (obj.type === 'i-text' || obj.__isText) {
+    if (name.trim()) obj.__txtContent = name.trim();
+  }
+  updateLayerBar();
+  updateDesktopLayerPanel();
+  showToast('Calque renommé');
+}
+
+function moveSelectedLayerUp() {
+  const i = _getSelectedLayerIndex();
+  if (i >= 0) moveLayerUp(i);
+}
+
+function deleteSelectedLayer() {
+  const i = _getSelectedLayerIndex();
+  if (i < 0) { showToast('Sélectionnez un calque d\'abord'); return; }
+  if (!confirm('Supprimer ce calque ?')) return;
+  deleteLayer(i);
 }
 
 // ============================================
@@ -4770,7 +4860,7 @@ function openDrawer(name) {
   if (handle) _initDrawerDrag(drawerEl, handle);
 
   document.querySelectorAll('.bnav-btn').forEach(b => b.classList.remove('active'));
-  const map = { product: 'bnav-product', tools: 'bnav-tools', layers: 'bnav-layers', format: 'bnav-format' };
+  const map = { product: 'bnav-product', tools: 'bnav-tools', layers: 'bnav-layers', format: 'bnav-format', text: 'bnav-text', image: 'bnav-image', color: 'bnav-color', ai: 'bnav-ai', photo: 'bnav-photo' };
   document.getElementById(map[name])?.classList.add('active');
 
   if (name === 'layers') updateLayerBar();
@@ -4858,6 +4948,32 @@ function switchMobileToolTab(tab) {
     const t = b.dataset.tab || '';
     b.classList.toggle('active', t === tab);
   });
+
+  // ── Drawer Image : UI mobile dédiée (pas de clone) ──────────────────────────
+  if (tab === 'image') {
+    const cont = document.getElementById('mobile-tool-content');
+    if (!cont) return;
+    cont.innerHTML = `
+      <div style="padding:14px 14px 0">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+          <button onclick="addMobileImage()"
+            style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:18px 8px;background:var(--bg3);border:1.5px solid var(--border);border-radius:14px;cursor:pointer;color:var(--text);font-size:13px;font-weight:600;font-family:'DM Sans',sans-serif;min-height:84px;-webkit-tap-highlight-color:transparent">
+            <span style="font-size:28px">📁</span>Importer
+          </button>
+          <button onclick="openMobileToolDirect('ai')"
+            style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:18px 8px;background:var(--amber-dim);border:1.5px solid var(--amber);border-radius:14px;cursor:pointer;color:var(--amber);font-size:13px;font-weight:600;font-family:'DM Sans',sans-serif;min-height:84px;-webkit-tap-highlight-color:transparent">
+            <span style="font-size:28px">✨</span>Générer avec IA
+          </button>
+        </div>
+        <div id="m-lib-cats"
+          style="display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:12px;margin:0 -14px;padding-left:14px;scrollbar-width:none;-ms-overflow-style:none"></div>
+      </div>
+      <div style="padding:0 14px 80px">
+        <div id="m-lib-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:4px"></div>
+      </div>`;
+    setTimeout(_renderMobileLibGrid, 50);
+    return;
+  }
 
   const sourceContent = document.getElementById(`tab-${tab}`);
   const container = document.getElementById('mobile-tool-content');
@@ -6310,6 +6426,24 @@ const MOBILE_TOOL_LABELS = {
   qr:    'QR Code',
 };
 
+// Ouvre directement un outil depuis la bottom nav (sans passer par la grille)
+function openMobileToolDirect(tab) {
+  // Marquer le bouton actif dans la bottom nav
+  document.querySelectorAll('.bnav-btn').forEach(b => b.classList.remove('active'));
+  const bnavMap = { text: 'bnav-text', image: 'bnav-image', color: 'bnav-color', ai: 'bnav-ai', photo: 'bnav-photo' };
+  const activeBtn = document.getElementById(bnavMap[tab]);
+  if (activeBtn) activeBtn.classList.add('active');
+
+  if (tab === 'photo') {
+    // Photo ouvre directement le modal photo existant
+    openDrawer('tools');
+    openMobileTool('photo');
+    return;
+  }
+  openDrawer('tools');
+  openMobileTool(tab);
+}
+
 function openMobileTool(tab) {
   const grid  = document.getElementById('mobile-tool-grid');
   const panel = document.getElementById('mobile-tool-panel');
@@ -6333,6 +6467,8 @@ function closeMobileTool() {
   panel.style.display = 'none';
   grid.style.display  = 'grid';
   if (cont) cont.innerHTML = '';
+  // Retirer l'état actif de tous les boutons bottom nav
+  document.querySelectorAll('.bnav-btn').forEach(b => b.classList.remove('active'));
 }
 
 // Fermer le drawer au tap dans le vide sur mobile
