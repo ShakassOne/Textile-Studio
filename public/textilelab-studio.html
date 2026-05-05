@@ -833,24 +833,29 @@
     }
 
     /* MOBILE TOPBAR — scrollable horizontal */
+    /* ── Header mobile : 3 éléments ← Logo → 🛒 ─────────────────────── */
     #topbar {
-      overflow-x: auto;
-      overflow-y: hidden;
-      -webkit-overflow-scrolling: touch;
-      scrollbar-width: none;
-      flex-wrap: nowrap;
-      gap: 6px;
-      padding: 0 10px;
-      justify-content: flex-start;
+      overflow: visible;
+      justify-content: space-between !important;
+      align-items: center;
+      padding: 0 8px 0 4px !important;
+      gap: 0 !important;
     }
-    #topbar::-webkit-scrollbar { display: none; }
-    .topbar-stats { display: none; }
-    .stat-pill { display: none; }
-    .logo { flex-shrink: 0; font-size: 14px; }
-    #topbar > div { flex-shrink: 0; }
-    .topbar-right { flex-shrink: 0; gap: 5px; }
-    .topbar-action-btn { padding: 5px 8px !important; font-size: 11px; flex-shrink: 0; }
+    .topbar-stats { display: none !important; }
+    .stat-pill { display: none !important; }
+    #topbar-undo-zoom { display: none !important; }     /* masquer zoom / undo */
+    #btn-theme { display: none !important; }
+    #desktop-view-toggle { display: none !important; }
+    #btn-close-modal { display: none !important; }
+    #mobile-back { display: flex !important; }          /* afficher bouton retour */
+    .logo { flex: 1; justify-content: center; }
+    .topbar-right { flex-shrink: 0; gap: 4px; }
     .btn-cart { flex-shrink: 0; }
+    /* ── Onglet IA retiré de la bottom nav (fusion dans Image) ─────── */
+    #bnav-ai { display: none !important; }
+    /* ── Animation T-shirt quand drawer ouvert ──────────────────────── */
+    #canvas-wrap { transition: transform .32s cubic-bezier(.32,.72,0,1); }
+    #canvas-wrap.canvas-up { transform: translateY(-44px) scale(1.06); }
 
     /* MOBILE BOTTOM NAV — 6 boutons directs */
     #bottom-nav {
@@ -1625,6 +1630,10 @@
 <div id="app">
   <!-- TOPBAR -->
   <header id="topbar">
+    <!-- Bouton retour mobile seulement -->
+    <button id="mobile-back" onclick="history.back()" style="display:none;width:40px;height:40px;border:none;background:transparent;cursor:pointer;color:var(--text);align-items:center;justify-content:center;flex-shrink:0;border-radius:10px;-webkit-tap-highlight-color:transparent" title="Retour">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
     <div class="logo" style="display:flex;align-items:center">
       <span class="logo-desktop-text">
         <svg style="height:32px;width:auto" id="Calque_2" data-name="Calque 2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 504.79 299.38">
@@ -1732,7 +1741,7 @@
     </div>
 
     <!-- Undo / Redo / Zoom — centre topbar -->
-    <div style="display:flex;align-items:center;gap:4px;margin:0 auto">
+    <div id="topbar-undo-zoom" style="display:flex;align-items:center;gap:4px;margin:0 auto">
       <button id="btn-undo" class="topbar-action-btn" onclick="historyUndo()" title="Annuler (Ctrl+Z)" style="padding:5px 9px">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
       </button>
@@ -2643,6 +2652,29 @@
       style="display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:12px;margin:0 -14px;padding-left:14px;padding-right:14px;scrollbar-width:none;-ms-overflow-style:none;flex-shrink:0"></div>
     <!-- Grille images — défile avec le reste -->
     <div id="m-lib-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding-bottom:16px"></div>
+  </div>
+</div>
+
+<!-- Drawer: Cart Action (mobile) — Télécharger ou Ajouter au panier -->
+<div class="drawer" id="drawer-cart">
+  <div class="drawer-handle"></div>
+  <div class="drawer-title"><span>Mon design</span><button class="drawer-close" onclick="closeDrawer()">✕</button></div>
+  <div class="drawer-body" id="drawer-cart-body" style="display:flex;flex-direction:column;gap:12px;padding:20px 16px">
+    <!-- Preview snapshot du canvas -->
+    <div id="drawer-cart-preview" style="width:100%;aspect-ratio:1;max-width:200px;margin:0 auto;border-radius:14px;overflow:hidden;border:1px solid var(--border);background:var(--bg3);display:flex;align-items:center;justify-content:center">
+      <span style="font-size:40px;opacity:.3">👕</span>
+    </div>
+    <!-- CTAs -->
+    <button onclick="downloadDesignPNG();closeDrawer()"
+      style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:15px;background:var(--bg3);border:1.5px solid var(--border);border-radius:14px;cursor:pointer;color:var(--text);font-size:14px;font-weight:600;font-family:'DM Sans',sans-serif;-webkit-tap-highlight-color:transparent">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Télécharger PNG
+    </button>
+    <button onclick="addToCart();closeDrawer()"
+      style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:15px;background:var(--amber);border:none;border-radius:14px;cursor:pointer;color:#000;font-size:14px;font-weight:700;font-family:'DM Sans',sans-serif;-webkit-tap-highlight-color:transparent">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 001.99-1.73l1.34-8.27H6"/></svg>
+      Ajouter au panier
+    </button>
   </div>
 </div>
 
@@ -4892,8 +4924,21 @@ function openDrawer(name) {
   const map = { product: 'bnav-product', tools: 'bnav-tools', layers: 'bnav-layers', format: 'bnav-format', text: 'bnav-text', image: 'bnav-image', color: 'bnav-color', ai: 'bnav-ai', photo: 'bnav-photo' };
   document.getElementById(map[name])?.classList.add('active');
 
+  // Animation T-shirt — remonte quand un drawer est ouvert
+  if (window.innerWidth <= 768) document.getElementById('canvas-wrap')?.classList.add('canvas-up');
+
   if (name === 'layers') updateLayerBar();
   if (name === 'image')  setTimeout(_renderMobileLibGrid, 60);
+  if (name === 'cart') {
+    // Snapshot du canvas pour la préview
+    const preview = document.getElementById('drawer-cart-preview');
+    if (preview && typeof canvas !== 'undefined') {
+      try {
+        const snap = canvas.toDataURL({ format: 'png', multiplier: 0.5 });
+        preview.innerHTML = `<img src="${snap}" style="width:100%;height:100%;object-fit:contain">`;
+      } catch(e) {}
+    }
+  }
   if (name === 'tools') {
     const sel   = canvas?.getActiveObject();
     const isImg = sel && (sel.type === 'image' || sel.__isLibraryImg);
@@ -4961,6 +5006,8 @@ function closeDrawer() {
     d.style.transform = '';    // Reset tout transform inline (drag ou openDrawer)
     d.style.transition = '';   // Reset transition inline éventuelle
   });
+  // Retirer l'animation du canvas
+  document.getElementById('canvas-wrap')?.classList.remove('canvas-up');
   document.querySelectorAll('.bnav-btn').forEach(b => b.classList.remove('active'));
   currentDrawer = null;
   _updateTapOverlay();
@@ -5555,6 +5602,11 @@ async function addToCart() {
 
 
 function openCart() {
+  // Mobile : ouvre le drawer cart simplifié
+  if (window.innerWidth <= 768) {
+    openDrawer('cart');
+    return;
+  }
   renderCart();
   document.getElementById('cart-modal').classList.add('open');
 }
