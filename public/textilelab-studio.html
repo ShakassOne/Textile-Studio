@@ -842,6 +842,8 @@
       gap: 0 !important;
     }
     .topbar-stats { display: none !important; }
+    /* ── Overlay mobile : léger, sans blur ────────────────────────── */
+    .drawer-overlay { background: rgba(0,0,0,0.18) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
     .stat-pill { display: none !important; }
     #topbar-undo-zoom { display: none !important; }     /* masquer zoom / undo */
     #btn-theme { display: none !important; }
@@ -1631,7 +1633,7 @@
   <!-- TOPBAR -->
   <header id="topbar">
     <!-- Bouton retour mobile seulement -->
-    <button id="mobile-back" onclick="history.back()" style="display:none;width:40px;height:40px;border:none;background:transparent;cursor:pointer;color:var(--text);align-items:center;justify-content:center;flex-shrink:0;border-radius:10px;-webkit-tap-highlight-color:transparent" title="Retour">
+    <button id="mobile-back" onclick="typeof closeTLModal==='function'?closeTLModal():(window.parent!==window?window.parent.history.back():history.back())" style="display:none;width:40px;height:40px;border:none;background:transparent;cursor:pointer;color:var(--text);align-items:center;justify-content:center;flex-shrink:0;border-radius:10px;-webkit-tap-highlight-color:transparent" title="Retour">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22"><path d="M15 18l-6-6 6-6"/></svg>
     </button>
     <div class="logo" style="display:flex;align-items:center">
@@ -2634,8 +2636,8 @@
   <div class="drawer-handle"></div>
   <div class="drawer-title"><span>Images</span><button class="drawer-close" onclick="closeDrawer()">✕</button></div>
   <div class="drawer-body" id="drawer-image-body" style="padding:14px 14px 0;display:flex;flex-direction:column;gap:0">
-    <!-- 2 CTAs -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;flex-shrink:0">
+    <!-- CTAs : 3 boutons — Importer / Générer IA / QR Code -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;flex-shrink:0">
       <button onclick="addMobileImage()"
         style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:16px 8px;background:var(--bg3);border:1.5px solid var(--border);border-radius:14px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;font-family:'DM Sans',sans-serif;min-height:80px;-webkit-tap-highlight-color:transparent">
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -2647,6 +2649,12 @@
         Générer avec IA<span style="font-size:9px;font-weight:400;color:var(--amber);opacity:.75">Illustration unique</span>
       </button>
     </div>
+    <!-- QR Code — pleine largeur, accès rapide -->
+    <button onclick="closeDrawer();openMobileToolDirect('qr')"
+      style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:12px;background:var(--bg3);border:1.5px solid var(--border);border-radius:14px;cursor:pointer;color:var(--text2);font-size:12px;font-weight:600;font-family:'DM Sans',sans-serif;margin-bottom:14px;flex-shrink:0;-webkit-tap-highlight-color:transparent">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="5" y="5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="16" y="5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="5" y="16" width="3" height="3" fill="currentColor" stroke="none"/><line x1="14" y1="14" x2="14" y2="14"/><line x1="17" y1="14" x2="17" y2="14"/><line x1="20" y1="14" x2="20" y2="14"/><line x1="14" y1="17" x2="14" y2="17"/><line x1="17" y1="17" x2="17" y2="17"/><line x1="20" y1="17" x2="20" y2="17"/><line x1="14" y1="20" x2="14" y2="20"/><line x1="17" y1="20" x2="17" y2="20"/><line x1="20" y1="20" x2="20" y2="20"/></svg>
+      Ajouter un QR Code
+    </button>
     <!-- Chips catégories scrollables -->
     <div id="m-lib-cats"
       style="display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:12px;margin:0 -14px;padding-left:14px;padding-right:14px;scrollbar-width:none;-ms-overflow-style:none;flex-shrink:0"></div>
@@ -2665,7 +2673,7 @@
       <span style="font-size:40px;opacity:.3">👕</span>
     </div>
     <!-- CTAs -->
-    <button onclick="downloadDesignPNG();closeDrawer()"
+    <button onclick="exportPNG();closeDrawer()"
       style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:15px;background:var(--bg3);border:1.5px solid var(--border);border-radius:14px;cursor:pointer;color:var(--text);font-size:14px;font-weight:600;font-family:'DM Sans',sans-serif;-webkit-tap-highlight-color:transparent">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       Télécharger PNG
