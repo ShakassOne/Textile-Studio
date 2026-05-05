@@ -4516,10 +4516,11 @@ function selectAiStyle(style) {
 }
 
 async function generateAI() {
-  const prompt = document.getElementById('ai-prompt').value.trim();
+  // Mobile : l'ID est préfixé m- après clonage dans switchMobileToolTab
+  const promptEl = document.getElementById('m-ai-prompt') || document.getElementById('ai-prompt');
+  const prompt = promptEl ? promptEl.value.trim() : '';
   if (!prompt) { showToast('Décrivez votre design d\'abord'); return; }
-
-  const btn = document.getElementById('ai-generate-btn');
+  const btn = document.getElementById('m-ai-generate-btn') || document.getElementById('ai-generate-btn');
   btn.innerHTML = '<span class="loading-spinner"></span> Génération...';
   btn.disabled = true;
 
@@ -4550,9 +4551,10 @@ RULES:
       // ── Mode GPT Image — via backend proxy ──
       const dalleSize = window._dalleSize || '1024x1024';
       const dallePrompt = `T-shirt print design, ${stylePrompts[currentAiStyle]}, ${prompt}. White background, transparent-ready, bold graphic, print-ready, no text unless requested.`;
+      const _aiHdr = window._TL_SHOP ? { 'X-Shop-Domain': window._TL_SHOP } : {};
       const response = await fetch('/api/ai/dalle', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ..._aiHdr },
         body: JSON.stringify({ prompt: dallePrompt, size: dalleSize }),
       });
       const data = await response.json();
@@ -6236,9 +6238,10 @@ async function transformPhoto() {
     const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
       ? 'http://localhost:3001' : '';
 
+    const _photoHdr = window._TL_SHOP ? { 'X-Shop-Domain': window._TL_SHOP } : {};
     const res = await fetch(`${API_BASE}/api/ai/transform`, {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ..._photoHdr },
       body:    JSON.stringify({ imageBase64: base64, style: _photoStyle }),
     });
 
@@ -6777,9 +6780,10 @@ function init() {
 
     // ── Mode Shopify storefront (?shop= présent) ────────────────────────────
     if (window._TL_SHOP) {
-      // Masquer le panier interne (on utilise le panier natif Shopify)
+      // Sur desktop : masquer le panier interne (on utilise le panier natif Shopify)
+      // Sur mobile : garder visible — c'est le seul accès panier depuis la topbar
       const _btnCart = document.querySelector('.btn-cart');
-      if (_btnCart) _btnCart.style.display = 'none';
+      if (_btnCart && window.innerWidth > 768) _btnCart.style.display = 'none';
       // Masquer le bouton "Générer visuels produit" (admin seulement)
       const _btnGen = document.getElementById('btn-gen-visuals');
       if (_btnGen) _btnGen.style.display = 'none';

@@ -3,9 +3,51 @@ const express   = require('express');
 const router    = express.Router();
 const rateLimit = require('express-rate-limit');
 const { requireAuth } = require('./auth');
-const { requireShopifySession } = require('./shopify-session');
-const { getDB } = require('../db/database');
+const { requireShopifySession, verifyJWT } = require('./shopify-session');
+const { getDB, getShop } = require('../db/database');
 const { attachShopId } = require('./_shop-context');
+
+// ── Middleware hybride : Bearer JWT (App Bridge) OU X-Shop-Domain (storefront iframe) ──
+// Permet aux requêtes frontend sans App Bridge (standalone Railway) de fonctionner.
+function requireAIContext(req, res, next) {
+  const secret = process.env.SHOPIFY_API_SECRET || '';
+  const token  = (req.headers['authorization'] || '').replace('Bearer ', '').trim();
+  const shopDomain = (req.headers['x-shop-domain'] || req.query.shop || '').toLowerCase().trim();
+
+  // Dev local sans secret → passer directement
+  if (!secret) {
+    req.shopDomain = shopDomain;
+    return next();
+  }
+
+  // Bearer JWT présent → vérifier (App Bridge / admin)
+  if (token) {
+    try {
+      const payload = verifyJWT(token, secret);
+      const shop = (payload.dest || '').replace('https://', '').toLowerCase();
+      const record = getShop(shop);
+      if (!record) return res.status(403).json({ error: 'Shop non installé' });
+      req.shopDomain = shop;
+      req.shopRecord = record;
+      req.shopId = record.id;
+      return next();
+    } catch (err) {
+      return res.status(401).json({ error: 'Session token invalide : ' + err.message });
+    }
+  }
+
+  // Pas de Bearer → accepter X-Shop-Domain (storefront iframe sans App Bridge)
+  if (shopDomain) {
+    const record = getShop(shopDomain);
+    if (!record) return res.status(403).json({ error: 'Shop non installé' });
+    req.shopDomain = shopDomain;
+    req.shopRecord = record;
+    req.shopId = record.id;
+    return next();
+  }
+
+  return res.status(401).json({ error: 'Auth requise : Bearer token ou X-Shop-Domain' });
+}
 
 // ── Rate-limit IA : 50 générations/heure/shop (audit B3) ─────────────────────
 const aiRateLimiter = rateLimit({
@@ -94,7 +136,7 @@ router.delete('/settings/openai', requireAuth, attachShopId, (req, res) => {
 
 // ── POST /api/ai/dalle — Génération IA depuis texte (scopé shop) ────────
 // Auth Shopify session token (App Bridge 4) + rate-limit par shop (audit B3)
-router.post('/dalle', requireShopifySession, attachShopId, aiRateLimiter, async (req, res) => {
+router.post('/dalle', requireAIContext, attachShopId, aiRateLimiter, async (req, res) => {
   const { prompt, size = '1024x1024', quality = 'high', transparent = true } = req.body;
   if (!prompt) return res.status(400).json({ error: 'prompt requis' });
 
@@ -129,7 +171,7 @@ router.post('/dalle', requireShopifySession, attachShopId, aiRateLimiter, async 
 
 // ── POST /api/ai/transform — Photo → Art (scopé shop) ─────────────
 // Auth Shopify session token (App Bridge 4) + rate-limit par shop (audit B3)
-router.post('/transform', requireShopifySession, attachShopId, aiRateLimiter, async (req, res) => {
+router.post('/transform', requireAIContext, attachShopId, aiRateLimiter, async (req, res) => {
   const { imageBase64, style = 'cartoon' } = req.body;
   if (!imageBase64) return res.status(400).json({ error: 'imageBase64 requis' });
 
