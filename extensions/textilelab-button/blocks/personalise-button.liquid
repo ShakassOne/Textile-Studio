@@ -1,12 +1,38 @@
-{% comment %} TextileLab — Theme App Extension — Bouton Personnaliser {% endcomment %}
+{% comment %}
+  TextileLab — Theme App Extension — Bouton "Personnaliser"
+
+  Ce block injecte automatiquement un bouton "Personnaliser" sur la page produit.
+  Il fonctionne de pair avec l'App Embed Block (tl-embed.liquid) qui charge tl-modal.js.
+
+  Mécanisme :
+    1. Si le produit a un metafield textilelab.editor_url  → lien direct vers l'éditeur
+    2. Sinon → appel /api/product-links/by-product/{handle} pour récupérer le mockup lié
+    Dans les deux cas l'attribut data-tsl-open est posé sur le lien :
+    tl-modal.js intercepte le clic et ouvre l'éditeur en modal plein écran.
+
+  Usage "bouton libre" (hors block) — collez n'importe où dans votre thème :
+    <a data-tsl-open="{{ product.handle }}" class="button">🎨 Personnaliser</a>
+    <button data-tsl-open="{{ product.handle }}" class="button">🎨 Personnaliser</button>
+    <a data-tsl-open>🎨 Créer mon design</a>   ← ouvre le configurateur sans produit pré-sélectionné
+    <a data-tsl-open="123456789">Personnaliser</a>   ← product_id numérique
+    <a data-tsl-open data-tsl-url="https://textile-studio-production.up.railway.app/textilelab-studio.html?shop={{ shop.permanent_domain }}">
+      Personnaliser
+    </a>                                             ← URL custom si besoin
+
+  IMPORTANT : l'App Embed Block "TextileLab Script" doit être activé dans
+  Éditeur de thème → Paramètres → Apps → TextileLab Script.
+  Sans lui tl-modal.js n'est pas chargé et les boutons ouvrent une page classique.
+{% endcomment %}
 
 {%- assign tl_editor_url = product.metafields.textilelab.editor_url.value -%}
 
 {%- if tl_editor_url != blank -%}
 
+  {{- '' -}}
   <div id="tl-cta-{{ product.id }}">
     <a
       href="{{ tl_editor_url }}"
+      data-tsl-open="{{ product.handle }}"
       data-tl-editor="true"
       class="button"
       style="display:flex;width:100%;justify-content:center;align-items:center;gap:8px;margin-top:8px;text-decoration:none;"
@@ -21,22 +47,25 @@
   <div id="tl-cta-{{ product.id }}"></div>
   <script>
   (function() {
-    var handle = {{ product.handle | json }};
-    var shop   = {{ shop.permanent_domain | json }};
-    var appUrl = "https://textile-studio-production.up.railway.app";
-    var el     = document.getElementById('tl-cta-{{ product.id }}');
+    var handle  = {{ product.handle | json }};
+    var shop    = {{ shop.permanent_domain | json }};
+    var appUrl  = 'https://textile-studio-production.up.railway.app';
+    var el      = document.getElementById('tl-cta-{{ product.id }}');
     if (!el) return;
 
     fetch(appUrl + '/api/product-links/by-product/' + encodeURIComponent(handle))
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(data) {
         if (!data || !data.mockup_id) return;
-        var btn       = document.createElement('a');
-        btn.href      = appUrl + '/textilelab-studio.html'
+        var editorUrl = appUrl + '/textilelab-studio.html'
           + '?shop='    + encodeURIComponent(shop)
           + '&product=' + encodeURIComponent(handle)
           + '&mockup='  + encodeURIComponent(data.mockup_id);
-        btn.setAttribute('data-tl-editor', 'true');
+
+        var btn = document.createElement('a');
+        btn.href = editorUrl;
+        btn.setAttribute('data-tsl-open', handle);   /* intercepté par tl-modal.js */
+        btn.setAttribute('data-tl-editor', 'true');  /* rétrocompat interceptLinks() */
         btn.className  = 'button';
         btn.style.cssText = 'display:flex;width:100%;justify-content:center;align-items:center;gap:8px;margin-top:8px;text-decoration:none;';
         btn.innerHTML  = '<span>&#127912;</span><span>Personnaliser</span>';
