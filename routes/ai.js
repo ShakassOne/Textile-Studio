@@ -3,7 +3,7 @@ const express   = require('express');
 const router    = express.Router();
 const rateLimit = require('express-rate-limit');
 const { requireAuth } = require('./auth');
-const { requireShopifySession, verifyJWT } = require('./shopify-session');
+const { requireShopifySession, verifyJWT, setReauthHeaders } = require('./shopify-session');
 const { getDB, getShop } = require('../db/database');
 const { attachShopId } = require('./_shop-context');
 const { getSetting, setSetting, deleteSetting } = require('../db/settings');
@@ -33,6 +33,8 @@ function requireAIContext(req, res, next) {
       req.shopId = record.id;
       return next();
     } catch (err) {
+      // M3 : déclencher le refresh App Bridge — le client ré-essaiera avec un nouveau token
+      setReauthHeaders(res, shopDomain || '');
       return res.status(401).json({ error: 'Session token invalide : ' + err.message });
     }
   }
@@ -47,6 +49,9 @@ function requireAIContext(req, res, next) {
     return next();
   }
 
+  // Pas de Bearer ET pas de X-Shop-Domain : on ne sait pas qui appelle.
+  // Pose les headers de réauth au cas où le client est App Bridge.
+  setReauthHeaders(res, '');
   return res.status(401).json({ error: 'Auth requise : Bearer token ou X-Shop-Domain' });
 }
 

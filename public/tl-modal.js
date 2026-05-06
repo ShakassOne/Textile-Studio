@@ -48,10 +48,12 @@
     '.cart-items__table-row {',
     '  grid-template-columns: minmax(80px, max-content) minmax(0, 1fr) minmax(80px, auto) !important;',
     '}',
-    /* 4. Forcer le container media à 160px de large MAIS hauteur auto pour
+    /* 4. Forcer le container media à 100px de large MAIS hauteur auto pour
           préserver le ratio naturel de l\'image mockup (rectangulaire, pas carrée).
           Le _tlInjectOverlay() applique ensuite aspect-ratio dynamiquement quand
-          l\'image overlay charge — cf. _tlApplyAspectRatio(). */
+          l\'image overlay charge — cf. _tlApplyAspectRatio().
+          (réduit de 160→100px le 2026-05-06 pour libérer la place du titre/desc
+          dans le drawer panier — la miniature reste parfaitement lisible.) */
     '.cart-items__media-container,',
     '[class*="cart-items__media-container"],',
     '[class*="cart-item__image"] > a {',

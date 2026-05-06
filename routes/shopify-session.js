@@ -84,6 +84,31 @@ function _extractBearer(req) {
   return auth.slice(7).trim();
 }
 
+// ── M3 : Headers de réauthentification Shopify ──────────────────────────────
+/**
+ * Pose les headers que App Bridge 4 reconnaît pour déclencher un refresh
+ * automatique du session token côté client.
+ *
+ * Doc Shopify : quand le serveur répond 401 avec ces headers, le client
+ * App Bridge invalide le token cached et en redemande un nouveau via
+ * `shopify.idToken()`. Combiné avec un wrapper fetch qui retry une fois sur 401,
+ * la session token expirée devient transparente côté UX.
+ *
+ * @param {express.Response} res
+ * @param {string} [shopDomain] domaine du shop (pour reconstruire l'URL d'auth)
+ */
+function setReauthHeaders(res, shopDomain) {
+  res.setHeader('X-Shopify-API-Request-Failure-Reauthorize', '1');
+  // URL de réauth — App Bridge ouvrira cette URL dans une popup pour relancer OAuth
+  // si le token a expiré ET que le shop n'est plus authentifié. Pour un simple
+  // refresh de session token, le client appelle shopify.idToken() et retry.
+  const apiKey = process.env.SHOPIFY_API_KEY || '';
+  if (shopDomain && apiKey) {
+    const reauthUrl = `/oauth/start?shop=${encodeURIComponent(shopDomain)}`;
+    res.setHeader('X-Shopify-API-Request-Failure-Reauthorize-Url', reauthUrl);
+  }
+}
+
 // ── POST /api/shopify-session/verify ────────────────────────────────────────
 router.post('/verify', (req, res) => {
   const token  = _extractBearer(req);
@@ -137,7 +162,10 @@ function requireShopifySession(req, res, next) {
   const token  = _extractBearer(req);
   const secret = process.env.SHOPIFY_API_SECRET || '';
 
-  if (!token) return res.status(401).json({ error: 'Session token Shopify requis' });
+  if (!token) {
+    setReauthHeaders(res, req.query.shop || req.headers['x-shopify-shop-domain']);
+    return res.status(401).json({ error: 'Session token Shopify requis' });
+  }
 
   // En dev sans secret : passer avec le shop du header ou query
   if (!secret) {
@@ -151,6 +179,8 @@ function requireShopifySession(req, res, next) {
   try {
     payload = verifyJWT(token, secret);
   } catch (err) {
+    // M3 : signaler à App Bridge qu'il doit forcer un refresh du token
+    setReauthHeaders(res, req.query.shop || req.headers['x-shopify-shop-domain']);
     return res.status(401).json({ error: 'Session token invalide : ' + err.message });
   }
 
@@ -169,3 +199,4 @@ function requireShopifySession(req, res, next) {
 module.exports = router;
 module.exports.requireShopifySession = requireShopifySession;
 module.exports.verifyJWT = verifyJWT;
+module.exports.setReauthHeaders = setReauthHeaders;
