@@ -55,10 +55,10 @@
     '.cart-items__media-container,',
     '[class*="cart-items__media-container"],',
     '[class*="cart-item__image"] > a {',
-    '  width: 160px !important;',
+    '  width: 120px !important;',
     '  height: auto !important;',
-    '  max-width: 160px !important;',
-    '  min-width: 160px !important;',
+    '  max-width: 120px !important;',
+    '  min-width: 120px !important;',
     '}',
     '.cart-items__media-image,',
     '[class*="cart-items__media-image"] {',
@@ -285,6 +285,14 @@
     // On ne change la position QUE si elle est static (default).
     var pos = window.getComputedStyle(container).position;
     if (pos === 'static') container.style.position = 'relative';
+    // Fallback sans :has() (certains webviews / thèmes) :
+    // masquer explicitement l'image native pour éviter qu'elle garde sa
+    // largeur d'origine et annule l'effet visuel des tailles forcées.
+    if (img) {
+      img.style.setProperty('opacity', '0', 'important');
+      img.style.setProperty('visibility', 'hidden', 'important');
+      img.style.setProperty('pointer-events', 'none', 'important');
+    }
 
     var overlay = document.createElement('div');
     overlay.className = 'tl-design-overlay';
