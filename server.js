@@ -120,6 +120,18 @@ app.get('/', (req, res) => {
 // ── Init DB ────────────────────────────────────────────────────────────
 initDB();
 
+// ── M5 : Migration de chiffrement des secrets en DB (idempotente) ──────
+// Chiffre les valeurs en clair existantes pour les clés sensibles (openai_api_key…)
+// dans la table settings. Voir db/settings.js + utils/crypto.js.
+try {
+  const { migrateEncryptSecrets } = require('./db/settings');
+  const { keySource } = require('./utils/crypto');
+  migrateEncryptSecrets();
+  console.log(`🔑  Source clé de chiffrement : ${keySource()}`);
+} catch (err) {
+  console.warn('⚠️  Migration M5 (chiffrement secrets) skip :', err.message);
+}
+
 // ── Bootstrap shop OAuth (survie aux redémarrages Railway sans volume) ──
 // Définir SHOPIFY_BOOTSTRAP_SHOP + SHOPIFY_BOOTSTRAP_TOKEN dans Railway env vars
 // → le shop est réinséré dans la DB à chaque démarrage sans refaire OAuth
