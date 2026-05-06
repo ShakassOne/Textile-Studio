@@ -6,6 +6,7 @@ const { requireAuth } = require('./auth');
 const { requireShopifySession, verifyJWT } = require('./shopify-session');
 const { getDB, getShop } = require('../db/database');
 const { attachShopId } = require('./_shop-context');
+const { getSetting, setSetting, deleteSetting } = require('../db/settings');
 
 // ── Middleware hybride : Bearer JWT (App Bridge) OU X-Shop-Domain (storefront iframe) ──
 // Permet aux requêtes frontend sans App Bridge (standalone Railway) de fonctionner.
@@ -60,22 +61,8 @@ const aiRateLimiter = rateLimit({
   skip:            (req) => !req.shopId,   // si shopId pas encore posé, IP prend le relais
 });
 
-// Helpers : lire/écrire une clé dans la table settings, scopée par shop_id (audit B1).
-function getSetting(shopId, key) {
-  try {
-    return getDB()
-      .prepare('SELECT value FROM settings WHERE shop_id=? AND key=?')
-      .get(shopId, key)?.value || '';
-  } catch {
-    return '';
-  }
-}
-function setSetting(shopId, key, value) {
-  getDB().prepare(
-    "INSERT INTO settings (shop_id, key, value, updated_at) VALUES (?, ?, ?, datetime('now')) " +
-    "ON CONFLICT(shop_id, key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')"
-  ).run(shopId, key, value);
-}
+// Helpers getSetting/setSetting : importés depuis db/settings.js (audit B1 + M5).
+// La clé 'openai_api_key' est automatiquement chiffrée AES-256-GCM en DB.
 
 // Résoudre la clé OpenAI : DB du shop courant en priorité, sinon .env (développement).
 // Attention sécurité : la clé .env est partagée — en prod chaque shop devrait avoir
@@ -128,9 +115,7 @@ router.post('/settings', requireAuth, attachShopId, async (req, res) => {
 
 // ── DELETE /api/ai/settings/openai — Supprimer la clé stockée (admin, scopé shop) ─
 router.delete('/settings/openai', requireAuth, attachShopId, (req, res) => {
-  try {
-    getDB().prepare("DELETE FROM settings WHERE shop_id=? AND key='openai_api_key'").run(req.shopId);
-  } catch {}
+  try { deleteSetting(req.shopId, 'openai_api_key'); } catch {}
   res.json({ ok: true });
 });
 
