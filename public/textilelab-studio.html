@@ -3696,6 +3696,8 @@ function getMockupsForProduct(productKey) {
 // _STATE_mockupIdx = index dans getMockupsForProduct() — quel mockup (ex: Recto vs Verso)
 // STATE_viewIdx    = index dans mockup.views[]           — quelle vue de CE mockup
 let _STATE_mockupIdx = 0;
+let SHOPIFY_PRODUCT_LINKS = []; // [{handle,title,mockup_id}]
+let _resolvedProductHandle = '';
 
 // Clé unique pour identifier une combinaison mockup+vue
 // Utilise mockupId si dispo, sinon le produit courant comme fallback stable
@@ -3766,6 +3768,48 @@ function _restoreViewLayers(mockupId, viewIdx, callback) {
   });
 }
 
+
+function _getLinkedProductsForActiveMockup() {
+  const mid = String(STATE_mockup?.id || '');
+  if (!mid) return [];
+  return SHOPIFY_PRODUCT_LINKS.filter(p => String(p.mockup_id || '') === mid && p.handle);
+}
+
+function _syncResolvedProductHandle() {
+  const options = _getLinkedProductsForActiveMockup();
+  if (!options.length) {
+    _resolvedProductHandle = (_resolvedProductHandle || window._TL_PRODUCT_HANDLE) || '';
+    return;
+  }
+  const stillValid = options.some(o => o.handle === _resolvedProductHandle);
+  if (!stillValid) _resolvedProductHandle = options[0].handle;
+}
+
+function chooseShopifyProductHandle(handle) {
+  _resolvedProductHandle = handle || '';
+  updateViewSwitcher();
+}
+
+async function loadShopifyProductLinks() {
+  if (!window._TL_SHOP) return;
+  try {
+    const res = await fetch(`${window.location.origin}/api/product-links?shop=${encodeURIComponent(window._TL_SHOP)}`);
+    const data = res.ok ? await res.json() : [];
+    SHOPIFY_PRODUCT_LINKS = (Array.isArray(data) ? data : []).map(r => ({
+      handle: r.shopify_product_handle || '',
+      title:  r.shopify_product_title || r.shopify_product_handle || 'Produit',
+      mockup_id: r.mockup_id
+    })).filter(r => r.handle);
+
+    // Les liaisons arrivent en async: re-synchroniser le produit résolu
+    // puis rafraîchir le panneau mockup/produit pour afficher la sélection.
+    _syncResolvedProductHandle();
+    updateViewSwitcher();
+  } catch(e) {
+    console.warn('[TL] loadShopifyProductLinks:', e.message);
+  }
+}
+
 function applyMockup(productKey, viewIdx, mockupIdx) {
   const allMockups = getMockupsForProduct(productKey);
   const changingProduct = productKey !== STATE.product;
@@ -3783,6 +3827,7 @@ function applyMockup(productKey, viewIdx, mockupIdx) {
   if (_STATE_mockupIdx >= allMockups.length) _STATE_mockupIdx = 0;
 
   STATE_mockup = allMockups[_STATE_mockupIdx] || null;
+  _syncResolvedProductHandle();
 
   if (viewIdx !== undefined) {
     STATE_viewIdx = viewIdx;
@@ -3997,6 +4042,26 @@ function updateViewSwitcher() {
         <div style="font-size:9px;color:var(--text3);font-family:'DM Mono',monospace;
                     text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;margin-top:8px">Face</div>
         <div style="display:flex;gap:5px;flex-wrap:wrap">${viewBtns}</div>
+      </div>`);
+  }
+
+
+  const linkedProducts = _getLinkedProductsForActiveMockup();
+  if (linkedProducts.length > 1) {
+    const productBtns = linkedProducts.map((p) => {
+      const active = p.handle === _resolvedProductHandle;
+      return `<button onclick="chooseShopifyProductHandle('${p.handle.replace("'","\'")}')"
+        style="padding:6px 10px;border-radius:10px;border:1px solid ${active ? 'var(--amber)' : 'var(--border)'};
+               background:${active ? 'var(--amber-dim)' : 'transparent'};
+               color:${active ? 'var(--amber)' : 'var(--text2)'};font-size:11px;cursor:pointer;">${p.title}</button>`;
+    }).join('');
+
+    sections.push(`
+      <div style="padding:4px 8px 8px;border-top:1px solid var(--border)">
+        <details open>
+          <summary style="font-size:9px;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:.8px;cursor:pointer">Produit Shopify (${linkedProducts.length})</summary>
+          <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px">${productBtns}</div>
+        </details>
       </div>`);
   }
 
@@ -5524,7 +5589,7 @@ async function _checkoutShopifyDirect() {
   if (_previewImgUrl) propsObj['_preview_img'] = _previewImgUrl;
 
   try {
-    const pRes = await fetch(`${APP_ORIGIN}/api/shopify/product-variant?handle=${encodeURIComponent(window._TL_PRODUCT_HANDLE)}`);
+    const pRes = await fetch(`${APP_ORIGIN}/api/shopify/product-variant?handle=${encodeURIComponent((_resolvedProductHandle || window._TL_PRODUCT_HANDLE))}`);
     const pData = pRes.ok ? await pRes.json() : null;
     const variantId = pData?.variant_id;
     if (!variantId) throw new Error(pData?.error || 'Variante Shopify introuvable pour ce produit');
@@ -5574,7 +5639,7 @@ async function addToCart() {
   if (!product) return showToast('❌ Produit introuvable');
 
   // ── MODE SHOPIFY DIRECT — bypass panier interne ──────────────────────
-  if (window._TL_SHOP && window._TL_PRODUCT_HANDLE) {
+  if (window._TL_SHOP && (_resolvedProductHandle || window._TL_PRODUCT_HANDLE)) {
     return _checkoutShopifyDirect();
   }
 
@@ -5760,7 +5825,7 @@ async function checkout() {
   // ── Mode Shopify direct (depuis fiche produit via bouton Personnaliser) ────
   // On connaît le shop et le handle produit → on redirige vers /cart/ Shopify
   const _tlShop    = window._TL_SHOP           || '';
-  const _tlHandle  = window._TL_PRODUCT_HANDLE || '';
+  const _tlHandle  = (_resolvedProductHandle || window._TL_PRODUCT_HANDLE) || '';
 
   if (_tlShop && _tlHandle) {
     try {
@@ -6810,6 +6875,7 @@ function init() {
     window._TL_SHOP           = _up.get('shop')    || '';
     window._TL_PRODUCT_HANDLE = _up.get('product') || '';
     const _urlMockupId = _up.get('mockup');
+    _resolvedProductHandle = window._TL_PRODUCT_HANDLE || '';
 
     // ── Mode iframe (tl-modal.js) — afficher le bouton Fermer ──────────────
     if (window.self !== window.top) {
@@ -6827,6 +6893,8 @@ function init() {
       const _btnGen = document.getElementById('btn-gen-visuals');
       if (_btnGen) _btnGen.style.display = 'none';
     }
+
+    loadShopifyProductLinks();
 
     if (_urlMockupId) {
       // Trouver le mockup correspondant dans MOCKUPS_DATA
