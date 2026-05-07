@@ -3781,9 +3781,10 @@ function _getLinkedProductsForActiveMockup() {
   return SHOPIFY_PRODUCT_LINKS.filter(p => {
     const sameMockupId = String(p.mockup_id || '') === mid;
     const hasRef = (p.handle || p.product_id);
-    const handleOk = !p.handle || _shopifyKnownHandles.size === 0 || _shopifyKnownHandles.has(p.handle);
-    return hasRef && sameMockupId && handleOk;
-  });
+    const title = String(p.title || '').toLowerCase();
+    const isSample = title.includes('example product') || title.includes('sample');
+    return hasRef && sameMockupId && !isSample;
+  }).filter((p, idx, arr) => arr.findIndex(x => (x.handle || x.product_id) === (p.handle || p.product_id)) === idx);
 }
 
 function _syncResolvedProductHandle() {
