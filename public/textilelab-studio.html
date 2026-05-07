@@ -3696,6 +3696,9 @@ function getMockupsForProduct(productKey) {
 // _STATE_mockupIdx = index dans getMockupsForProduct() — quel mockup (ex: Recto vs Verso)
 // STATE_viewIdx    = index dans mockup.views[]           — quelle vue de CE mockup
 let _STATE_mockupIdx = 0;
+let SHOPIFY_PRODUCT_LINKS = []; // [{handle,title,product_id,mockup_id,mockup_product}]
+let _resolvedProductHandle = '';
+let _tlLinksDebug = { lastSource:'init', lastCount:0, lastError:'' };
 
 // Clé unique pour identifier une combinaison mockup+vue
 // Utilise mockupId si dispo, sinon le produit courant comme fallback stable
@@ -3766,6 +3769,85 @@ function _restoreViewLayers(mockupId, viewIdx, callback) {
   });
 }
 
+
+function _getLinkedProductsForActiveMockup() {
+  const mid = String(STATE_mockup?.id || '');
+  if (!mid) return [];
+  const activeProductKey = String(STATE_mockup?.product || '');
+  return SHOPIFY_PRODUCT_LINKS.filter(p => {
+    const sameMockupId = String(p.mockup_id || '') === mid;
+    const sameProductType = activeProductKey && String(p.mockup_product || '') === activeProductKey;
+    return (p.handle || p.product_id) && (sameMockupId || sameProductType);
+  });
+}
+
+function _syncResolvedProductHandle() {
+  const options = _getLinkedProductsForActiveMockup();
+  if (!options.length) {
+    _resolvedProductHandle = (_resolvedProductHandle || window._TL_PRODUCT_HANDLE) || '';
+    return;
+  }
+  const stillValid = options.some(o => o.handle === _resolvedProductHandle);
+  if (!stillValid) _resolvedProductHandle = options[0].handle || ('id:' + options[0].product_id);
+}
+
+function chooseShopifyProductHandle(ref) {
+  _resolvedProductHandle = ref || '';
+  updateViewSwitcher();
+}
+
+async function loadShopifyProductLinks() {
+  if (!window._TL_SHOP) return;
+  try {
+    const res = await fetch(`${window.location.origin}/api/product-links/public?shop=${encodeURIComponent(window._TL_SHOP)}`);
+    const data = res.ok ? await res.json() : [];
+    SHOPIFY_PRODUCT_LINKS = (Array.isArray(data) ? data : []).map(r => ({
+      handle: r.shopify_product_handle || '',
+      title:  r.shopify_product_title || r.shopify_product_handle || 'Produit',
+      mockup_id: r.mockup_id,
+      mockup_product: r.mockup_product || '',
+      product_id: r.shopify_product_id || ''
+    }));
+
+    // Les liaisons arrivent en async: re-synchroniser le produit résolu
+    // puis rafraîchir le panneau mockup/produit pour afficher la sélection.
+    _syncResolvedProductHandle();
+    _tlLinksDebug = { lastSource:'public', lastCount: SHOPIFY_PRODUCT_LINKS.length, lastError:'' };
+    updateViewSwitcher();
+  } catch(e) {
+    _tlLinksDebug = { lastSource:'public', lastCount:0, lastError:String(e.message || e) };
+    console.warn('[TL] loadShopifyProductLinks:', e.message);
+    updateViewSwitcher();
+  }
+}
+
+
+async function loadLinksForActiveMockup() {
+  if (!window._TL_SHOP || !STATE_mockup?.id) return;
+  try {
+    const res = await fetch(`${window.location.origin}/api/product-links/by-mockup/${encodeURIComponent(String(STATE_mockup.id))}?shop=${encodeURIComponent(window._TL_SHOP)}`);
+    const data = res.ok ? await res.json() : [];
+    const scoped = (Array.isArray(data) ? data : []).map(r => ({
+      handle: r.shopify_product_handle || '',
+      title: r.shopify_product_title || r.shopify_product_handle || 'Produit',
+      mockup_id: r.mockup_id,
+      mockup_product: r.mockup_product || '',
+      product_id: r.shopify_product_id || ''
+    }));
+
+    // Remplacer les entrées de ce mockup dans le cache global
+    const currentId = String(STATE_mockup.id);
+    SHOPIFY_PRODUCT_LINKS = SHOPIFY_PRODUCT_LINKS.filter(r => String(r.mockup_id || '') !== currentId).concat(scoped);
+    _syncResolvedProductHandle();
+    _tlLinksDebug = { lastSource:'public', lastCount: SHOPIFY_PRODUCT_LINKS.length, lastError:'' };
+    updateViewSwitcher();
+  } catch (e) {
+    _tlLinksDebug = { lastSource:'by-mockup', lastCount:0, lastError:String(e.message || e) };
+    console.warn('[TL] loadLinksForActiveMockup:', e.message);
+    updateViewSwitcher();
+  }
+}
+
 function applyMockup(productKey, viewIdx, mockupIdx) {
   const allMockups = getMockupsForProduct(productKey);
   const changingProduct = productKey !== STATE.product;
@@ -3783,6 +3865,8 @@ function applyMockup(productKey, viewIdx, mockupIdx) {
   if (_STATE_mockupIdx >= allMockups.length) _STATE_mockupIdx = 0;
 
   STATE_mockup = allMockups[_STATE_mockupIdx] || null;
+  _syncResolvedProductHandle();
+  loadLinksForActiveMockup();
 
   if (viewIdx !== undefined) {
     STATE_viewIdx = viewIdx;
@@ -3999,6 +4083,40 @@ function updateViewSwitcher() {
         <div style="display:flex;gap:5px;flex-wrap:wrap">${viewBtns}</div>
       </div>`);
   }
+
+
+  const linkedProducts = _getLinkedProductsForActiveMockup();
+  if (linkedProducts.length > 0) {
+    const productBtns = linkedProducts.map((p) => {
+      const ref = p.handle || ('id:' + p.product_id);
+      const active = ref === _resolvedProductHandle;
+      const safeRef = String(ref).replace("'","\\'");
+      return `<button onclick="chooseShopifyProductHandle('${safeRef}')"
+        style="padding:6px 10px;border-radius:10px;border:1px solid ${active ? 'var(--amber)' : 'var(--border)'};
+               background:${active ? 'var(--amber-dim)' : 'transparent'};
+               color:${active ? 'var(--amber)' : 'var(--text2)'};font-size:11px;cursor:pointer;">${p.title}${p.handle ? '' : ' (id)'}</button>`;
+    }).join('');
+
+    sections.push(`
+      <div style="padding:4px 8px 8px;border-top:1px solid var(--border)">
+        <details open>
+          <summary style="font-size:9px;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:.8px;cursor:pointer">Produit Shopify (${linkedProducts.length})</summary>
+          <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px">${productBtns}</div>
+        </details>
+      </div>`);
+  }
+
+
+  sections.push(`
+    <div style="padding:6px 8px 8px;border-top:1px dashed var(--border)">
+      <div style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace">
+        Debug liens: source=${_tlLinksDebug.lastSource || '-'} · count=${_tlLinksDebug.lastCount || 0}
+      </div>
+      <div style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;word-break:break-all">
+        Produit actif: ${_resolvedProductHandle || '(vide)'}
+      </div>
+      ${_tlLinksDebug.lastError ? `<div style="font-size:10px;color:#ef4444;font-family:'DM Mono',monospace;word-break:break-all">Err: ${_tlLinksDebug.lastError}</div>` : ''}
+    </div>`);
 
   const html = `<div style="background:var(--bg3);border:1px solid var(--border);
                              border-radius:12px;margin:8px 8px 4px;overflow:hidden">
@@ -5524,7 +5642,11 @@ async function _checkoutShopifyDirect() {
   if (_previewImgUrl) propsObj['_preview_img'] = _previewImgUrl;
 
   try {
-    const pRes = await fetch(`${APP_ORIGIN}/api/shopify/product-variant?handle=${encodeURIComponent(window._TL_PRODUCT_HANDLE)}`);
+    const _ref = (_resolvedProductHandle || window._TL_PRODUCT_HANDLE || '');
+    const _q = _ref.startsWith('id:')
+      ? `product_id=${encodeURIComponent(_ref.slice(3))}`
+      : `handle=${encodeURIComponent(_ref)}`;
+    const pRes = await fetch(`${APP_ORIGIN}/api/shopify/product-variant?${_q}`);
     const pData = pRes.ok ? await pRes.json() : null;
     const variantId = pData?.variant_id;
     if (!variantId) throw new Error(pData?.error || 'Variante Shopify introuvable pour ce produit');
@@ -5574,7 +5696,7 @@ async function addToCart() {
   if (!product) return showToast('❌ Produit introuvable');
 
   // ── MODE SHOPIFY DIRECT — bypass panier interne ──────────────────────
-  if (window._TL_SHOP && window._TL_PRODUCT_HANDLE) {
+  if (window._TL_SHOP && (_resolvedProductHandle || window._TL_PRODUCT_HANDLE)) {
     return _checkoutShopifyDirect();
   }
 
@@ -5760,7 +5882,7 @@ async function checkout() {
   // ── Mode Shopify direct (depuis fiche produit via bouton Personnaliser) ────
   // On connaît le shop et le handle produit → on redirige vers /cart/ Shopify
   const _tlShop    = window._TL_SHOP           || '';
-  const _tlHandle  = window._TL_PRODUCT_HANDLE || '';
+  const _tlHandle  = (_resolvedProductHandle || window._TL_PRODUCT_HANDLE) || '';
 
   if (_tlShop && _tlHandle) {
     try {
@@ -6810,6 +6932,7 @@ function init() {
     window._TL_SHOP           = _up.get('shop')    || '';
     window._TL_PRODUCT_HANDLE = _up.get('product') || '';
     const _urlMockupId = _up.get('mockup');
+    _resolvedProductHandle = window._TL_PRODUCT_HANDLE || '';
 
     // ── Mode iframe (tl-modal.js) — afficher le bouton Fermer ──────────────
     if (window.self !== window.top) {
@@ -6827,6 +6950,8 @@ function init() {
       const _btnGen = document.getElementById('btn-gen-visuals');
       if (_btnGen) _btnGen.style.display = 'none';
     }
+
+    loadShopifyProductLinks();
 
     if (_urlMockupId) {
       // Trouver le mockup correspondant dans MOCKUPS_DATA
