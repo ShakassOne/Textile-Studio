@@ -3701,6 +3701,7 @@ let _resolvedProductHandle = '';
 let _tlLinksDebug = { lastSource:'init', lastCount:0, lastError:'' };
 let _shopifyThumbByHandle = {};
 let _shopifyBasePriceByRef = {};
+let _shopifyKnownHandles = new Set();
 
 // Clé unique pour identifier une combinaison mockup+vue
 // Utilise mockupId si dispo, sinon le produit courant comme fallback stable
@@ -3777,7 +3778,9 @@ function _getLinkedProductsForActiveMockup() {
   if (!mid) return [];
   return SHOPIFY_PRODUCT_LINKS.filter(p => {
     const sameMockupId = String(p.mockup_id || '') === mid;
-    return (p.handle || p.product_id) && sameMockupId;
+    const hasRef = (p.handle || p.product_id);
+    const handleOk = !p.handle || _shopifyKnownHandles.size === 0 || _shopifyKnownHandles.has(p.handle);
+    return hasRef && sameMockupId && handleOk;
   });
 }
 
@@ -3831,11 +3834,15 @@ async function loadShopifyProductThumbs() {
     const res = await fetch(`${window.location.origin}/api/shopify/products?shop=${encodeURIComponent(window._TL_SHOP)}`);
     const items = res.ok ? await res.json() : [];
     const map = {};
+    const handles = new Set();
     (Array.isArray(items) ? items : []).forEach(p => {
       const img = p?.images?.[0]?.src || p?.image?.src || '';
+      if (p?.handle) handles.add(p.handle);
       if (p?.handle && img) map[p.handle] = img;
     });
     _shopifyThumbByHandle = map;
+    _shopifyKnownHandles = handles;
+    updateViewSwitcher();
   } catch(e) {}
 }
 
@@ -4234,7 +4241,7 @@ function updatePrice() {
   const views  = mockup?.views || [];
 
   // Compter les vues non-vides pour facturer chaque face imprimée
-  let viewsWithContent = 1; // minimum 1 (vue courante, même vide → au moins 1 face)
+  let viewsWithContent = 0; // surcharge seulement s'il y a du contenu réel
   if (views.length > 1) {
     let count = 0;
     views.forEach((_, idx) => {
@@ -4250,7 +4257,12 @@ function updatePrice() {
         if ((STATE.viewLayers?.[key] || []).length > 0) count++;
       }
     });
-    viewsWithContent = Math.max(1, count);
+    viewsWithContent = count;
+  } else {
+    const has = canvas?.getObjects().some(
+      o => !o.__isFrame && !o.__isMockupBg && !o.__isColorOverlay && !o.__isPrintMask
+    );
+    viewsWithContent = has ? 1 : 0;
   }
 
   const total = base + extra * viewsWithContent;
