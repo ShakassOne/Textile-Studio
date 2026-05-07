@@ -3798,7 +3798,7 @@ function chooseShopifyProductHandle(handle) {
 async function loadShopifyProductLinks() {
   if (!window._TL_SHOP) return;
   try {
-    const res = await fetch(`${window.location.origin}/api/product-links?shop=${encodeURIComponent(window._TL_SHOP)}`);
+    const res = await fetch(`${window.location.origin}/api/product-links/public?shop=${encodeURIComponent(window._TL_SHOP)}`);
     const data = res.ok ? await res.json() : [];
     SHOPIFY_PRODUCT_LINKS = (Array.isArray(data) ? data : []).map(r => ({
       handle: r.shopify_product_handle || '',
