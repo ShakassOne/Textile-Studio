@@ -346,6 +346,7 @@ app.use((req, res, next) => {
     '/api/product-links/public',
     '/api/product-links/by-mockup',
     '/api/shopify/product-variant',
+    '/api/shopify/products',
     '/textilelab-studio.html',
     '/tl-modal.js',
     '/uploads',

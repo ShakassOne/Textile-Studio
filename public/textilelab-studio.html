@@ -4125,9 +4125,12 @@ function updateViewSwitcher() {
       return `<button onclick="chooseShopifyProductHandle('${safeRef}')"
         onmouseenter="${thumb ? `_tlShowProductThumb('${thumb.replace(/'/g, "\\'")}')` : ''}"
         onmouseleave="_tlHideProductThumb()"
-        style="padding:6px 10px;border-radius:10px;border:1px solid ${active ? 'var(--amber)' : 'var(--border)'};
+        style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:10px;border:1px solid ${active ? 'var(--amber)' : 'var(--border)'};
                background:${active ? 'var(--amber-dim)' : 'transparent'};
-               color:${active ? 'var(--amber)' : 'var(--text2)'};font-size:11px;cursor:pointer;">${p.title}${p.handle ? '' : ' (id)'}</button>`;
+               color:${active ? 'var(--amber)' : 'var(--text2)'};font-size:11px;cursor:pointer;">
+        ${thumb ? `<img src="${thumb}" style="width:22px;height:22px;border-radius:5px;object-fit:cover;border:1px solid rgba(255,255,255,.2)">` : ''}
+        <span>${p.title}${p.handle ? '' : ' (id)'}</span>
+      </button>`;
     }).join('');
 
     sections.push(`
