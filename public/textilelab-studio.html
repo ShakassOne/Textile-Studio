@@ -279,6 +279,7 @@
     font-family: 'DM Mono', monospace;
     font-size: 11px;
     color: var(--amber);
+    display: none;
   }
 
   /* CENTER */
@@ -3702,6 +3703,7 @@ let _tlLinksDebug = { lastSource:'init', lastCount:0, lastError:'' };
 let _shopifyThumbByHandle = {};
 let _shopifyBasePriceByRef = {};
 let _shopifyKnownHandles = new Set();
+let _shopifyProductMetaByHandle = {};
 
 // Clé unique pour identifier une combinaison mockup+vue
 // Utilise mockupId si dispo, sinon le produit courant comme fallback stable
@@ -3834,14 +3836,20 @@ async function loadShopifyProductThumbs() {
     const res = await fetch(`${window.location.origin}/api/shopify/products?shop=${encodeURIComponent(window._TL_SHOP)}`);
     const items = res.ok ? await res.json() : [];
     const map = {};
+    const meta = {};
     const handles = new Set();
     (Array.isArray(items) ? items : []).forEach(p => {
       const img = p?.images?.[0]?.src || p?.image?.src || '';
       if (p?.handle) handles.add(p.handle);
       if (p?.handle && img) map[p.handle] = img;
+      if (p?.handle) {
+        const price = p?.priceRange?.minVariantPrice?.amount || p?.variants?.[0]?.price?.amount || p?.variants?.[0]?.price || '';
+        meta[p.handle] = { title: p.title || p.handle, image: img, price };
+      }
     });
     _shopifyThumbByHandle = map;
     _shopifyKnownHandles = handles;
+    _shopifyProductMetaByHandle = meta;
     updateViewSwitcher();
   } catch(e) {}
 }
@@ -3877,6 +3885,32 @@ function _tlShowProductThumb(url) {
 function _tlHideProductThumb() {
   const el = document.getElementById('tl-prod-thumb-preview');
   if (el) el.style.display = 'none';
+}
+
+function openShopifyProductPicker() {
+  const panel = document.getElementById('tl-product-picker-panel');
+  if (!panel) return;
+  const linked = _getLinkedProductsForActiveMockup();
+  panel.innerHTML = linked.map((p) => {
+    const ref = p.handle || ('id:' + p.product_id);
+    const meta = p.handle ? (_shopifyProductMetaByHandle[p.handle] || {}) : {};
+    const title = p.title || meta.title || p.handle || p.product_id;
+    const img = meta.image || _shopifyThumbByHandle[p.handle] || '';
+    const price = meta.price ? `${Number(meta.price).toFixed(2).replace('.', ',')} €` : '';
+    return `<button onclick="chooseShopifyProductHandle('${String(ref).replace(\"'\",\"\\\\'\")}');closeShopifyProductPicker()"
+      style="width:100%;display:flex;align-items:center;gap:10px;padding:8px;border:1px solid var(--border);border-radius:10px;background:var(--bg2);cursor:pointer;margin-bottom:8px;text-align:left">
+      <div style="width:42px;height:42px;border-radius:8px;background:#fff;overflow:hidden;flex-shrink:0">${img ? `<img src="${img}" style="width:100%;height:100%;object-fit:cover">` : ''}</div>
+      <div style="min-width:0">
+        <div style="font-size:12px;color:#111;font-weight:700;line-height:1.2">${title}</div>
+        <div style="font-size:11px;color:#555">${price}</div>
+      </div>
+    </button>`;
+  }).join('') || `<div style="font-size:12px;color:var(--text3)">Aucun produit lié</div>`;
+  panel.style.display = 'block';
+}
+function closeShopifyProductPicker() {
+  const panel = document.getElementById('tl-product-picker-panel');
+  if (panel) panel.style.display = 'none';
 }
 
 
@@ -4117,7 +4151,7 @@ function updateViewSwitcher() {
 
   sections.push(`
     <div style="padding:8px 8px 4px">
-      <div style="font-size:9px;color:var(--text3);font-family:'DM Mono',monospace;
+      <div style="font-size:9px;color:#111;font-family:'DM Mono',monospace;
                   text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Mockup</div>
       <div style="display:flex;gap:5px;flex-wrap:wrap">${mockupBtns}</div>
     </div>`);
@@ -4138,7 +4172,7 @@ function updateViewSwitcher() {
 
     sections.push(`
       <div style="padding:4px 8px 8px;border-top:1px solid var(--border)">
-        <div style="font-size:9px;color:var(--text3);font-family:'DM Mono',monospace;
+        <div style="font-size:9px;color:#111;font-family:'DM Mono',monospace;
                     text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;margin-top:8px">Face</div>
         <div style="display:flex;gap:5px;flex-wrap:wrap">${viewBtns}</div>
       </div>`);
@@ -4147,27 +4181,15 @@ function updateViewSwitcher() {
 
   const linkedProducts = _getLinkedProductsForActiveMockup();
   if (linkedProducts.length > 0) {
-    const productBtns = linkedProducts.map((p) => {
-      const ref = p.handle || ('id:' + p.product_id);
-      const active = ref === _resolvedProductHandle;
-      const safeRef = String(ref).replace("'","\\'");
-      const thumb = p.handle ? (_shopifyThumbByHandle[p.handle] || '') : '';
-      return `<button onclick="chooseShopifyProductHandle('${safeRef}')"
-        onmouseenter="${thumb ? `_tlShowProductThumb('${thumb.replace(/'/g, "\\'")}')` : ''}"
-        onmouseleave="_tlHideProductThumb()"
-        style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:10px;border:1px solid ${active ? 'var(--amber)' : 'var(--border)'};
-               background:${active ? 'var(--amber-dim)' : 'transparent'};
-               color:${active ? 'var(--amber)' : 'var(--text2)'};font-size:11px;cursor:pointer;">
-        ${thumb ? `<img src="${thumb}" style="width:22px;height:22px;border-radius:5px;object-fit:cover;border:1px solid rgba(255,255,255,.2)">` : ''}
-        <span>${p.title}${p.handle ? '' : ' (id)'}</span>
-      </button>`;
-    }).join('');
+    const activeP = linkedProducts.find(p => (p.handle || ('id:' + p.product_id)) === _resolvedProductHandle) || linkedProducts[0];
+    const activeTitle = activeP?.title || activeP?.handle || 'Choisir un produit';
 
     sections.push(`
       <div style="padding:4px 8px 8px;border-top:1px solid var(--border)">
         <details open>
-          <summary style="font-size:9px;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:.8px;cursor:pointer">Produit Shopify (${linkedProducts.length})</summary>
-          <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px">${productBtns}</div>
+          <summary style="font-size:9px;color:#111;font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:.8px;cursor:pointer">Produit Shopify (${linkedProducts.length})</summary>
+          <button onclick="openShopifyProductPicker()" style="margin-top:8px;width:100%;padding:8px 10px;border-radius:10px;border:1px solid var(--amber);background:var(--amber-dim);color:#111;font-weight:700;cursor:pointer">${activeTitle}</button>
+          <div id="tl-product-picker-panel" style="display:none;position:absolute;left:calc(100% + 8px);top:0;width:260px;max-height:360px;overflow:auto;background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:10px;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:200"></div>
         </details>
       </div>`);
   }
