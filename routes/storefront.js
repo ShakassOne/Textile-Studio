@@ -345,8 +345,8 @@ router.get('/variants', (req, res) => {
 // Utilisé par le studio pour construire l'URL /cart/{variantId}:1
 // (évite les problèmes CORS depuis le navigateur vers la boutique protégée)
 router.get('/product-variant', async (req, res) => {
-  const { handle } = req.query;
-  if (!handle) return res.status(400).json({ error: 'handle requis' });
+  const { handle, product_id } = req.query;
+  if (!handle && !product_id) return res.status(400).json({ error: 'handle ou product_id requis' });
 
   try {
     const { getDB, getShopIdByDomain, getBootstrapShopId } = require('../db/database');
@@ -373,8 +373,11 @@ router.get('/product-variant', async (req, res) => {
       return res.status(503).json({ error: 'Shopify non configuré — OAuth requis' });
     }
 
+    const query = product_id
+      ? `ids=${encodeURIComponent(product_id)}`
+      : `handle=${encodeURIComponent(handle)}`;
     const apiRes = await fetch(
-      `https://${shopRecord.shop_domain}/admin/api/2024-01/products.json?handle=${encodeURIComponent(handle)}&fields=id,handle,variants`,
+      `https://${shopRecord.shop_domain}/admin/api/2024-01/products.json?${query}&fields=id,handle,variants`,
       { headers: { 'X-Shopify-Access-Token': shopRecord.access_token } }
     );
 
@@ -384,7 +387,7 @@ router.get('/product-variant', async (req, res) => {
 
     const data = await apiRes.json();
     const product = data.products?.[0];
-    if (!product) return res.status(404).json({ error: `Produit "${handle}" introuvable` });
+    if (!product) return res.status(404).json({ error: `Produit introuvable (${handle || product_id})` });
 
     const variant = product.variants?.[0];
     if (!variant) return res.status(404).json({ error: 'Aucune variante trouvée' });
@@ -393,6 +396,7 @@ router.get('/product-variant', async (req, res) => {
       product_id: product.id,
       handle:     product.handle,
       variant_id: variant.id,
+      variant_price: Number(variant.price || 0),
       variant_gid: `gid://shopify/ProductVariant/${variant.id}`,
     });
   } catch (err) {

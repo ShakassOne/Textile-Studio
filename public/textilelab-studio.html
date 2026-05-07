@@ -3696,6 +3696,11 @@ function getMockupsForProduct(productKey) {
 // _STATE_mockupIdx = index dans getMockupsForProduct() — quel mockup (ex: Recto vs Verso)
 // STATE_viewIdx    = index dans mockup.views[]           — quelle vue de CE mockup
 let _STATE_mockupIdx = 0;
+let SHOPIFY_PRODUCT_LINKS = []; // [{handle,title,product_id,mockup_id,mockup_product}]
+let _resolvedProductHandle = '';
+let _tlLinksDebug = { lastSource:'init', lastCount:0, lastError:'' };
+let _shopifyThumbByHandle = {};
+let _shopifyBasePriceByRef = {};
 
 // Clé unique pour identifier une combinaison mockup+vue
 // Utilise mockupId si dispo, sinon le produit courant comme fallback stable
@@ -3766,6 +3771,136 @@ function _restoreViewLayers(mockupId, viewIdx, callback) {
   });
 }
 
+
+function _getLinkedProductsForActiveMockup() {
+  const mid = String(STATE_mockup?.id || '');
+  if (!mid) return [];
+  return SHOPIFY_PRODUCT_LINKS.filter(p => {
+    const sameMockupId = String(p.mockup_id || '') === mid;
+    return (p.handle || p.product_id) && sameMockupId;
+  });
+}
+
+function _syncResolvedProductHandle() {
+  const options = _getLinkedProductsForActiveMockup();
+  if (!options.length) {
+    _resolvedProductHandle = (_resolvedProductHandle || window._TL_PRODUCT_HANDLE) || '';
+    return;
+  }
+  const stillValid = options.some(o => o.handle === _resolvedProductHandle);
+  if (!stillValid) _resolvedProductHandle = options[0].handle || ('id:' + options[0].product_id);
+}
+
+function chooseShopifyProductHandle(ref) {
+  _resolvedProductHandle = ref || '';
+  refreshResolvedProductPrice();
+  updateViewSwitcher();
+  updatePrice();
+}
+
+async function loadShopifyProductLinks() {
+  if (!window._TL_SHOP) return;
+  try {
+    const res = await fetch(`${window.location.origin}/api/product-links/public?shop=${encodeURIComponent(window._TL_SHOP)}`);
+    const data = res.ok ? await res.json() : [];
+    SHOPIFY_PRODUCT_LINKS = (Array.isArray(data) ? data : []).map(r => ({
+      handle: r.shopify_product_handle || '',
+      title:  r.shopify_product_title || r.shopify_product_handle || 'Produit',
+      mockup_id: r.mockup_id,
+      mockup_product: r.mockup_product || '',
+      product_id: r.shopify_product_id || ''
+    }));
+
+    // Les liaisons arrivent en async: re-synchroniser le produit résolu
+    // puis rafraîchir le panneau mockup/produit pour afficher la sélection.
+    _syncResolvedProductHandle();
+    refreshResolvedProductPrice();
+    _tlLinksDebug = { lastSource:'public', lastCount: SHOPIFY_PRODUCT_LINKS.length, lastError:'' };
+    updateViewSwitcher();
+    updatePrice();
+  } catch(e) {
+    _tlLinksDebug = { lastSource:'public', lastCount:0, lastError:String(e.message || e) };
+    console.warn('[TL] loadShopifyProductLinks:', e.message);
+    updateViewSwitcher();
+  }
+}
+
+async function loadShopifyProductThumbs() {
+  if (!window._TL_SHOP) return;
+  try {
+    const res = await fetch(`${window.location.origin}/api/shopify/products?shop=${encodeURIComponent(window._TL_SHOP)}`);
+    const items = res.ok ? await res.json() : [];
+    const map = {};
+    (Array.isArray(items) ? items : []).forEach(p => {
+      const img = p?.images?.[0]?.src || p?.image?.src || '';
+      if (p?.handle && img) map[p.handle] = img;
+    });
+    _shopifyThumbByHandle = map;
+  } catch(e) {}
+}
+
+async function refreshResolvedProductPrice() {
+  if (!window._TL_SHOP) return;
+  const ref = _resolvedProductHandle || window._TL_PRODUCT_HANDLE || '';
+  if (!ref) return;
+  try {
+    const q = ref.startsWith('id:')
+      ? `product_id=${encodeURIComponent(ref.slice(3))}`
+      : `handle=${encodeURIComponent(ref)}`;
+    const r = await fetch(`${window.location.origin}/api/shopify/product-variant?${q}&shop=${encodeURIComponent(window._TL_SHOP)}`);
+    const j = r.ok ? await r.json() : null;
+    if (j && Number.isFinite(Number(j.variant_price))) {
+      _shopifyBasePriceByRef[ref] = Number(j.variant_price);
+    }
+  } catch(e) {}
+}
+
+function _tlShowProductThumb(url) {
+  if (!url) return;
+  let el = document.getElementById('tl-prod-thumb-preview');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'tl-prod-thumb-preview';
+    el.style.cssText = 'position:fixed;left:220px;top:220px;z-index:99999;background:#111;border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:6px;box-shadow:0 8px 24px rgba(0,0,0,.35);pointer-events:none';
+    document.body.appendChild(el);
+  }
+  el.innerHTML = `<img src="${url}" style="display:block;width:88px;height:88px;object-fit:cover;border-radius:6px">`;
+  el.style.display = 'block';
+}
+function _tlHideProductThumb() {
+  const el = document.getElementById('tl-prod-thumb-preview');
+  if (el) el.style.display = 'none';
+}
+
+
+async function loadLinksForActiveMockup() {
+  if (!window._TL_SHOP || !STATE_mockup?.id) return;
+  try {
+    const res = await fetch(`${window.location.origin}/api/product-links/by-mockup/${encodeURIComponent(String(STATE_mockup.id))}?shop=${encodeURIComponent(window._TL_SHOP)}`);
+    const data = res.ok ? await res.json() : [];
+    const scoped = (Array.isArray(data) ? data : []).map(r => ({
+      handle: r.shopify_product_handle || '',
+      title: r.shopify_product_title || r.shopify_product_handle || 'Produit',
+      mockup_id: r.mockup_id,
+      mockup_product: r.mockup_product || '',
+      product_id: r.shopify_product_id || ''
+    }));
+
+    // Remplacer les entrées de ce mockup dans le cache global
+    const currentId = String(STATE_mockup.id);
+    SHOPIFY_PRODUCT_LINKS = SHOPIFY_PRODUCT_LINKS.filter(r => String(r.mockup_id || '') !== currentId).concat(scoped);
+    _syncResolvedProductHandle();
+    refreshResolvedProductPrice();
+    _tlLinksDebug = { lastSource:'public', lastCount: SHOPIFY_PRODUCT_LINKS.length, lastError:'' };
+    updateViewSwitcher();
+    updatePrice();
+  } catch (e) {
+    _tlLinksDebug = { lastSource:'by-mockup', lastCount:0, lastError:String(e.message || e) };
+    console.warn('[TL] loadLinksForActiveMockup:', e.message);
+    updateViewSwitcher();
+  }
+}
+
 function applyMockup(productKey, viewIdx, mockupIdx) {
   const allMockups = getMockupsForProduct(productKey);
   const changingProduct = productKey !== STATE.product;
@@ -3783,6 +3918,8 @@ function applyMockup(productKey, viewIdx, mockupIdx) {
   if (_STATE_mockupIdx >= allMockups.length) _STATE_mockupIdx = 0;
 
   STATE_mockup = allMockups[_STATE_mockupIdx] || null;
+  _syncResolvedProductHandle();
+  loadLinksForActiveMockup();
 
   if (viewIdx !== undefined) {
     STATE_viewIdx = viewIdx;
@@ -4000,6 +4137,46 @@ function updateViewSwitcher() {
       </div>`);
   }
 
+
+  const linkedProducts = _getLinkedProductsForActiveMockup();
+  if (linkedProducts.length > 0) {
+    const productBtns = linkedProducts.map((p) => {
+      const ref = p.handle || ('id:' + p.product_id);
+      const active = ref === _resolvedProductHandle;
+      const safeRef = String(ref).replace("'","\\'");
+      const thumb = p.handle ? (_shopifyThumbByHandle[p.handle] || '') : '';
+      return `<button onclick="chooseShopifyProductHandle('${safeRef}')"
+        onmouseenter="${thumb ? `_tlShowProductThumb('${thumb.replace(/'/g, "\\'")}')` : ''}"
+        onmouseleave="_tlHideProductThumb()"
+        style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:10px;border:1px solid ${active ? 'var(--amber)' : 'var(--border)'};
+               background:${active ? 'var(--amber-dim)' : 'transparent'};
+               color:${active ? 'var(--amber)' : 'var(--text2)'};font-size:11px;cursor:pointer;">
+        ${thumb ? `<img src="${thumb}" style="width:22px;height:22px;border-radius:5px;object-fit:cover;border:1px solid rgba(255,255,255,.2)">` : ''}
+        <span>${p.title}${p.handle ? '' : ' (id)'}</span>
+      </button>`;
+    }).join('');
+
+    sections.push(`
+      <div style="padding:4px 8px 8px;border-top:1px solid var(--border)">
+        <details open>
+          <summary style="font-size:9px;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:.8px;cursor:pointer">Produit Shopify (${linkedProducts.length})</summary>
+          <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px">${productBtns}</div>
+        </details>
+      </div>`);
+  }
+
+
+  sections.push(`
+    <div style="padding:6px 8px 8px;border-top:1px dashed var(--border)">
+      <div style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace">
+        Debug liens: source=${_tlLinksDebug.lastSource || '-'} · count=${_tlLinksDebug.lastCount || 0}
+      </div>
+      <div style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;word-break:break-all">
+        Produit actif: ${_resolvedProductHandle || '(vide)'}
+      </div>
+      ${_tlLinksDebug.lastError ? `<div style="font-size:10px;color:#ef4444;font-family:'DM Mono',monospace;word-break:break-all">Err: ${_tlLinksDebug.lastError}</div>` : ''}
+    </div>`);
+
   const html = `<div style="background:var(--bg3);border:1px solid var(--border);
                              border-radius:12px;margin:8px 8px 4px;overflow:hidden">
     ${sections.join('')}
@@ -4046,7 +4223,12 @@ function selectProduct(key) {
 }
 
 function updatePrice() {
-  const base   = PRODUCTS[STATE.product]?.base  || 0;
+  let base = PRODUCTS[STATE.product]?.base || 0;
+  if (window._TL_SHOP) {
+    const ref = _resolvedProductHandle || window._TL_PRODUCT_HANDLE || '';
+    const p = _shopifyBasePriceByRef[ref];
+    if (Number.isFinite(p)) base = p;
+  }
   const extra  = FORMATS[STATE.format]?.extra   || 0;
   const mockup = STATE_mockup;
   const views  = mockup?.views || [];
@@ -5524,7 +5706,11 @@ async function _checkoutShopifyDirect() {
   if (_previewImgUrl) propsObj['_preview_img'] = _previewImgUrl;
 
   try {
-    const pRes = await fetch(`${APP_ORIGIN}/api/shopify/product-variant?handle=${encodeURIComponent(window._TL_PRODUCT_HANDLE)}`);
+    const _ref = (_resolvedProductHandle || window._TL_PRODUCT_HANDLE || '');
+    const _q = _ref.startsWith('id:')
+      ? `product_id=${encodeURIComponent(_ref.slice(3))}`
+      : `handle=${encodeURIComponent(_ref)}`;
+    const pRes = await fetch(`${APP_ORIGIN}/api/shopify/product-variant?${_q}`);
     const pData = pRes.ok ? await pRes.json() : null;
     const variantId = pData?.variant_id;
     if (!variantId) throw new Error(pData?.error || 'Variante Shopify introuvable pour ce produit');
@@ -5574,7 +5760,7 @@ async function addToCart() {
   if (!product) return showToast('❌ Produit introuvable');
 
   // ── MODE SHOPIFY DIRECT — bypass panier interne ──────────────────────
-  if (window._TL_SHOP && window._TL_PRODUCT_HANDLE) {
+  if (window._TL_SHOP && (_resolvedProductHandle || window._TL_PRODUCT_HANDLE)) {
     return _checkoutShopifyDirect();
   }
 
@@ -5760,7 +5946,7 @@ async function checkout() {
   // ── Mode Shopify direct (depuis fiche produit via bouton Personnaliser) ────
   // On connaît le shop et le handle produit → on redirige vers /cart/ Shopify
   const _tlShop    = window._TL_SHOP           || '';
-  const _tlHandle  = window._TL_PRODUCT_HANDLE || '';
+  const _tlHandle  = (_resolvedProductHandle || window._TL_PRODUCT_HANDLE) || '';
 
   if (_tlShop && _tlHandle) {
     try {
@@ -6810,6 +6996,7 @@ function init() {
     window._TL_SHOP           = _up.get('shop')    || '';
     window._TL_PRODUCT_HANDLE = _up.get('product') || '';
     const _urlMockupId = _up.get('mockup');
+    _resolvedProductHandle = window._TL_PRODUCT_HANDLE || '';
 
     // ── Mode iframe (tl-modal.js) — afficher le bouton Fermer ──────────────
     if (window.self !== window.top) {
@@ -6827,6 +7014,9 @@ function init() {
       const _btnGen = document.getElementById('btn-gen-visuals');
       if (_btnGen) _btnGen.style.display = 'none';
     }
+
+    loadShopifyProductLinks();
+    loadShopifyProductThumbs();
 
     if (_urlMockupId) {
       // Trouver le mockup correspondant dans MOCKUPS_DATA
