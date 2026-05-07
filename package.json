@@ -1,6 +1,6 @@
 {
   "name": "textilelab-backend",
-  "version": "1.0.19",
+  "version": "1.0.20",
   "description": "TextileLab Studio - Backend API",
   "main": "server.js",
   "type": "commonjs",
