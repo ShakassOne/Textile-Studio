@@ -47,6 +47,24 @@ router.get('/public', attachShopId, (req, res) => {
   res.json(links);
 });
 
+
+// ── GET /by-mockup/:mockupId — liste publique des produits liés à un mockup ──
+router.get('/by-mockup/:mockupId', attachShopId, (req, res) => {
+  const db = getDB();
+  const links = db.prepare(`
+    SELECT
+      pl.id, pl.shopify_product_id, pl.shopify_product_handle,
+      pl.shopify_product_title, pl.mockup_id, pl.updated_at,
+      m.name AS mockup_name,
+      m.product AS mockup_product
+    FROM product_mockup_links pl
+    LEFT JOIN mockups m ON pl.mockup_id = m.id AND m.shop_id = pl.shop_id
+    WHERE pl.shop_id = ? AND pl.mockup_id = ?
+    ORDER BY pl.shopify_product_title COLLATE NOCASE
+  `).all(req.shopId, req.params.mockupId);
+  res.json(links);
+});
+
 // ── GET /by-product/:productId — utilisé par studio/storefront (scopé shop) ───
 router.get('/by-product/:productId', attachShopId, (req, res) => {
   const db = getDB();

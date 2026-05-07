@@ -3816,6 +3816,29 @@ async function loadShopifyProductLinks() {
   }
 }
 
+
+async function loadLinksForActiveMockup() {
+  if (!window._TL_SHOP || !STATE_mockup?.id) return;
+  try {
+    const res = await fetch(`${window.location.origin}/api/product-links/by-mockup/${encodeURIComponent(String(STATE_mockup.id))}?shop=${encodeURIComponent(window._TL_SHOP)}`);
+    const data = res.ok ? await res.json() : [];
+    const scoped = (Array.isArray(data) ? data : []).map(r => ({
+      handle: r.shopify_product_handle || '',
+      title: r.shopify_product_title || r.shopify_product_handle || 'Produit',
+      mockup_id: r.mockup_id,
+      mockup_product: r.mockup_product || ''
+    })).filter(r => r.handle);
+
+    // Remplacer les entrées de ce mockup dans le cache global
+    const currentId = String(STATE_mockup.id);
+    SHOPIFY_PRODUCT_LINKS = SHOPIFY_PRODUCT_LINKS.filter(r => String(r.mockup_id || '') !== currentId).concat(scoped);
+    _syncResolvedProductHandle();
+    updateViewSwitcher();
+  } catch (e) {
+    console.warn('[TL] loadLinksForActiveMockup:', e.message);
+  }
+}
+
 function applyMockup(productKey, viewIdx, mockupIdx) {
   const allMockups = getMockupsForProduct(productKey);
   const changingProduct = productKey !== STATE.product;
@@ -3834,6 +3857,7 @@ function applyMockup(productKey, viewIdx, mockupIdx) {
 
   STATE_mockup = allMockups[_STATE_mockupIdx] || null;
   _syncResolvedProductHandle();
+  loadLinksForActiveMockup();
 
   if (viewIdx !== undefined) {
     STATE_viewIdx = viewIdx;
