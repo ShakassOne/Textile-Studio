@@ -3698,6 +3698,7 @@ function getMockupsForProduct(productKey) {
 let _STATE_mockupIdx = 0;
 let SHOPIFY_PRODUCT_LINKS = []; // [{handle,title,mockup_id,mockup_product}]
 let _resolvedProductHandle = '';
+let _tlLinksDebug = { lastSource:'init', lastCount:0, lastError:'' };
 
 // Clé unique pour identifier une combinaison mockup+vue
 // Utilise mockupId si dispo, sinon le produit courant comme fallback stable
@@ -3810,9 +3811,12 @@ async function loadShopifyProductLinks() {
     // Les liaisons arrivent en async: re-synchroniser le produit résolu
     // puis rafraîchir le panneau mockup/produit pour afficher la sélection.
     _syncResolvedProductHandle();
+    _tlLinksDebug = { lastSource:'public', lastCount: SHOPIFY_PRODUCT_LINKS.length, lastError:'' };
     updateViewSwitcher();
   } catch(e) {
+    _tlLinksDebug = { lastSource:'public', lastCount:0, lastError:String(e.message || e) };
     console.warn('[TL] loadShopifyProductLinks:', e.message);
+    updateViewSwitcher();
   }
 }
 
@@ -3833,9 +3837,12 @@ async function loadLinksForActiveMockup() {
     const currentId = String(STATE_mockup.id);
     SHOPIFY_PRODUCT_LINKS = SHOPIFY_PRODUCT_LINKS.filter(r => String(r.mockup_id || '') !== currentId).concat(scoped);
     _syncResolvedProductHandle();
+    _tlLinksDebug = { lastSource:'public', lastCount: SHOPIFY_PRODUCT_LINKS.length, lastError:'' };
     updateViewSwitcher();
   } catch (e) {
+    _tlLinksDebug = { lastSource:'by-mockup', lastCount:0, lastError:String(e.message || e) };
     console.warn('[TL] loadLinksForActiveMockup:', e.message);
+    updateViewSwitcher();
   }
 }
 
@@ -4077,7 +4084,7 @@ function updateViewSwitcher() {
 
 
   const linkedProducts = _getLinkedProductsForActiveMockup();
-  if (linkedProducts.length > 1) {
+  if (linkedProducts.length > 0) {
     const productBtns = linkedProducts.map((p) => {
       const active = p.handle === _resolvedProductHandle;
       return `<button onclick="chooseShopifyProductHandle('${p.handle.replace("'","\'")}')"
@@ -4094,6 +4101,18 @@ function updateViewSwitcher() {
         </details>
       </div>`);
   }
+
+
+  sections.push(`
+    <div style="padding:6px 8px 8px;border-top:1px dashed var(--border)">
+      <div style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace">
+        Debug liens: source=${_tlLinksDebug.lastSource || '-'} · count=${_tlLinksDebug.lastCount || 0}
+      </div>
+      <div style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;word-break:break-all">
+        Handle actif: ${_resolvedProductHandle || '(vide)'}
+      </div>
+      ${_tlLinksDebug.lastError ? `<div style="font-size:10px;color:#ef4444;font-family:'DM Mono',monospace;word-break:break-all">Err: ${_tlLinksDebug.lastError}</div>` : ''}
+    </div>`);
 
   const html = `<div style="background:var(--bg3);border:1px solid var(--border);
                              border-radius:12px;margin:8px 8px 4px;overflow:hidden">
