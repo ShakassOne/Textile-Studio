@@ -332,8 +332,25 @@ function checkSubscription(req, res, next) {
 // Appliquer le middleware sur toutes les routes qui suivent
 // sauf /auth, /webhooks et /billing (enregistrées ci-dessus, donc non concernées)
 app.use((req, res, next) => {
-  const exempted = ['/api/auth', '/auth', '/webhooks', '/billing', '/oauth',
-                    '/health', '/privacy', '/manifest.json', '/sw.js'];
+  const exempted = [
+    '/api/auth',
+    '/auth',
+    '/webhooks',
+    '/billing',
+    '/oauth',
+    '/health',
+    '/privacy',
+    '/manifest.json',
+    '/sw.js',
+    // Storefront/public paths that must never be gated by billing redirects
+    '/api/product-links/public',
+    '/api/product-links/by-mockup',
+    '/api/shopify/product-variant',
+    '/textilelab-studio.html',
+    '/tl-modal.js',
+    '/uploads',
+    '/assets',
+  ];
   if (exempted.some(p => req.path.startsWith(p))) return next();
   return checkSubscription(req, res, next);
 });
