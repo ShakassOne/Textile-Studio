@@ -3800,6 +3800,11 @@ async function loadShopifyProductLinks() {
       title:  r.shopify_product_title || r.shopify_product_handle || 'Produit',
       mockup_id: r.mockup_id
     })).filter(r => r.handle);
+
+    // Les liaisons arrivent en async: re-synchroniser le produit résolu
+    // puis rafraîchir le panneau mockup/produit pour afficher la sélection.
+    _syncResolvedProductHandle();
+    updateViewSwitcher();
   } catch(e) {
     console.warn('[TL] loadShopifyProductLinks:', e.message);
   }
