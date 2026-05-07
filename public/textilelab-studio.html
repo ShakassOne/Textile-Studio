@@ -3696,7 +3696,7 @@ function getMockupsForProduct(productKey) {
 // _STATE_mockupIdx = index dans getMockupsForProduct() — quel mockup (ex: Recto vs Verso)
 // STATE_viewIdx    = index dans mockup.views[]           — quelle vue de CE mockup
 let _STATE_mockupIdx = 0;
-let SHOPIFY_PRODUCT_LINKS = []; // [{handle,title,mockup_id}]
+let SHOPIFY_PRODUCT_LINKS = []; // [{handle,title,mockup_id,mockup_product}]
 let _resolvedProductHandle = '';
 
 // Clé unique pour identifier une combinaison mockup+vue
@@ -3772,7 +3772,12 @@ function _restoreViewLayers(mockupId, viewIdx, callback) {
 function _getLinkedProductsForActiveMockup() {
   const mid = String(STATE_mockup?.id || '');
   if (!mid) return [];
-  return SHOPIFY_PRODUCT_LINKS.filter(p => String(p.mockup_id || '') === mid && p.handle);
+  const activeProductKey = String(STATE_mockup?.product || '');
+  return SHOPIFY_PRODUCT_LINKS.filter(p => {
+    const sameMockupId = String(p.mockup_id || '') === mid;
+    const sameProductType = activeProductKey && String(p.mockup_product || '') === activeProductKey;
+    return p.handle && (sameMockupId || sameProductType);
+  });
 }
 
 function _syncResolvedProductHandle() {
@@ -3798,7 +3803,8 @@ async function loadShopifyProductLinks() {
     SHOPIFY_PRODUCT_LINKS = (Array.isArray(data) ? data : []).map(r => ({
       handle: r.shopify_product_handle || '',
       title:  r.shopify_product_title || r.shopify_product_handle || 'Produit',
-      mockup_id: r.mockup_id
+      mockup_id: r.mockup_id,
+      mockup_product: r.mockup_product || ''
     })).filter(r => r.handle);
 
     // Les liaisons arrivent en async: re-synchroniser le produit résolu
