@@ -491,7 +491,7 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
     <!-- ══ PRICING / PRODUITS ══ -->
     <div class="view" id="view-pricing">
       <div class="page-header">
-        <div><div class="page-title">Produits & Mockups</div><div class="page-sub">Liaisons Shopify ↔ Mockups + Tarification</div></div>
+        <div><div class="page-title">Produits & Mockups</div><div class="page-sub">Liaisons Shopify ↔ Mockups + Surcharges d'impression</div></div>
         <div class="page-actions">
           <button class="btn" onclick="refreshShopifyProducts()" id="btn-refresh-shopify" title="Rafraîchir les produits Shopify">↺ Shopify</button>
           <button class="btn btn-primary" onclick="saveProductPricing()">💾 Enregistrer les prix</button>
@@ -514,9 +514,9 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
           </div>
         </div>
 
-        <!-- ── Section 2 : Tarification ── -->
+        <!-- ── Section 2 : Surcharges d'impression (sans prix de base produit) ── -->
         <div>
-          <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:14px;display:flex;align-items:center;gap:8px"><span>💰</span> Tarification</div>
+          <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:14px;display:flex;align-items:center;gap:8px"><span>🖨️</span> Surcharges d'impression</div>
           <div id="products-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px">
             <div style="color:var(--text3);font-size:13px;padding:20px">Chargement…</div>
           </div>
@@ -1996,28 +1996,15 @@ async function refreshShopifyProducts() {
 }
 
 // ============================================
-// PRICING
+// PRICING (surcharges only)
 // ============================================
 async function loadPricingEditor() {
   const data = await api('/api/pricing');
   _pricingData = data;
   const grid = document.getElementById('products-grid');
   if (!grid || !data) { grid.innerHTML = '<div style="color:var(--text3)">Impossible de charger les tarifs</div>'; return; }
-  const products = data.products || {}, formats = data.formats || {};
-  grid.innerHTML = Object.entries(products).map(([key,val]) => `
-    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:14px;padding:18px">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-        <span style="font-size:28px">${PRODUCTS_META[key]?.emoji||'📦'}</span>
-        <div><div style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px">${PRODUCTS_META[key]?.name||key}</div>
-        <div style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace">${key.toUpperCase()}</div></div>
-      </div>
-      <label style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px">Prix de base</label>
-      <div style="display:flex;align-items:center;gap:8px">
-        <input type="number" step="0.01" min="0" id="price-${key}" value="${parseFloat(val.base||val).toFixed(2)}"
-          style="flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;color:var(--text);font-family:'DM Mono',monospace;font-size:14px;font-weight:700;outline:none">
-        <span style="color:var(--amber);font-family:'DM Mono',monospace;font-weight:700">€</span>
-      </div>
-    </div>`).join('') + `
+  const formats = data.formats || {};
+  grid.innerHTML = `
     <div style="background:var(--bg3);border:1px solid var(--border);border-radius:14px;padding:18px;grid-column:1/-1">
       <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:14px">🖨 Surcharges d'impression</div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
@@ -2036,8 +2023,7 @@ async function loadPricingEditor() {
 
 async function saveProductPricing() {
   if (!_pricingData) return;
-  const products = {}, formats = {};
-  Object.keys(_pricingData.products||{}).forEach(key => { const el=document.getElementById(`price-${key}`); if(el) products[key]={base:parseFloat(el.value)||0}; });
+  const products = _pricingData.products || {}, formats = {};
   Object.keys(_pricingData.formats||{}).forEach(fmt => { const el=document.getElementById(`format-${fmt}`); if(el) formats[fmt]={extra:parseFloat(el.value)||0}; });
   const res = await api('/api/pricing', {method:'PUT', body:JSON.stringify({products,formats})});
   if (res?.products||res?.ok) { _pricingData=res; showToast('✅ Tarifs enregistrés'); }
