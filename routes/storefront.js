@@ -396,6 +396,7 @@ router.get('/product-variant', async (req, res) => {
       product_id: product.id,
       handle:     product.handle,
       variant_id: variant.id,
+      variant_price: Number(variant.price || 0),
       variant_gid: `gid://shopify/ProductVariant/${variant.id}`,
     });
   } catch (err) {
