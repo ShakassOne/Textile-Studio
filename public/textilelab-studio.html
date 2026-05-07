@@ -3696,7 +3696,7 @@ function getMockupsForProduct(productKey) {
 // _STATE_mockupIdx = index dans getMockupsForProduct() — quel mockup (ex: Recto vs Verso)
 // STATE_viewIdx    = index dans mockup.views[]           — quelle vue de CE mockup
 let _STATE_mockupIdx = 0;
-let SHOPIFY_PRODUCT_LINKS = []; // [{handle,title,mockup_id,mockup_product}]
+let SHOPIFY_PRODUCT_LINKS = []; // [{handle,title,product_id,mockup_id,mockup_product}]
 let _resolvedProductHandle = '';
 let _tlLinksDebug = { lastSource:'init', lastCount:0, lastError:'' };
 
@@ -3777,7 +3777,7 @@ function _getLinkedProductsForActiveMockup() {
   return SHOPIFY_PRODUCT_LINKS.filter(p => {
     const sameMockupId = String(p.mockup_id || '') === mid;
     const sameProductType = activeProductKey && String(p.mockup_product || '') === activeProductKey;
-    return p.handle && (sameMockupId || sameProductType);
+    return (p.handle || p.product_id) && (sameMockupId || sameProductType);
   });
 }
 
@@ -3788,11 +3788,11 @@ function _syncResolvedProductHandle() {
     return;
   }
   const stillValid = options.some(o => o.handle === _resolvedProductHandle);
-  if (!stillValid) _resolvedProductHandle = options[0].handle;
+  if (!stillValid) _resolvedProductHandle = options[0].handle || ('id:' + options[0].product_id);
 }
 
-function chooseShopifyProductHandle(handle) {
-  _resolvedProductHandle = handle || '';
+function chooseShopifyProductHandle(ref) {
+  _resolvedProductHandle = ref || '';
   updateViewSwitcher();
 }
 
@@ -3805,8 +3805,9 @@ async function loadShopifyProductLinks() {
       handle: r.shopify_product_handle || '',
       title:  r.shopify_product_title || r.shopify_product_handle || 'Produit',
       mockup_id: r.mockup_id,
-      mockup_product: r.mockup_product || ''
-    })).filter(r => r.handle);
+      mockup_product: r.mockup_product || '',
+      product_id: r.shopify_product_id || ''
+    }));
 
     // Les liaisons arrivent en async: re-synchroniser le produit résolu
     // puis rafraîchir le panneau mockup/produit pour afficher la sélection.
@@ -3830,8 +3831,9 @@ async function loadLinksForActiveMockup() {
       handle: r.shopify_product_handle || '',
       title: r.shopify_product_title || r.shopify_product_handle || 'Produit',
       mockup_id: r.mockup_id,
-      mockup_product: r.mockup_product || ''
-    })).filter(r => r.handle);
+      mockup_product: r.mockup_product || '',
+      product_id: r.shopify_product_id || ''
+    }));
 
     // Remplacer les entrées de ce mockup dans le cache global
     const currentId = String(STATE_mockup.id);
@@ -4086,11 +4088,13 @@ function updateViewSwitcher() {
   const linkedProducts = _getLinkedProductsForActiveMockup();
   if (linkedProducts.length > 0) {
     const productBtns = linkedProducts.map((p) => {
-      const active = p.handle === _resolvedProductHandle;
-      return `<button onclick="chooseShopifyProductHandle('${p.handle.replace("'","\'")}')"
+      const ref = p.handle || ('id:' + p.product_id);
+      const active = ref === _resolvedProductHandle;
+      const safeRef = String(ref).replace("'","\\'");
+      return `<button onclick="chooseShopifyProductHandle('${safeRef}')"
         style="padding:6px 10px;border-radius:10px;border:1px solid ${active ? 'var(--amber)' : 'var(--border)'};
                background:${active ? 'var(--amber-dim)' : 'transparent'};
-               color:${active ? 'var(--amber)' : 'var(--text2)'};font-size:11px;cursor:pointer;">${p.title}</button>`;
+               color:${active ? 'var(--amber)' : 'var(--text2)'};font-size:11px;cursor:pointer;">${p.title}${p.handle ? '' : ' (id)'}</button>`;
     }).join('');
 
     sections.push(`
@@ -4109,7 +4113,7 @@ function updateViewSwitcher() {
         Debug liens: source=${_tlLinksDebug.lastSource || '-'} · count=${_tlLinksDebug.lastCount || 0}
       </div>
       <div style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;word-break:break-all">
-        Handle actif: ${_resolvedProductHandle || '(vide)'}
+        Produit actif: ${_resolvedProductHandle || '(vide)'}
       </div>
       ${_tlLinksDebug.lastError ? `<div style="font-size:10px;color:#ef4444;font-family:'DM Mono',monospace;word-break:break-all">Err: ${_tlLinksDebug.lastError}</div>` : ''}
     </div>`);
@@ -5638,7 +5642,11 @@ async function _checkoutShopifyDirect() {
   if (_previewImgUrl) propsObj['_preview_img'] = _previewImgUrl;
 
   try {
-    const pRes = await fetch(`${APP_ORIGIN}/api/shopify/product-variant?handle=${encodeURIComponent((_resolvedProductHandle || window._TL_PRODUCT_HANDLE))}`);
+    const _ref = (_resolvedProductHandle || window._TL_PRODUCT_HANDLE || '');
+    const _q = _ref.startsWith('id:')
+      ? `product_id=${encodeURIComponent(_ref.slice(3))}`
+      : `handle=${encodeURIComponent(_ref)}`;
+    const pRes = await fetch(`${APP_ORIGIN}/api/shopify/product-variant?${_q}`);
     const pData = pRes.ok ? await pRes.json() : null;
     const variantId = pData?.variant_id;
     if (!variantId) throw new Error(pData?.error || 'Variante Shopify introuvable pour ce produit');
