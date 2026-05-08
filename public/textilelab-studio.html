@@ -5975,13 +5975,16 @@ async function _checkoutShopifyDirect() {
     '_faces':     String(viewsCount),
   };
 
-  // Lien "Voir mon design" — UNIQUEMENT en clé préfixée '_' :
-  //  → Shopify natif masque la clé sur le checkout (pas d'URL en texte brut).
-  //  → La Checkout UI Extension TextileLab l'intercepte et rend image + bouton.
-  //  → tl-modal.js (drawer panier) l'intercepte AVANT le filtre _-prefix et
-  //    le transforme en bouton orange stylé.
+  // Lien "Voir mon design" — DEUX clés :
+  //  1. "Voir mon design" (visible Shopify natif → fallback sur checkout standard
+  //     si la Checkout UI Extension n'est pas déployée). Côté drawer panier,
+  //     tl-modal.js intercepte cette clé et la rend en bouton orange propre.
+  //  2. "_voir_mon_design" (masquée Shopify natif → utilisée par la Checkout UI
+  //     Extension TextileLab pour afficher image + bouton sur shop.app).
   if (designId) {
-    propsObj['_voir_mon_design'] = `${APP_ORIGIN}/design-preview/${designId}`;
+    const _designUrl = `${APP_ORIGIN}/design-preview/${designId}`;
+    propsObj['Voir mon design'] = _designUrl;
+    propsObj['_voir_mon_design'] = _designUrl;
   }
   // ── UID unique pour éviter la fusion des lignes dans le panier Shopify ──
   propsObj['_design_uid'] = Date.now() + '-' + Math.random().toString(36).slice(2, 7);
