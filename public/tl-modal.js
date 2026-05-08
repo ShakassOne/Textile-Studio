@@ -460,7 +460,9 @@
     dts.forEach(function(dt) {
       if (dt.dataset.tlFixed) return;
       dt.dataset.tlFixed = '1';
-      var key = dt.textContent.trim();
+      // Certains thèmes ajoutent ":" ou un espace insécable derrière le label
+      // → on normalise pour que la condition exact-match marche partout.
+      var key = dt.textContent.replace(/[: \s]+$/g, '').trim();
       var dd  = dt.nextElementSibling;
       if (!dd) return;
 
