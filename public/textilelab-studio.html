@@ -4026,7 +4026,14 @@ async function loadShopifyProductThumbs() {
       if (p?.handle) handles.add(p.handle);
       if (p?.handle && img) map[p.handle] = img;
       if (p?.handle) {
-        const price = p?.priceRange?.minVariantPrice?.amount || p?.variants?.[0]?.price?.amount || p?.variants?.[0]?.price || '';
+        const variants = Array.isArray(p?.variants) ? p.variants : [];
+        const firstAvailable = variants.find(v => v?.available !== false) || variants[0] || null;
+        const price = firstAvailable?.price?.amount
+          ?? firstAvailable?.price
+          ?? p?.priceRange?.minVariantPrice?.amount
+          ?? variants.find(v => (v?.price?.amount ?? v?.price) != null)?.price?.amount
+          ?? variants.find(v => (v?.price?.amount ?? v?.price) != null)?.price
+          ?? '';
         // Extraction des tailles : Shopify expose options[] avec name + values, ou variants[].option1
         let sizes = [];
         const sizeOpt = (Array.isArray(p?.options) ? p.options : []).find(o => /taille|size/i.test(o?.name || ''));
@@ -4113,8 +4120,12 @@ function renderProductsPanel() {
     const title   = p.title || meta.title || p.handle || p.product_id || 'Produit';
     const img     = meta.image || _shopifyThumbByHandle[p.handle] || '';
     const sizes   = Array.isArray(meta.sizes) && meta.sizes.length ? meta.sizes.join(' - ') : '';
-    const priceN  = meta.price != null ? Number(meta.price) : (_shopifyBasePriceByRef[ref] || null);
-    const price   = (priceN != null && Number.isFinite(priceN)) ? `${priceN.toFixed(2).replace('.', ',')} €` : '';
+    const parsedMetaPrice = Number.parseFloat(String(meta.price ?? '').replace(',', '.'));
+    const fallbackPrice = Number.parseFloat(String(_shopifyBasePriceByRef[ref] ?? ''));
+    const priceN  = Number.isFinite(parsedMetaPrice)
+      ? parsedMetaPrice
+      : (Number.isFinite(fallbackPrice) ? fallbackPrice : null);
+    const price   = (priceN != null) ? `${priceN.toFixed(2).replace('.', ',')} €` : '';
     const isActive = ref === _resolvedProductHandle;
     const safeRef = String(ref).replace(/'/g, "\\'");
     return `<button type="button" class="products-panel-card${isActive ? ' active' : ''}" onclick="chooseShopifyProductHandle('${safeRef}')">
