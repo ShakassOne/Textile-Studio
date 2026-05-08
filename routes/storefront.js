@@ -57,7 +57,10 @@ router.get('/products', async (req, res) => {
             edges {
               node {
                 id handle title
+                featuredImage { url altText }
+                images(first: 1) { edges { node { url altText } } }
                 priceRange { minVariantPrice { amount currencyCode } }
+                options { id name values }
                 variants(first: 50) {
                   edges {
                     node {
@@ -72,7 +75,24 @@ router.get('/products', async (req, res) => {
           }
         }
       `);
-      return res.json(data.products.edges.map(e => e.node));
+      // Normaliser pour le front : aplatir les edges, exposer image/sizes/variants
+      const normalized = data.products.edges.map(e => {
+        const p = e.node;
+        const variants = (p.variants?.edges || []).map(v => v.node);
+        const featured = p.featuredImage?.url || p.images?.edges?.[0]?.node?.url || '';
+        return {
+          id: p.id,
+          handle: p.handle,
+          title: p.title,
+          image: featured ? { url: featured, src: featured, altText: p.featuredImage?.altText || p.title } : null,
+          images: featured ? [{ src: featured, url: featured }] : [],
+          featuredImage: p.featuredImage || null,
+          priceRange: p.priceRange,
+          options: p.options || [],
+          variants,
+        };
+      });
+      return res.json(normalized);
     } catch (err) {
       console.warn('Storefront API failed, falling back to Admin API:', err.message);
     }
@@ -105,7 +125,7 @@ router.get('/products', async (req, res) => {
     }
 
     const apiRes = await fetch(
-      `https://${shopRecord.shop_domain}/admin/api/2024-01/products.json?limit=250&fields=id,title,handle,images`,
+      `https://${shopRecord.shop_domain}/admin/api/2024-01/products.json?limit=250&fields=id,title,handle,images,image,options,variants`,
       { headers: { 'X-Shopify-Access-Token': shopRecord.access_token } }
     );
 
@@ -115,13 +135,28 @@ router.get('/products', async (req, res) => {
     }
 
     const { products } = await apiRes.json();
-    // Normaliser au format attendu par le front (id = GID, title, handle, image)
-    const normalized = (products || []).map(p => ({
-      id:     `gid://shopify/Product/${p.id}`,
-      handle: p.handle,
-      title:  p.title,
-      image:  p.images?.[0] ? { url: p.images[0].src, altText: p.images[0].alt || p.title } : null,
-    }));
+    // Normaliser au format attendu par le front : image avec url+src,
+    // variants/options conservés pour extraction des tailles & prix.
+    const normalized = (products || []).map(p => {
+      const firstImg = p.images?.[0]?.src || p.image?.src || '';
+      return {
+        id:     `gid://shopify/Product/${p.id}`,
+        handle: p.handle,
+        title:  p.title,
+        image:  firstImg ? { url: firstImg, src: firstImg, altText: p.images?.[0]?.alt || p.image?.alt || p.title } : null,
+        images: firstImg ? [{ src: firstImg, url: firstImg }] : [],
+        options: p.options || [],
+        variants: (p.variants || []).map(v => ({
+          id: `gid://shopify/ProductVariant/${v.id}`,
+          title: v.title,
+          option1: v.option1,
+          option2: v.option2,
+          option3: v.option3,
+          price: v.price, // string "19.90" en REST
+          available: v.inventory_quantity == null ? true : v.inventory_quantity > 0,
+        })),
+      };
+    });
     return res.json(normalized);
   } catch (err) {
     console.error('Admin API fallback error:', err.message);

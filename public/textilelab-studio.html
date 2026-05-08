@@ -4006,6 +4006,7 @@ async function loadShopifyProductLinks() {
     _tlLinksDebug = { lastSource:'public', lastCount: SHOPIFY_PRODUCT_LINKS.length, lastError:'' };
     updateViewSwitcher();
     updatePrice();
+    prefetchLinkedProductPrices();
   } catch(e) {
     _tlLinksDebug = { lastSource:'public', lastCount:0, lastError:String(e.message || e) };
     console.warn('[TL] loadShopifyProductLinks:', e.message);
@@ -4022,7 +4023,15 @@ async function loadShopifyProductThumbs() {
     const meta = {};
     const handles = new Set();
     (Array.isArray(items) ? items : []).forEach(p => {
-      const img = p?.images?.[0]?.src || p?.image?.src || '';
+      // Image : couvre toutes les formes possibles (Storefront edges, Admin REST, normalisé)
+      const img =
+        p?.featuredImage?.url ||
+        p?.image?.url ||
+        p?.image?.src ||
+        p?.images?.[0]?.url ||
+        p?.images?.[0]?.src ||
+        p?.images?.edges?.[0]?.node?.url ||
+        '';
       if (p?.handle) handles.add(p.handle);
       if (p?.handle && img) map[p.handle] = img;
       if (p?.handle) {
@@ -4072,6 +4081,30 @@ async function refreshResolvedProductPrice() {
       _shopifyBasePriceByRef[ref] = Number(j.variant_price);
     }
   } catch(e) {}
+}
+
+// Pré-charge le prix de TOUS les produits liés au mockup actif → évite l'effet
+// "prix vides au 1er rendu, dispo seulement après navigation entre onglets".
+async function prefetchLinkedProductPrices() {
+  if (!window._TL_SHOP) return;
+  const linked = _getLinkedProductsForActiveMockup();
+  if (!linked.length) return;
+  const refs = linked.map(p => p.handle || ('id:' + p.product_id)).filter(Boolean);
+  await Promise.all(refs.map(async (ref) => {
+    if (_shopifyBasePriceByRef[ref] != null) return;
+    try {
+      const q = ref.startsWith('id:')
+        ? `product_id=${encodeURIComponent(ref.slice(3))}`
+        : `handle=${encodeURIComponent(ref)}`;
+      const r = await fetch(`${window.location.origin}/api/shopify/product-variant?${q}&shop=${encodeURIComponent(window._TL_SHOP)}`);
+      const j = r.ok ? await r.json() : null;
+      if (j && Number.isFinite(Number(j.variant_price))) {
+        _shopifyBasePriceByRef[ref] = Number(j.variant_price);
+      }
+    } catch(e) {}
+  }));
+  // Re-render le panneau avec les prix maintenant dispos
+  renderProductsPanel();
 }
 
 function _tlShowProductThumb(url) {
@@ -4176,6 +4209,7 @@ async function loadLinksForActiveMockup() {
     _tlLinksDebug = { lastSource:'public', lastCount: SHOPIFY_PRODUCT_LINKS.length, lastError:'' };
     updateViewSwitcher();
     updatePrice();
+    prefetchLinkedProductPrices();
   } catch (e) {
     _tlLinksDebug = { lastSource:'by-mockup', lastCount:0, lastError:String(e.message || e) };
     console.warn('[TL] loadLinksForActiveMockup:', e.message);
@@ -5941,12 +5975,13 @@ async function _checkoutShopifyDirect() {
     '_faces':     String(viewsCount),
   };
 
-  // Lien "Voir mon design" — clé SANS préfixe '_' → Shopify affiche nativement
-  // un lien cliquable dans le checkout (fonctionne même sans Checkout UI Extension
-  // déployée). Côté drawer panier, tl-modal.js (_tlFixLineItemProps) intercepte
-  // cette clé et la rend sous forme de bouton stylé "👁 Voir le design".
+  // Lien "Voir mon design" — UNIQUEMENT en clé préfixée '_' :
+  //  → Shopify natif masque la clé sur le checkout (pas d'URL en texte brut).
+  //  → La Checkout UI Extension TextileLab l'intercepte et rend image + bouton.
+  //  → tl-modal.js (drawer panier) l'intercepte AVANT le filtre _-prefix et
+  //    le transforme en bouton orange stylé.
   if (designId) {
-    propsObj['Voir mon design'] = `${APP_ORIGIN}/design-preview/${designId}`;
+    propsObj['_voir_mon_design'] = `${APP_ORIGIN}/design-preview/${designId}`;
   }
   // ── UID unique pour éviter la fusion des lignes dans le panier Shopify ──
   propsObj['_design_uid'] = Date.now() + '-' + Math.random().toString(36).slice(2, 7);

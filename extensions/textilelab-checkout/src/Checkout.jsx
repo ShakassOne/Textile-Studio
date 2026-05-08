@@ -29,8 +29,8 @@ import {
   InlineStack,
   Image,
   Link,
-  Button,
   Text,
+  View,
   useCartLineTarget,
 } from '@shopify/ui-extensions-react/checkout';
 
@@ -40,12 +40,9 @@ export default reactExtension(
 );
 
 function LineItemDesignPreview() {
-  // useCartLineTarget retourne la cart-line spécifique en cours de rendu,
-  // avec ses attributes (line item properties).
   const cartLine = useCartLineTarget();
   const attributes = (cartLine && cartLine.attributes) || [];
 
-  // Recherche une property par clé (case-insensitive)
   const findAttr = (keys) => {
     const lcKeys = keys.map((k) => k.toLowerCase());
     const found = attributes.find(
@@ -54,10 +51,9 @@ function LineItemDesignPreview() {
     return found ? found.value : null;
   };
 
-  const designUrl = findAttr(['_voir_mon_design']);
-  const previewImg = findAttr(['_preview_img', '_design_preview']);
+  const designUrl = findAttr(['_voir_mon_design', 'voir_mon_design', 'voir mon design']);
+  const previewImg = findAttr(['_preview_img', '_design_preview', 'preview_img']);
 
-  // Pas de propriété design → ne rien rendre (ligne classique sans personnalisation)
   if (!designUrl && !previewImg) return null;
 
   const isHttp = (s) =>
@@ -66,27 +62,39 @@ function LineItemDesignPreview() {
   return (
     <BlockStack spacing="tight" padding={['tight', 'none', 'none', 'none']}>
       <InlineStack spacing="base" blockAlignment="center">
-
-        {/* Miniature du design personnalisé */}
         {isHttp(previewImg) ? (
-          <Image
-            source={previewImg}
-            accessibilityDescription="Aperçu du design personnalisé"
-            aspectRatio={1}
-            fit="contain"
-            cornerRadius="base"
-          />
+          <View
+            border="base"
+            cornerRadius="large"
+            padding="extraTight"
+            background="subdued"
+            inlineSize={88}
+            blockSize={88}
+          >
+            <Image
+              source={previewImg}
+              accessibilityDescription="Aperçu du design personnalisé"
+              aspectRatio={1}
+              fit="contain"
+              cornerRadius="base"
+            />
+          </View>
         ) : null}
 
-        {/* Lien cliquable — remplace l'URL brute qui s'affichait nativement */}
         {isHttp(designUrl) ? (
           <Link to={designUrl} external>
-            <Text size="small" emphasis="bold">
-              👁 Voir mon design
-            </Text>
+            <View
+              padding={['tight', 'base']}
+              background="accent"
+              cornerRadius="large"
+              border="none"
+            >
+              <Text size="small" emphasis="bold" appearance="accent">
+                👁 Voir mon design
+              </Text>
+            </View>
           </Link>
         ) : null}
-
       </InlineStack>
     </BlockStack>
   );

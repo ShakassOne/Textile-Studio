@@ -44,9 +44,36 @@
     '  min-width: 0 !important;',
     '}',
     /* 3. Forcer une largeur minimale raisonnable pour la 1ère colonne quand le */
-    /*    thème la sous-dimensionne (signature : tr en grid avec image dedans)  */
+    /*    thème la sous-dimensionne (signature : tr en grid avec image dedans). */
+    /*    Détails : min 140px pour empêcher le titre de wrap caractère par car. */
     '.cart-items__table-row {',
-    '  grid-template-columns: minmax(80px, max-content) minmax(0, 1fr) minmax(80px, auto) !important;',
+    '  grid-template-columns: 120px minmax(140px, 1fr) minmax(70px, auto) !important;',
+    '  column-gap: 12px !important;',
+    '}',
+    /* 3b. La cellule détails et tous ses enfants : autoriser le wrap normal */
+    /*     (pas de break-all hérité du thème qui casserait lettre par lettre)  */
+    '.cart-items__details,',
+    '.cart-items__details *,',
+    '[class*="cart-items__details"],',
+    '[class*="cart-items__details"] * {',
+    '  min-width: 0 !important;',
+    '  word-break: normal !important;',
+    '  overflow-wrap: anywhere !important;',
+    '  white-space: normal !important;',
+    '  hyphens: none !important;',
+    '}',
+    /* 3c. Titre lui-même : pas de letter-by-letter, ratio lisible */
+    '.cart-items__details a,',
+    '.cart-items__details [class*="title"],',
+    '.cart-items__details h1,',
+    '.cart-items__details h2,',
+    '.cart-items__details h3 {',
+    '  display: block !important;',
+    '  writing-mode: horizontal-tb !important;',
+    '  text-orientation: mixed !important;',
+    '  word-spacing: normal !important;',
+    '  letter-spacing: normal !important;',
+    '  line-height: 1.3 !important;',
     '}',
     /* 4. Forcer le container media à 100px de large MAIS hauteur auto pour
           préserver le ratio naturel de l\'image mockup (rectangulaire, pas carrée).
@@ -437,26 +464,29 @@
       var dd  = dt.nextElementSibling;
       if (!dd) return;
 
-      // Masquer les propriétés internes (_prefixed)
-      if (key.startsWith('_')) {
-        dt.style.display = 'none';
-        dd.style.display = 'none';
-        return;
-      }
-
-      // "Voir mon design" → lien cliquable propre dans le drawer panier.
-      // Cette clé n'est PAS préfixée '_' afin que Shopify affiche aussi
-      // nativement un lien dans le checkout (fallback si la Checkout UI
-      // Extension n'est pas déployée). Côté drawer, on remplace le rendu
-      // natif <dt><dd> par un bouton stylé.
+      // "Voir mon design" / "_voir_mon_design" → bouton cliquable.
+      // IMPORTANT : ce traitement doit passer AVANT le filtre des clés
+      // préfixées '_' ci-dessous, sinon la clé masquée disparaîtrait.
       if (key === 'Voir mon design' || key === '_voir_mon_design') {
         var url = dd.textContent.trim();
         dt.style.display = 'none'; // masquer la key technique
         if (url.startsWith('http')) {
           dd.innerHTML = '<a href="' + url + '" target="_blank" rel="noopener" ' +
-            'style="color:inherit;font-size:11px;text-decoration:underline;opacity:0.75">' +
-            '👁 Voir le design</a>';
+            'style="display:inline-flex;align-items:center;gap:6px;' +
+            'padding:6px 12px;margin-top:4px;border-radius:8px;' +
+            'background:#F59E0B;color:#0a0a0c !important;' +
+            'font-size:12px;font-weight:600;text-decoration:none;' +
+            'box-shadow:0 1px 2px rgba(0,0,0,.12);">' +
+            '<span aria-hidden=\"true\">👁</span> Voir mon design</a>';
         }
+        return;
+      }
+
+      // Toutes les autres propriétés internes (_design_id, _format, etc.) → masquer
+      if (key.startsWith('_')) {
+        dt.style.display = 'none';
+        dd.style.display = 'none';
+        return;
       }
     });
 
