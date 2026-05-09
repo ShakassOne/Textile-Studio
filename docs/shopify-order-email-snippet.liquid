@@ -1,0 +1,50 @@
+{# ───────────────────────────────────────────────────────────────────────── #}
+{# TextileLab — Snippet à coller dans Shopify Admin                         #}
+{#   Settings → Notifications → Order confirmation → Edit code              #}
+{#                                                                          #}
+{# Trouver la boucle :                                                      #}
+{#   {% for line in subtotal_line_items %}                                  #}
+{#     ... <img src="{{ line.image | img_url: 'compact_cropped' }}"> ...   #}
+{#   {% endfor %}                                                           #}
+{#                                                                          #}
+{# Et REMPLACER la balise <img> du visuel produit par ce bloc.              #}
+{# ───────────────────────────────────────────────────────────────────────── #}
+
+{%- assign preview_img = '' -%}
+{%- assign view_design_url = '' -%}
+{%- for prop in line.properties -%}
+  {%- assign key = prop.first | downcase -%}
+  {%- if key == '_preview_img' or key == 'preview_img' -%}
+    {%- assign preview_img = prop.last -%}
+  {%- endif -%}
+  {%- if key == '_voir_mon_design' or key == 'voir_mon_design' or key == 'voir mon design' -%}
+    {%- assign view_design_url = prop.last -%}
+  {%- endif -%}
+{%- endfor -%}
+
+{%- if preview_img != '' -%}
+  {# Image custom (mockup-cart Railway/CDN Shopify) — la perso du client #}
+  <a href="{{ view_design_url | default: preview_img }}" target="_blank" style="display:block;text-decoration:none">
+    <img src="{{ preview_img }}"
+         alt="Votre design personnalisé"
+         width="120"
+         style="border-radius:10px;border:1px solid #eaeaea;background:#f8f8f8;display:block">
+  </a>
+{%- else -%}
+  {# Fallback : visuel produit standard #}
+  <img src="{{ line.image | img_url: 'compact_cropped' }}"
+       alt="{{ line.title }}"
+       width="120"
+       style="border-radius:10px;display:block">
+{%- endif -%}
+
+{%- if view_design_url != '' -%}
+  <div style="margin-top:8px">
+    <a href="{{ view_design_url }}"
+       target="_blank"
+       style="display:inline-block;background:#F59E0B;color:#000;font-weight:700;
+              padding:8px 14px;border-radius:8px;text-decoration:none;font-size:12px">
+      👁 Voir recto / verso
+    </a>
+  </div>
+{%- endif -%}

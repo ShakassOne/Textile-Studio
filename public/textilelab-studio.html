@@ -3910,10 +3910,10 @@ function _saveCurrentViewLayers() {
   STATE.viewLayers[key] = serialized;
   console.log(`%c[Views] SAVE "${key}" — ${serialized.length} objet(s)`, 'color:#F59E0B;font-weight:bold');
 
-  // Snapshot de la vue courante (composite canvas = mockup + calques)
+  // Snapshot de la vue courante (composite canvas = mockup + calques, sans frame pointillé)
   // Utilisé au checkout pour générer les aperçus recto/verso
   try {
-    STATE.viewThumbs[key] = canvas.toDataURL({ format: 'jpeg', quality: 0.65, multiplier: 0.5 });
+    STATE.viewThumbs[key] = _canvasToCleanDataURL({ keepMockup: true, format: 'jpeg', quality: 0.65, multiplier: 0.5 });
   } catch(e) { /* silencieux — canvas pas encore prêt */ }
 }
 
@@ -5078,9 +5078,10 @@ RULES:
     }
   } catch (e) {
     console.error('AI error:', e);
-    showToast('Erreur: ' + (e.message || 'réessayez'));
-    const demoSVG = generateDemoSVG(prompt, currentAiStyle);
-    addToAIGallery(demoSVG);
+    // PAS de SVG démo en fallback : l'utilisateur croyait que c'était son design.
+    // On affiche un message clair et on laisse la galerie inchangée.
+    const msg = (e && e.message) ? String(e.message) : 'erreur réseau';
+    showToast('❌ Génération IA indisponible : ' + msg.slice(0, 80));
   } finally {
     btn.innerHTML = '✨ Générer le design';
     btn.disabled = false;
@@ -5434,7 +5435,7 @@ function openDrawer(name) {
     const preview = document.getElementById('drawer-cart-preview');
     if (preview && typeof canvas !== 'undefined') {
       try {
-        const snap = canvas.toDataURL({ format: 'png', multiplier: 0.5 });
+        const snap = _canvasToCleanDataURL({ keepMockup: true, format: 'png', multiplier: 0.5 });
         preview.innerHTML = `<img src="${snap}" style="width:100%;height:100%;object-fit:contain">`;
       } catch(e) {}
     }
@@ -5887,7 +5888,7 @@ async function _checkoutShopifyDirect() {
   // ── 2. Créer le design en DB si pas encore fait ──
   let designId = _currentDesignId;
   if (!designId) {
-    const thumbnail = canvas.toDataURL({ format: 'jpeg', quality: 0.5, multiplier: 0.3 });
+    const thumbnail = _canvasToCleanDataURL({ keepMockup: true, format: 'jpeg', quality: 0.5, multiplier: 0.3 });
     const frame = STATE.frameCoords || { x:20, y:20, w:canvas.getWidth()-40, h:canvas.getHeight()-40 };
     const saved = await apiFetch('/api/designs', {
       method: 'POST',
@@ -5960,6 +5961,27 @@ async function _checkoutShopifyDirect() {
     } catch(e) {
       console.warn('[TextileLab] render/save CDN :', e.message);
     }
+  }
+
+  // ── 4c. Cart-set : générer mockup-cart + email-hero + email-thumb + print HD ──
+  // Phase 1 : ne s'active QUE pour t-shirt homme blanc (le backend retourne
+  // skipped: true sinon, donc on n'attend rien de plus).
+  // Fire-and-forget : on ne bloque pas l'add to cart.
+  if (designId) {
+    try {
+      // Récupérer les PNG transparents recto/verso depuis les viewLayers déjà capturés.
+      // viewsToUpload contient les thumbnails JPEG mockup+design ; on a besoin du PNG
+      // transparent SANS mockup pour le print HD, et le mockup composé est rebâti côté
+      // backend depuis les templates. On envoie donc les snapshots actuels en PNG.
+      const _cartFront = _canvasToCleanDataURL({ keepMockup: false, format: 'png', multiplier: 2 });
+      apiFetch('/api/render/cart-set/' + designId, {
+        method: 'POST',
+        body: JSON.stringify({ design_front_b64: _cartFront }),
+      }).then(r => {
+        if (r?.skipped) console.log('[TextileLab] cart-set skipped:', r.reason);
+        else if (r?.urls)  console.log('[TextileLab] cart-set ok:', Object.keys(r.urls));
+      }).catch(e => console.warn('[TextileLab] cart-set:', e.message));
+    } catch (e) { console.warn('[TextileLab] cart-set prep:', e.message); }
   }
 
   // ── 5. Construire les properties Shopify ──
@@ -6076,7 +6098,7 @@ async function addToCart() {
     viewsWithContent.push({ view: views[STATE_viewIdx] || {}, idx: STATE_viewIdx, name: (views[STATE_viewIdx]?.name || 'Recto') });
   }
 
-  const thumbnail    = canvas.toDataURL({ format: 'jpeg', quality: 0.5, multiplier: 0.3 });
+  const thumbnail    = _canvasToCleanDataURL({ keepMockup: true, format: 'jpeg', quality: 0.5, multiplier: 0.3 });
   const pricePerView = format?.extra || 0;
   const totalViews   = viewsWithContent.length;
   const finalPrice   = product.base + (pricePerView * totalViews);
@@ -6168,7 +6190,7 @@ function renderCart() {
     </div>`).join('');
 
   const total = STATE.cart.reduce((s, item) => s + item.unitPrice * item.qty, 0);
-  const thumb = canvas.toDataURL({ format: 'jpeg', quality: 0.6, multiplier: 0.4 });
+  const thumb = _canvasToCleanDataURL({ keepMockup: true, format: 'jpeg', quality: 0.6, multiplier: 0.4 });
   const PRODS = { tshirt:'👕 T-Shirt', hoodie:'🧥 Hoodie', cap:'🧢 Casquette', totebag:'👜 Tote Bag' };
   const fmt = FORMATS[STATE.format] || {};
 
@@ -6612,8 +6634,10 @@ async function _apply3DTexture() {
       return false;
     });
 
-    // Cacher le mockup temporairement
+    // Cacher le mockup + le frame pointillé + masque + overlay couleur
+    const guideObjs = canvas.getObjects().filter(o => o.__isFrame || o.__isPrintMask || o.__isColorOverlay);
     mockupObjs.forEach(o => { o._wasVisible = o.visible; o.visible = false; });
+    guideObjs.forEach(o => { o._wasVisible = o.visible; o.visible = false; });
     const origBg = canvas.backgroundColor;
     canvas.setBackgroundColor(STATE.textileColor || '#FFFFFF', () => {});
     canvas.renderAll();
@@ -6622,6 +6646,7 @@ async function _apply3DTexture() {
 
     // Restaurer
     mockupObjs.forEach(o => { o.visible = o._wasVisible !== false; });
+    guideObjs.forEach(o => { o.visible = o._wasVisible !== false; });
     canvas.setBackgroundColor(origBg, () => canvas.renderAll());
 
     // Appliquer comme texture sur le modèle
@@ -7548,7 +7573,7 @@ async function saveDesignToAPI() {
   const name = prompt('Nom du design :', 'Mon design') || 'Mon design';
   showToast('⏳ Sauvegarde…');
 
-  const thumbnail = canvas.toDataURL({ format: 'jpeg', quality: 0.5, multiplier: 0.3 });
+  const thumbnail = _canvasToCleanDataURL({ keepMockup: true, format: 'jpeg', quality: 0.5, multiplier: 0.3 });
   const frame = STATE.frameCoords || { x: 20, y: 20, w: canvas.getWidth() - 40, h: canvas.getHeight() - 40 };
 
   // Sauvegarder TOUS les attributs custom nécessaires à la restauration
@@ -8173,8 +8198,35 @@ function applyFrameClipToObject(obj) {
 // ============================================
 // EXPORT / ZOOM / MISC
 // ============================================
+// Helper : exporter le canvas en cachant les guides (frame pointillé, masque, overlay couleur).
+// `keepMockup` = true → on garde le T-shirt en fond ; false → fond transparent (rendu HD imprimeur).
+function _canvasToCleanDataURL(opts = {}) {
+  const { keepMockup = true, format = 'png', multiplier = 1, quality = 1 } = opts;
+  const HIDE_KEYS = ['__isFrame', '__isPrintMask', '__isColorOverlay'];
+  if (!keepMockup) HIDE_KEYS.push('__isMockupBg');
+  // Sauvegarder l'état visible de chaque objet à masquer puis cacher
+  const hidden = [];
+  canvas.getObjects().forEach(o => {
+    if (HIDE_KEYS.some(k => o[k])) {
+      hidden.push({ obj: o, prev: o.visible });
+      o.visible = false;
+    }
+  });
+  canvas.renderAll();
+  let dataUrl;
+  try {
+    dataUrl = canvas.toDataURL({ format, multiplier, quality });
+  } finally {
+    // Restaurer dans tous les cas (même si toDataURL throw)
+    hidden.forEach(({ obj, prev }) => { obj.visible = prev; });
+    canvas.renderAll();
+  }
+  return dataUrl;
+}
+
 function exportPNG() {
-  const dataUrl = canvas.toDataURL({ format: 'png', multiplier: 300/72 });
+  // Téléchargement client : on garde le T-shirt + design, on retire le frame
+  const dataUrl = _canvasToCleanDataURL({ keepMockup: true, format: 'png', multiplier: 300/72 });
   const a = document.createElement('a');
   a.href = dataUrl;
   a.download = `textilelab-design-${Date.now()}.png`;
@@ -8184,8 +8236,8 @@ function exportPNG() {
 async function shareDesign() {
   showToast('⏳ Préparation du partage…');
 
-  // Export canvas en dataURL puis blob
-  const dataUrl = canvas.toDataURL({ format: 'png', multiplier: 2 });
+  // Export canvas en dataURL puis blob — sans le frame pointillé
+  const dataUrl = _canvasToCleanDataURL({ keepMockup: true, format: 'png', multiplier: 2 });
   const byteStr = atob(dataUrl.split(',')[1]);
   const ab = new ArrayBuffer(byteStr.length);
   const ia = new Uint8Array(ab);
@@ -8240,7 +8292,7 @@ async function shareDesignLink() {
       '__txtContent','__txtFont','__txtColor','__txtSize',
       '__txtBold','__txtItal','__txtDeform','__txtIntensity',
     ];
-    const thumbnail  = canvas.toDataURL({ format: 'jpeg', quality: 0.4, multiplier: 0.25 });
+    const thumbnail  = _canvasToCleanDataURL({ keepMockup: true, format: 'jpeg', quality: 0.4, multiplier: 0.25 });
     const layers_json = JSON.stringify(canvas.toJSON(CUSTOM_ATTRS));
     const body = {
       name:        'Design partagé',

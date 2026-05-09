@@ -14,6 +14,9 @@ const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 ['', 'library', 'renders', 'models3d', 'generated'].forEach(sub => {
   fs.mkdirSync(path.join(UPLOADS_DIR, sub), { recursive: true });
 });
+// Dossier dédié aux mockups composés par /api/render/cart-set
+fs.mkdirSync(path.join(DATA_DIR, 'renders'), { recursive: true });
+fs.mkdirSync(path.join(DATA_DIR, 'mockup-templates'), { recursive: true });
 
 // ── Vérification des variables d'env critiques ────────────────────────
 if (!process.env.OPENAI_API_KEY) {

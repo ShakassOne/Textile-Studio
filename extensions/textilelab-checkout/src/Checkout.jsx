@@ -60,7 +60,7 @@ function LineItemDesignPreview() {
     typeof s === 'string' && /^https?:\/\//i.test(s.trim());
 
   return (
-    <BlockStack spacing="tight" padding={['tight', 'none', 'none', 'none']}>
+    <BlockStack spacing="base" padding={['base', 'none', 'none', 'none']}>
       <InlineStack spacing="base" blockAlignment="center">
         {isHttp(previewImg) ? (
           <View
@@ -68,12 +68,12 @@ function LineItemDesignPreview() {
             cornerRadius="large"
             padding="extraTight"
             background="subdued"
-            inlineSize={88}
-            blockSize={88}
+            inlineSize={140}
+            blockSize={140}
           >
             <Image
               source={previewImg}
-              accessibilityDescription="Aperçu du design personnalisé"
+              accessibilityDescription="Aperçu de votre design personnalisé"
               aspectRatio={1}
               fit="contain"
               cornerRadius="base"
@@ -82,18 +82,23 @@ function LineItemDesignPreview() {
         ) : null}
 
         {isHttp(designUrl) ? (
-          <Link to={designUrl} external>
-            <View
-              padding={['tight', 'base']}
-              background="accent"
-              cornerRadius="large"
-              border="none"
-            >
-              <Text size="small" emphasis="bold" appearance="accent">
-                👁 Voir mon design
-              </Text>
-            </View>
-          </Link>
+          <BlockStack spacing="extraTight">
+            <Text size="small" appearance="subdued">
+              Personnalisation appliquée
+            </Text>
+            <Link to={designUrl} external>
+              <View
+                padding={['base', 'loose']}
+                background="accent"
+                cornerRadius="large"
+                border="base"
+              >
+                <Text size="medium" emphasis="bold" appearance="accent">
+                  👁 Voir mon design (recto / verso)
+                </Text>
+              </View>
+            </Link>
+          </BlockStack>
         ) : null}
       </InlineStack>
     </BlockStack>

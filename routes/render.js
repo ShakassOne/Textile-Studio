@@ -215,6 +215,109 @@ router.post('/ftp-retry/:design_id', requireAuth, attachShopId, (req, res) => {
   res.json({ ok: true, message: 'FTP upload relancé en arrière-plan' });
 });
 
+// ── POST /api/render/cart-set/:design_id ─────────────────────────────────────
+// Génère le set complet de mockups (print-front, print-back, mockup-cart, email-hero,
+// email-thumb) à partir de PNG transparents recto/verso fournis par le studio.
+// Phase 1 : t-shirt homme blanc uniquement. Si le produit/couleur n'est pas dans
+// le manifest, la route répond 200 + skipped: true (le studio retombe alors sur le
+// flux historique sans rien casser).
+//
+// Body : { design_front_b64: "data:image/png;base64,...", design_back_b64?: "..." }
+// Retour : { ok, urls: {...}, errors }
+router.post('/cart-set/:design_id', attachShopId, renderRateLimiter,
+  checkBodySize('design_front_b64'), checkBodySize('design_back_b64'),
+  async (req, res) => {
+    const designId = Number(req.params.design_id);
+    const { design_front_b64, design_back_b64 } = req.body;
+    if (!designId || !design_front_b64) {
+      return res.status(400).json({ error: 'design_id et design_front_b64 requis' });
+    }
+
+    const db = getDB();
+    const design = db.prepare(
+      'SELECT id, product, color FROM designs WHERE id = ? AND shop_id = ?'
+    ).get(designId, req.shopId);
+    if (!design) return res.status(404).json({ error: 'Design introuvable pour ce shop' });
+
+    // Mapping product TSL → clé manifest mockup
+    // Phase 1 : on ne gère que tshirt-homme blanc
+    const productKey = ({
+      'tshirt':       'tshirt-homme',
+      'tshirt-homme': 'tshirt-homme',
+    })[design.product] || null;
+    const colorKey = (design.color || '').toLowerCase().includes('white') ||
+                     (design.color || '').toLowerCase().includes('blanc') ||
+                     (design.color || '') === '#FFFFFF' ||
+                     (design.color || '') === '#ffffff'
+      ? 'white' : null;
+
+    if (!productKey || !colorKey) {
+      return res.json({
+        ok: true, skipped: true,
+        reason: `Produit/couleur hors manifest mockup (phase 1 : tshirt-homme/white). Got product=${design.product} color=${design.color}`,
+      });
+    }
+
+    let compositeMockupMod;
+    try {
+      compositeMockupMod = require('../utils/compositeMockup');
+    } catch (e) {
+      return res.status(500).json({ error: 'Module compositeMockup absent : ' + e.message });
+    }
+
+    // Décodage base64 → Buffer
+    const toBuf = (b64) => {
+      const data = (b64 || '').replace(/^data:image\/\w+;base64,/, '');
+      return data ? Buffer.from(data, 'base64') : null;
+    };
+    const designFront = toBuf(design_front_b64);
+    const designBack  = toBuf(design_back_b64);
+
+    try {
+      const { paths, errors } = await compositeMockupMod.generateAllMockups({
+        designId,
+        designFront, designBack,
+        product: productKey, color: colorKey,
+      });
+
+      const APP_URL = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
+      // Les fichiers sont écrits dans /data/renders/<design_id>/<key>.png mais
+      // express.static('/uploads') ne couvre pas /data/renders. On expose donc via
+      // /api/render/file/:design_id/:filename (route ajoutée plus bas).
+      const urls = {};
+      Object.keys(paths).forEach((k) => {
+        urls[k] = `${APP_URL}/api/render/file/${designId}/${k}.png`;
+      });
+
+      // Persister mockup-cart en preview_cdn_url-friendly (pour l'admin)
+      if (urls['mockup-cart']) {
+        try {
+          db.prepare('UPDATE designs SET render_url = ? WHERE id = ? AND shop_id = ?')
+            .run(`/api/render/file/${designId}/mockup-cart.png`, designId, req.shopId);
+        } catch (e) { /* tolérant */ }
+      }
+
+      res.json({ ok: true, urls, errors });
+    } catch (err) {
+      console.error('[render/cart-set]', err);
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// ── GET /api/render/file/:design_id/:filename ─ servir les fichiers de /data/renders
+// Sécurisé : pas de traversée (filename limité à [a-z0-9_.-]+).
+router.get('/file/:design_id/:filename', (req, res) => {
+  const { design_id, filename } = req.params;
+  if (!/^[\w.-]+$/.test(filename) || !/^\d+$/.test(design_id)) {
+    return res.status(400).end();
+  }
+  const filepath = path.join(DATA_DIR, 'renders', design_id, filename);
+  if (!fs.existsSync(filepath)) return res.status(404).end();
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.sendFile(filepath);
+});
+
 // ── GET /api/render/download/:design_id ── téléchargement direct (scopé shop, doit être avant /:design_id)
 router.get('/download/:design_id', attachShopId, (req, res) => {
   const db = getDB();

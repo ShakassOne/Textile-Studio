@@ -1,0 +1,31 @@
+{
+  "_doc": "TextileLab — manifest des templates mockup. Phase 1 : t-shirt homme blanc.",
+  "_convention": {
+    "templates_dir": "$DATA_DIR/mockup-templates",
+    "printZone": "px sur le mockup natif. x/y = coin haut-gauche. width/height = dimensions de la zone d'impression A3 × 300dpi.",
+    "naming": "<product>/<color>-<face>.png"
+  },
+
+  "products": {
+    "tshirt-homme": {
+      "label": "T-shirt homme",
+      "colors": {
+        "white": {
+          "label": "Blanc",
+          "faces": {
+            "front": {
+              "template": "tshirt-homme/white-front.png",
+              "templateSize": { "width": 2000, "height": 2000 },
+              "printZone": { "x": 600, "y": 520, "width": 800, "height": 1130 }
+            },
+            "back": {
+              "template": "tshirt-homme/white-back.png",
+              "templateSize": { "width": 2000, "height": 2000 },
+              "printZone": { "x": 600, "y": 460, "width": 800, "height": 1130 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

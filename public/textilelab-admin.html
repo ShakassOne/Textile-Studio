@@ -848,10 +848,25 @@ async function loadDesigns() {
   const designs = await api('/api/designs') || [];
   const grid = document.getElementById('designs-grid');
   if (!designs.length) { grid.innerHTML = '<div style="text-align:center;color:var(--text3);padding:40px;grid-column:1/-1">Aucun design</div>'; return; }
-  grid.innerHTML = designs.map(d => `
+  // Priorité d'affichage : 1) première vue de views_preview_json (mockup + design, sans frame)
+  //                       2) thumbnail base64 stocké en DB (fallback historique)
+  // On vise un rendu cohérent : toujours le T-shirt avec le design appliqué.
+  const pickThumb = (d) => {
+    if (d.views_preview_json) {
+      try {
+        const vp = JSON.parse(d.views_preview_json);
+        const first = Object.values(vp).find(v => v && v.url);
+        if (first) return first.url;
+      } catch {}
+    }
+    return d.thumbnail || null;
+  };
+  grid.innerHTML = designs.map(d => {
+    const thumbUrl = pickThumb(d);
+    return `
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(245,158,11,.3)'" onmouseout="this.style.borderColor='var(--border)'">
       <div style="aspect-ratio:1;background:var(--bg3);display:flex;align-items:center;justify-content:center;overflow:hidden">
-        ${d.thumbnail?`<img src="${d.thumbnail}" style="width:100%;height:100%;object-fit:cover">`:'<div style="font-size:32px">🎨</div>'}
+        ${thumbUrl?`<img src="${thumbUrl}" style="width:100%;height:100%;object-fit:contain;background:#0e0e12">`:'<div style="font-size:32px">🎨</div>'}
       </div>
       <div style="padding:12px">
         <div style="font-weight:600;font-size:13px;font-family:'Syne',sans-serif;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.name}</div>
@@ -861,7 +876,8 @@ async function loadDesigns() {
           <button class="btn btn-sm btn-danger btn-icon" onclick="deleteDesign(${d.id})">🗑</button>
         </div>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 async function deleteDesign(id) {
