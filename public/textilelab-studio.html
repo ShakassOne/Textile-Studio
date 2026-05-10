@@ -8155,12 +8155,28 @@ function addText() {
 // ============================================
 // HISTORY (undo/redo)
 // ============================================
-let _history     = [];
-let _historyIdx  = -1;
-let _historyLock = false;
+let _history          = [];
+let _historyIdx       = -1;
+let _historyLock      = false;
+let _historySaveTimer = null;
 
+// ── historySave() DEBOUNCÉE ───────────────────────────────────────────────────
+// canvas.toJSON() sérialise l'intégralité du canvas (objets + images encodées).
+// Sur un canvas riche (mockup + IA + images), ça prend 100–500 ms et bloque
+// le thread principal → lenteur extrême si appelé à chaque interaction.
+// Fix : updatePrice() reste instantané ; la sérialisation est différée à 500 ms
+// après la dernière interaction (pattern standard des éditeurs canvas).
 function historySave() {
   if (_historyLock) return;
+  updatePrice(); // léger (DOM only) — reste instantané
+  clearTimeout(_historySaveTimer);
+  _historySaveTimer = setTimeout(_historySaveFlush, 500);
+}
+
+// Sérialisation effective (appelée par le debounce ou explicitement avant checkout/switch de vue)
+function _historySaveFlush() {
+  clearTimeout(_historySaveTimer);
+  if (_historyLock || !canvas) return;
   const json = JSON.stringify(canvas.toJSON(['__isFrame','__isMockupBg','__isColorOverlay','__isPrintMask','__isText','__isAI','__isLibrary','__isQR']));
   // Tronquer si on est au milieu
   _history = _history.slice(0, _historyIdx + 1);
@@ -8168,10 +8184,10 @@ function historySave() {
   if (_history.length > 30) _history.shift();
   _historyIdx = _history.length - 1;
   updateUndoRedo();
-  updatePrice(); // mise à jour du prix si une face vient d'être remplie ou vidée
 }
 
 function historyUndo() {
+  _historySaveFlush(); // s'assurer que l'état courant est en historique avant de revenir
   if (_historyIdx <= 0) return;
   _historyIdx--;
   _historyRestore();
