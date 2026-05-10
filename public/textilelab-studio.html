@@ -2445,11 +2445,7 @@
         <!-- Styles 3 colonnes -->
         <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Choisir un style</div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-bottom:14px" id="photo-styles-grid">
-          <button class="pstyle-btn active" data-style="cartoon" onclick="selectPhotoStyle('cartoon')">
-            <img src="/assets/styles/style-cartoon.png" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;display:block;pointer-events:none">
-            <span style="margin-top:4px">Cartoon</span>
-          </button>
-          <button class="pstyle-btn" data-style="disney" onclick="selectPhotoStyle('disney')">
+          <button class="pstyle-btn active" data-style="disney" onclick="selectPhotoStyle('disney')">
             <img src="/assets/styles/style-disney.png" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;display:block;pointer-events:none">
             <span style="margin-top:4px">Pixar</span>
           </button>
@@ -2461,21 +2457,9 @@
             <img src="/assets/styles/style-sticker.png" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;display:block;pointer-events:none">
             <span style="margin-top:4px">Sticker</span>
           </button>
-          <button class="pstyle-btn" data-style="sketch" onclick="selectPhotoStyle('sketch')">
-            <img src="/assets/styles/style-sketch.png" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;display:block;pointer-events:none">
-            <span style="margin-top:4px">Sketch</span>
-          </button>
-          <button class="pstyle-btn" data-style="simple" onclick="selectPhotoStyle('simple')">
-            <img src="/assets/styles/style-simple.png" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;display:block;pointer-events:none">
-            <span style="margin-top:4px">Flat</span>
-          </button>
           <button class="pstyle-btn" data-style="caricature" onclick="selectPhotoStyle('caricature')">
             <img src="/assets/styles/style-caricature.png" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;display:block;pointer-events:none">
             <span style="margin-top:4px">Caricature</span>
-          </button>
-          <button class="pstyle-btn" data-style="avatar" onclick="selectPhotoStyle('avatar')">
-            <img src="/assets/styles/style-avatar.png" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;display:block;pointer-events:none">
-            <span style="margin-top:4px">Avatar</span>
           </button>
           <button class="pstyle-btn" data-style="lego" onclick="selectPhotoStyle('lego')">
             <img src="/assets/styles/style-lego.png" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;display:block;pointer-events:none">
@@ -2672,30 +2656,17 @@
 <div class="drawer-overlay" id="drawer-overlay"></div>
 
 <!-- Drawer: Product -->
+<!-- Liste les VRAIS produits Shopify liés (image + titre + prix + tailles), -->
+<!-- pas seulement les types génériques. Re-rempli dynamiquement à chaque -->
+<!-- ouverture par renderMobileProductsList(). -->
 <div class="drawer" id="drawer-product">
   <div class="drawer-handle"></div>
   <div class="drawer-title"><span>Choisir un produit</span><button class="drawer-close" onclick="closeDrawer()">✕</button></div>
   <div class="drawer-body">
-    <div class="product-grid">
-      <div class="product-card active" onclick="selectProduct('tshirt');closeDrawer()" data-product="tshirt">
-        <span class="card-emoji"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="38" height="38"><path d="M11 4 C11 4 10 7 8 7 L3 9.5 L6 15 L9 13.5 L9 27 L23 27 L23 13.5 L26 15 L29 9.5 L24 7 C22 7 21 4 21 4 C20 6 18.5 7 16 7 C13.5 7 12 6 11 4Z"/></svg></span>
-        <div class="card-name">T-Shirt</div>
-        <div class="card-price">19,90 €</div>
-      </div>
-      <div class="product-card" onclick="selectProduct('hoodie');closeDrawer()" data-product="hoodie">
-        <span class="card-emoji"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="38" height="38"><path d="M11 4 C11 4 10 7 8 7 L3 9.5 L6 15 L9 13.5 L9 27 L23 27 L23 13.5 L26 15 L29 9.5 L24 7 C22 7 21 4 21 4 C20 6 18.5 7 16 7 C13.5 7 12 6 11 4Z"/><path d="M13 7 C13 10 19 10 19 7"/><rect x="13" y="10" width="6" height="5" rx="1"/></svg></span>
-        <div class="card-name">Hoodie</div>
-        <div class="card-price">39,90 €</div>
-      </div>
-      <div class="product-card" onclick="selectProduct('cap');closeDrawer()" data-product="cap">
-        <span class="card-emoji"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="38" height="38"><path d="M6 20 C6 13 10 8 16 8 C22 8 26 13 26 20"/><line x1="4" y1="20" x2="28" y2="20"/><path d="M10 20 L10 25 C10 25.5 10.5 26 11 26 L21 26 C21.5 26 22 25.5 22 25 L22 20"/><line x1="16" y1="8" x2="16" y2="5"/></svg></span>
-        <div class="card-name">Casquette</div>
-        <div class="card-price">24,90 €</div>
-      </div>
-      <div class="product-card" onclick="selectProduct('totebag');closeDrawer()" data-product="totebag">
-        <span class="card-emoji"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="38" height="38"><rect x="5" y="10" width="22" height="18" rx="2"/><path d="M11 10 L11 7 C11 5.3 13.2 4 16 4 C18.8 4 21 5.3 21 7 L21 10"/></svg></span>
-        <div class="card-name">Tote Bag</div>
-        <div class="card-price">14,90 €</div>
+    <div id="mobile-products-list"
+         style="display:flex;flex-direction:column;gap:10px;padding:0 4px 16px;">
+      <div style="color:var(--text3);font-size:12px;text-align:center;padding:24px 12px">
+        Chargement des produits…
       </div>
     </div>
   </div>
@@ -3988,8 +3959,18 @@ function _syncResolvedProductHandle() {
   if (!stillValid) _resolvedProductHandle = options[0].handle || ('id:' + options[0].product_id);
 }
 
+// Drapeau : true tant que l'utilisateur ne veut pas que le panel produits
+// se ré-ouvre automatiquement (après un choix ou une fermeture manuelle).
+// Levé par renderProductsPanel quand un nouveau mockup change la liste, ou
+// quand un nouvel ID Shopify est passé en URL.
+let _productsPanelDismissed = false;
+
 function chooseShopifyProductHandle(ref) {
   _resolvedProductHandle = ref || '';
+  // Marquer la fermeture comme volontaire AVANT les rerenders asynchrones
+  // (refreshResolvedProductPrice → prefetchLinkedProductPrices → renderProductsPanel)
+  // qui re-ouvriraient le panel sans ce flag.
+  _productsPanelDismissed = true;
   refreshResolvedProductPrice();
   updateViewSwitcher();
   updatePrice();
@@ -4013,6 +3994,39 @@ async function loadShopifyProductLinks() {
     // Les liaisons arrivent en async: re-synchroniser le produit résolu
     // puis rafraîchir le panneau mockup/produit pour afficher la sélection.
     _syncResolvedProductHandle();
+
+    // ── Auto-bascule sur le mockup lié au handle Shopify d'origine ──────
+    // Quand l'utilisateur arrive depuis un produit Shopify (ex: t-shirt
+    // homme → ?product=t-shirt-homme), on applique le mockup correspondant
+    // et son type produit (tshirt-homme vs tshirt-femme) au lieu de tomber
+    // sur le mockup par défaut [0] de MOCKUPS_DATA.
+    const _initialHandle = window._TL_PRODUCT_HANDLE || _resolvedProductHandle || '';
+    if (_initialHandle) {
+      const _link = SHOPIFY_PRODUCT_LINKS.find(l =>
+        l.handle === _initialHandle ||
+        ('id:' + l.product_id) === _initialHandle
+      );
+      if (_link && _link.mockup_id) {
+        const _mockupIdx = MOCKUPS_DATA.findIndex(m => String(m.id) === String(_link.mockup_id));
+        if (_mockupIdx >= 0) {
+          const _m = MOCKUPS_DATA[_mockupIdx];
+          // selectProduct met à jour STATE.product si différent
+          if (_m.product && STATE.product !== _m.product) {
+            STATE.product = _m.product;
+            document.querySelectorAll('[data-product]').forEach(el => {
+              el.classList.toggle('active', el.dataset.product === _m.product);
+            });
+            const stat = document.getElementById('stat-product');
+            if (stat && PRODUCTS[_m.product]) stat.textContent = PRODUCTS[_m.product].name;
+          }
+          // Recalculer l'index local dans le sous-tableau du produit
+          const _mForProduct = MOCKUPS_DATA.filter(m => m.product === _m.product);
+          const _miLocal = _mForProduct.findIndex(m => String(m.id) === String(_link.mockup_id));
+          applyMockup(_m.product || STATE.product, 0, Math.max(0, _miLocal));
+        }
+      }
+    }
+
     refreshResolvedProductPrice();
     _tlLinksDebug = { lastSource:'public', lastCount: SHOPIFY_PRODUCT_LINKS.length, lastError:'' };
     updateViewSwitcher();
@@ -4152,6 +4166,16 @@ function renderProductsPanel() {
     return;
   }
 
+  // Si l'utilisateur a déjà fermé le panel (clic produit ou X), on n'auto-ré-ouvre
+  // pas — on met juste à jour le contenu en arrière-plan pour la prochaine
+  // ouverture manuelle. Le flag est reset quand le mockup change (cf. applyMockup).
+  if (_productsPanelDismissed && panel.style.display === 'none') {
+    // Mettre à jour le HTML en silence pour qu'au prochain renderProductsPanel
+    // déclenché par un changement de mockup, le contenu soit à jour.
+    // (le body sera reconstruit par la suite, donc on peut laisser tomber ici)
+    return;
+  }
+
   // Catégorie active (T-Shirt, Hoodie, …) — depuis PRODUCTS hardcodés ou nom dynamique
   const catName = (typeof PRODUCTS === 'object' && PRODUCTS[STATE.product]?.name)
     ? PRODUCTS[STATE.product].name
@@ -4192,6 +4216,113 @@ function closeProductsPanel() {
   const tools = document.getElementById('tools-panel');
   if (panel) panel.style.display = 'none';
   if (tools) tools.style.display = '';
+  // Fermeture utilisateur → ne pas auto-ré-ouvrir tant que le mockup ne change
+  // pas. Sinon les fetch async (prefetch prix, links) ré-ouvrent le panel.
+  _productsPanelDismissed = true;
+}
+
+// ── Mobile : drawer "Produit" → liste les vrais produits Shopify (image,
+// titre, prix, tailles) et bascule sur le bon mockup au clic. Fallback sur
+// la grille générique de types (T-shirt/Hoodie/Casquette/Tote bag) si
+// aucune liaison Shopify n'est connue (mode local).
+function renderMobileProductsList() {
+  const wrap = document.getElementById('mobile-products-list');
+  if (!wrap) return;
+
+  const links = Array.isArray(SHOPIFY_PRODUCT_LINKS) ? SHOPIFY_PRODUCT_LINKS : [];
+  if (!links.length) {
+    // Mode local : 4 types génériques
+    const generics = [
+      { key:'tshirt',  label:'T-Shirt',   price:'19,90 €' },
+      { key:'hoodie',  label:'Hoodie',    price:'39,90 €' },
+      { key:'cap',     label:'Casquette', price:'24,90 €' },
+      { key:'totebag', label:'Tote Bag',  price:'14,90 €' },
+    ];
+    wrap.innerHTML = generics.map(p =>
+      `<button type="button" class="m-product-card"
+        onclick="selectProduct('${p.key}');closeDrawer()"
+        style="display:flex;align-items:center;gap:12px;padding:12px 14px;
+               background:var(--bg3);border:1.5px solid var(--border);
+               border-radius:14px;cursor:pointer;text-align:left;color:var(--text);
+               font-family:'DM Sans',sans-serif;width:100%">
+        <div style="font-size:13px;font-weight:600;flex:1">${p.label}</div>
+        <div style="font-size:12px;color:var(--text2);font-family:'DM Mono',monospace">
+          ${p.price}
+        </div>
+      </button>`
+    ).join('');
+    return;
+  }
+
+  // Mode Shopify : ordre par titre, dédupliqué par handle
+  const seen = new Set();
+  const items = links.filter(l => {
+    const key = l.handle || ('id:' + l.product_id);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  wrap.innerHTML = items.map((p) => {
+    const ref = p.handle || ('id:' + p.product_id);
+    const meta = p.handle ? (_shopifyProductMetaByHandle[p.handle] || {}) : {};
+    const title = p.title || meta.title || p.handle || p.product_id || 'Produit';
+    const img = meta.image || _shopifyThumbByHandle[p.handle] || '';
+    const sizes = Array.isArray(meta.sizes) && meta.sizes.length ? meta.sizes.join(' · ') : '';
+    const parsedMetaPrice = Number.parseFloat(String(meta.price ?? '').replace(',', '.'));
+    const fallbackPrice = Number.parseFloat(String(_shopifyBasePriceByRef[ref] ?? ''));
+    const priceN = Number.isFinite(parsedMetaPrice)
+      ? parsedMetaPrice
+      : (Number.isFinite(fallbackPrice) ? fallbackPrice : null);
+    const price = (priceN != null) ? `${priceN.toFixed(2).replace('.', ',')} €` : '';
+    const isActive = ref === _resolvedProductHandle;
+    const safeRef = String(ref).replace(/'/g, "\\'");
+    return `<button type="button" class="m-product-card${isActive ? ' active' : ''}"
+      onclick="_mobileSelectShopifyProduct('${safeRef}', ${JSON.stringify(p.mockup_id || '')}, ${JSON.stringify(p.mockup_product || '')})"
+      style="display:flex;align-items:center;gap:12px;padding:10px 12px;
+             background:var(--bg3);border:1.5px solid ${isActive ? 'var(--amber)' : 'var(--border)'};
+             border-radius:14px;cursor:pointer;text-align:left;color:var(--text);
+             font-family:'DM Sans',sans-serif;width:100%">
+      <div style="width:64px;height:64px;flex-shrink:0;border-radius:8px;overflow:hidden;
+                  background:#f5f5f5;display:flex;align-items:center;justify-content:center">
+        ${img ? `<img src="${img}" alt="" style="width:100%;height:100%;object-fit:cover">` :
+                `<svg viewBox="0 0 32 32" fill="none" stroke="#bbb" stroke-width="1.6" width="32" height="32"><path d="M11 4 C11 4 10 7 8 7 L3 9.5 L6 15 L9 13.5 L9 27 L23 27 L23 13.5 L26 15 L29 9.5 L24 7 C22 7 21 4 21 4 C20 6 18.5 7 16 7 C13.5 7 12 6 11 4Z"/></svg>`}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;line-height:1.25;
+                    overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${title}</div>
+        ${sizes ? `<div style="font-size:11px;color:var(--text3);margin-top:2px">Tailles : ${sizes}</div>` : ''}
+        ${price ? `<div style="font-size:12px;color:var(--amber);font-family:'DM Mono',monospace;margin-top:3px">${price}</div>` : ''}
+      </div>
+      <span style="color:var(--text3);font-size:18px;flex-shrink:0">›</span>
+    </button>`;
+  }).join('');
+}
+
+// Au clic sur un produit Shopify dans le drawer mobile : sélectionner le bon
+// mockup (donc le bon type produit) puis résoudre le handle. Ferme le drawer.
+function _mobileSelectShopifyProduct(ref, mockupId, mockupProduct) {
+  if (mockupId && Array.isArray(MOCKUPS_DATA)) {
+    const _mIdx = MOCKUPS_DATA.findIndex(m => String(m.id) === String(mockupId));
+    if (_mIdx >= 0) {
+      const _m = MOCKUPS_DATA[_mIdx];
+      if (_m.product && STATE.product !== _m.product) {
+        STATE.product = _m.product;
+        document.querySelectorAll('[data-product]').forEach(el => {
+          el.classList.toggle('active', el.dataset.product === _m.product);
+        });
+        const stat = document.getElementById('stat-product');
+        if (stat && PRODUCTS[_m.product]) stat.textContent = PRODUCTS[_m.product].name;
+      }
+      const _mForProduct = MOCKUPS_DATA.filter(m => m.product === _m.product);
+      const _miLocal = _mForProduct.findIndex(m => String(m.id) === String(mockupId));
+      applyMockup(_m.product || STATE.product, 0, Math.max(0, _miLocal));
+    }
+  } else if (mockupProduct && STATE.product !== mockupProduct) {
+    selectProduct(mockupProduct);
+  }
+  chooseShopifyProductHandle(ref);
+  closeDrawer();
 }
 
 // Compat anciens appels — désormais le panneau s'affiche/se rafraîchit via renderProductsPanel()
@@ -4246,6 +4377,9 @@ function applyMockup(productKey, viewIdx, mockupIdx) {
 
   STATE_mockup = allMockups[_STATE_mockupIdx] || null;
   _syncResolvedProductHandle();
+  // Le mockup vient de changer → relâcher le flag dismissal pour permettre
+  // au panel "Produits disponibles" de s'afficher de nouveau si pertinent.
+  _productsPanelDismissed = false;
   loadLinksForActiveMockup();
 
   if (viewIdx !== undefined) {
@@ -5119,24 +5253,34 @@ function generateDemoSVG(prompt, style) {
 
 function addToAIGallery(svgCode) {
   STATE.aiGallery.push(svgCode);
-  const gallery = document.getElementById('ai-gallery');
-  const thumb = document.createElement('div');
-  thumb.className = 'ai-thumb';
-  thumb.innerHTML = svgCode + '<div class="ai-thumb-add" onclick="addAIToCanvas(' + (STATE.aiGallery.length - 1) + ')">+ Ajouter</div>';
-  gallery.appendChild(thumb);
+  const idx = STATE.aiGallery.length - 1;
+  // Pousser dans la galerie desktop ET la galerie mobile clonée (m-ai-gallery)
+  // → sans ça, sur mobile rien ne s'affiche après génération.
+  ['ai-gallery', 'm-ai-gallery'].forEach((id) => {
+    const gallery = document.getElementById(id);
+    if (!gallery) return;
+    const thumb = document.createElement('div');
+    thumb.className = 'ai-thumb';
+    thumb.innerHTML = svgCode +
+      '<div class="ai-thumb-add" onclick="addAIToCanvas(' + idx + ')">+ Ajouter</div>';
+    gallery.appendChild(thumb);
+  });
 }
 
 function addToAIGalleryImage(imageUrl) {
   // Pour les images DALL-E (URL distante)
   STATE.aiGallery.push({ __dalleUrl: imageUrl });
   const idx = STATE.aiGallery.length - 1;
-  const gallery = document.getElementById('ai-gallery');
-  const thumb = document.createElement('div');
-  thumb.className = 'ai-thumb';
-  thumb.style.cssText = 'background:#111;overflow:hidden;';
-  thumb.innerHTML = `<img src="${imageUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:8px">
-    <div class="ai-thumb-add" onclick="addAIToCanvas(${idx})">+ Ajouter</div>`;
-  gallery.appendChild(thumb);
+  ['ai-gallery', 'm-ai-gallery'].forEach((id) => {
+    const gallery = document.getElementById(id);
+    if (!gallery) return;
+    const thumb = document.createElement('div');
+    thumb.className = 'ai-thumb';
+    thumb.style.cssText = 'background:#111;overflow:hidden;';
+    thumb.innerHTML = `<img src="${imageUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:8px">
+      <div class="ai-thumb-add" onclick="addAIToCanvas(${idx})">+ Ajouter</div>`;
+    gallery.appendChild(thumb);
+  });
 }
 
 function addAIToCanvas(idx) {
@@ -5441,6 +5585,7 @@ function openDrawer(name) {
 
   if (name === 'layers') updateLayerBar();
   if (name === 'image')  { _libCat = 'all'; setTimeout(_renderMobileLibGrid, 60); }
+  if (name === 'product') setTimeout(renderMobileProductsList, 30);
   if (name === 'cart') {
     // Snapshot du canvas pour la préview — différé pour ne pas bloquer l'animation du drawer
     const preview = document.getElementById('drawer-cart-preview');
@@ -5635,6 +5780,29 @@ function switchMobileToolTab(tab) {
   }
   if (tab === 'qr') { qrMobileInstance = null; setTimeout(updateMobileQRPreview, 100); }
   if (tab === 'image') setTimeout(_renderMobileLibGrid, 50);
+  // Tab IA mobile : recréer les thumbnails depuis STATE.aiGallery dans
+  // m-ai-gallery (cloné vide). Sans ça, l'utilisateur perd la liste de ses
+  // générations à chaque réouverture du drawer.
+  if (tab === 'ai') {
+    setTimeout(() => {
+      const gal = document.getElementById('m-ai-gallery');
+      if (!gal) return;
+      gal.innerHTML = '';
+      (STATE.aiGallery || []).forEach((item, idx) => {
+        const thumb = document.createElement('div');
+        thumb.className = 'ai-thumb';
+        if (item && typeof item === 'object' && item.__dalleUrl) {
+          thumb.style.cssText = 'background:#111;overflow:hidden;';
+          thumb.innerHTML = `<img src="${item.__dalleUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:8px">
+            <div class="ai-thumb-add" onclick="addAIToCanvas(${idx})">+ Ajouter</div>`;
+        } else {
+          thumb.innerHTML = String(item) +
+            '<div class="ai-thumb-add" onclick="addAIToCanvas(' + idx + ')">+ Ajouter</div>';
+        }
+        gal.appendChild(thumb);
+      });
+    }, 50);
+  }
 }
 
 // Font picker spécifique pour le drawer mobile (plein écran)
@@ -5992,7 +6160,11 @@ async function _checkoutShopifyDirect() {
     try {
       const _saveRes = await apiFetch('/api/render/save', {
         method: 'POST',
-        body: JSON.stringify({ design_id: designId, png_base64: _previewBase64 }),
+        body: JSON.stringify({
+          design_id:  designId,
+          png_base64: _previewBase64,
+          kind:       'preview', // mockup + design → ne touche pas le PNG print
+        }),
       });
       _cdnPreviewUrl = _saveRes?.previewUrl || null;
       if (_cdnPreviewUrl) console.log('[TextileLab] previewUrl CDN HD', _cdnPreviewUrl);
@@ -6735,7 +6907,7 @@ async function _apply3DTexture() {
 // PHOTO → ART
 // ============================================
 let _photoFile    = null;
-let _photoStyle   = 'cartoon';
+let _photoStyle   = 'disney';
 let _photoLoading = false;
 
 // Force un repaint du DOM — corrige le bug de rendu dans le drawer mobile
@@ -6916,19 +7088,15 @@ function _downloadPhoto(base64, style) {
 // PHOTO MODAL (mobile — hors drawer)
 // ============================================
 const PM_STYLES = [
-  { key:'cartoon',    label:'Cartoon',    img:'/assets/styles/style-cartoon.png' },
   { key:'disney',     label:'Pixar',      img:'/assets/styles/style-disney.png' },
   { key:'manga',      label:'Manga',      img:'/assets/styles/style-manga.png' },
   { key:'sticker',    label:'Sticker',    img:'/assets/styles/style-sticker.png' },
-  { key:'sketch',     label:'Sketch',     img:'/assets/styles/style-sketch.png' },
-  { key:'simple',     label:'Flat',       img:'/assets/styles/style-simple.png' },
   { key:'caricature', label:'Caricature', img:'/assets/styles/style-caricature.png' },
-  { key:'avatar',     label:'Avatar',     img:'/assets/styles/style-avatar.png' },
   { key:'lego',       label:'Lego',       img:'/assets/styles/style-lego.png' },
 ];
 
 let _pmFile   = null;
-let _pmStyle  = 'cartoon';
+let _pmStyle  = 'disney';
 let _pmBusy   = false;
 
 function openPhotoModal() {
@@ -8749,7 +8917,7 @@ async function _generateAndSaveHDRender(designId) {
 
     await apiFetch('/api/render/save', {
       method: 'POST',
-      body: JSON.stringify({ design_id: designId, png_base64: dataUrl }),
+      body: JSON.stringify({ design_id: designId, png_base64: dataUrl, kind: 'print' }),
     });
   } catch(e) {
     console.warn('HD render:', e.message);

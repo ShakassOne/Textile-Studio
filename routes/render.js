@@ -129,8 +129,17 @@ router.post('/save-views', attachShopId, renderRateLimiter, (req, res) => {
 // requireShopifySession retiré : l'éditeur tourne dans un iframe storefront sans App Bridge.
 router.post('/save', attachShopId, renderRateLimiter, checkBodySize('png_base64'), async (req, res) => {
   const { design_id, png_base64 } = req.body;
+  // kind=print  → PNG transparent sans mockup (admin download, impression).
+  //               Met à jour designs.render_url. NE TOUCHE PAS preview_cdn_url.
+  // kind=preview→ PNG avec mockup (email/drawer/_preview_img).
+  //               Met à jour designs.preview_cdn_url uniquement (Shopify Files).
+  // Compat : si kind absent → 'print' (rétrocompat appels existants).
+  const kind = (req.body.kind || 'print').toString().toLowerCase();
   if (!design_id || !png_base64) {
     return res.status(400).json({ error: 'design_id et png_base64 requis' });
+  }
+  if (kind !== 'print' && kind !== 'preview') {
+    return res.status(400).json({ error: 'kind doit être "print" ou "preview"' });
   }
 
   // ── Vérification ownership avant écriture disque (anti-DoS B5) ────────
@@ -142,50 +151,64 @@ router.post('/save', attachShopId, renderRateLimiter, checkBodySize('png_base64'
     const base64Data = png_base64.replace(/^data:image\/\w+;base64,/, '');
     const buffer     = Buffer.from(base64Data, 'base64');
 
-    const filename = `render_design_${design_id}_${Date.now()}.png`;
+    const filename = `render_${kind}_design_${design_id}_${Date.now()}.png`;
     const filepath = path.join(RENDERS_DIR, filename);
     fs.writeFileSync(filepath, buffer);
 
     const relUrl  = `/uploads/renders/${filename}`;
     const APP_URL = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
     const sizeKb  = Math.round(buffer.length / 1024);
-
-    // ── Mise à jour DB avec l'URL Railway (disponible immédiatement) ─────
     const db = getDB();
-    db.prepare('UPDATE designs SET render_url=?, render_size_kb=? WHERE id=? AND shop_id=?')
-      .run(relUrl, sizeKb, design_id, req.shopId);
 
-    console.log(`[render] PNG sauvegardé: ${filename} (${sizeKb} Ko)`);
+    if (kind === 'print') {
+      // PNG impression : on enregistre uniquement render_url. Le download admin
+      // tirera ce fichier (et appliquera sharp.trim côté /download/:id).
+      db.prepare('UPDATE designs SET render_url=?, render_size_kb=? WHERE id=? AND shop_id=?')
+        .run(relUrl, sizeKb, design_id, req.shopId);
+      console.log(`[render][print] ${filename} (${sizeKb} Ko)`);
 
-    // ── Upload Shopify Files CDN ──────────────────────────────────────────
+      // FTP fallback secondaire pour archive externe si configuré
+      if (isFtpConfigured()) uploadToFtpAsync(filepath, filename, 3);
+
+      return res.json({
+        kind:       'print',
+        url:        relUrl,
+        previewUrl: `${APP_URL}${relUrl}`,
+        filename,
+        size_kb:    sizeKb,
+      });
+    }
+
+    // kind === 'preview' : upload Shopify Files CDN obligatoire pour _preview_img
+    // (Shopify natif, email transactionnel). Fallback Railway si CDN KO.
     const shop  = process.env.SHOPIFY_BOOTSTRAP_SHOP;
     const token = process.env.SHOPIFY_ACCESS_TOKEN || process.env.SHOPIFY_BOOTSTRAP_TOKEN;
 
-    let previewUrl = `${APP_URL}${relUrl}`; // fallback Railway
-
+    let previewUrl = `${APP_URL}${relUrl}`;
     if (shop && token) {
       try {
         const cdnUrl = await uploadToShopifyFiles(filepath, shop, token);
         db.prepare('UPDATE designs SET preview_cdn_url=? WHERE id=? AND shop_id=?').run(cdnUrl, design_id, req.shopId);
         try { fs.unlinkSync(filepath); } catch { /* pas bloquant */ }
         previewUrl = cdnUrl;
-        console.log(`[render] CDN Shopify ✅ ${cdnUrl}`);
+        console.log(`[render][preview] CDN Shopify ${cdnUrl}`);
       } catch (cdnErr) {
-        // Fallback Railway — fichier local conservé
-        console.error(`[render] CDN Shopify ERREUR : ${cdnErr.message}`);
+        console.error(`[render][preview] CDN Shopify ERREUR : ${cdnErr.message}`);
         if (cdnErr.graphqlErrors) console.error('[render] GraphQL errors :', JSON.stringify(cdnErr.graphqlErrors));
-        // FTP en fallback secondaire si configuré
-        if (isFtpConfigured()) {
-          uploadToFtpAsync(filepath, filename, 3);
-        }
+        // Fallback : on persiste l'URL Railway dans preview_cdn_url
+        db.prepare('UPDATE designs SET preview_cdn_url=? WHERE id=? AND shop_id=?').run(previewUrl, design_id, req.shopId);
+        if (isFtpConfigured()) uploadToFtpAsync(filepath, filename, 3);
       }
-    } else if (isFtpConfigured()) {
-      uploadToFtpAsync(filepath, filename, 3);
+    } else {
+      // Pas de creds Shopify Files → on stocke quand même l'URL Railway.
+      db.prepare('UPDATE designs SET preview_cdn_url=? WHERE id=? AND shop_id=?').run(previewUrl, design_id, req.shopId);
+      if (isFtpConfigured()) uploadToFtpAsync(filepath, filename, 3);
     }
 
-    res.json({
+    return res.json({
+      kind:       'preview',
       url:        relUrl,
-      previewUrl, // cdn.shopify.com si OK, Railway sinon
+      previewUrl,
       filename,
       size_kb:    sizeKb,
     });

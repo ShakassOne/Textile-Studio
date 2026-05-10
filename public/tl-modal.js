@@ -102,6 +102,15 @@
     '[class*="cart-item__image"] > a:has(.tl-design-overlay) > img {',
     '  visibility: hidden !important;',
     '}',
+    /* Pendant l\'add-to-cart, on masque préemptivement les images natives
+       des line items pour éviter le flash "t-shirt rouge variant" avant
+       que tl-modal n\'injecte l\'overlay. Le marker body.tl-cart-loading
+       est posé/retiré dans le handler tl-add-to-cart. */
+    'body.tl-cart-loading [class*="cart-items__media"] img,',
+    'body.tl-cart-loading [class*="cart-item__image"] img,',
+    'body.tl-cart-loading cart-drawer img[src*="cdn.shopify"]:not([src*="textile"]) {',
+    '  visibility: hidden !important;',
+    '}',
     /* 4b. ANTI-FLICKER properties : cacher préemptivement les line item    */
     /*     properties (dt/dd, li) tant que tl-modal n'a pas eu le temps de   */
     /*     transformer "Voir mon design: <url>" en bouton orange propre.    */
@@ -366,10 +375,12 @@
     ovImg.src = previewUrl;
     ovImg.alt = '';
     ovImg.loading = 'eager';
+    // Pas d'inline width/height : on laisse la CSS de classe gérer
+    // (width 100%, height 100%, object-fit contain) pour éviter les
+    // incohérences visuelles avec l'aspect-ratio appliqué au container.
     ovImg.style.cssText =
-      'height:100px;' +
-      'width:auto;' +
-      'max-width:100px;' +
+      'width:100%;' +
+      'height:100%;' +
       'object-fit:contain;' +
       'display:block;' +
       'background:transparent;';
@@ -596,6 +607,9 @@
           if (_previewUrl) _props['_preview_img'] = _previewUrl;
 
           if (_vid && _props) {
+            // Marquer la phase loading pour cacher préemptivement les images
+            // natives des cart items via CSS (anti-flash variant rouge).
+            document.body.classList.add('tl-cart-loading');
             fetch('/cart/add.json', {
               method:  'POST',
               headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
@@ -638,8 +652,15 @@
               setTimeout(_tlFixAllLineItems, 400);
               setTimeout(_tlFixAllLineItems, 1000);
               setTimeout(_tlFixAllLineItems, 2000);
+              // Retirer le marker loading après que les overlays soient en place.
+              setTimeout(function() {
+                document.body.classList.remove('tl-cart-loading');
+              }, 1800);
             })
-            .catch(function() { window.location.href = '/cart'; });
+            .catch(function() {
+              document.body.classList.remove('tl-cart-loading');
+              window.location.href = '/cart';
+            });
 
           } else if (e.data.cartUrl) {
             setTimeout(function() { window.location.href = e.data.cartUrl; }, 250);

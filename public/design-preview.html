@@ -38,27 +38,32 @@
 
   .views-grid {
     display: flex;
-    gap: 24px;
+    gap: 28px;
     flex-wrap: wrap;
     justify-content: center;
     width: 100%;
-    max-width: 900px;
+    max-width: 1400px;
+  }
+
+  /* Une seule vue : carte plein écran (max-width 900) ; deux+ vues : 2 colonnes */
+  .views-grid.single .view-card { max-width: 900px; flex-basis: 90vw; }
+  .views-grid:not(.single) .view-card {
+    flex: 1 1 calc(50% - 28px);
+    min-width: 320px;
+    max-width: 640px;
   }
 
   .view-card {
-    flex: 1;
-    min-width: 220px;
-    max-width: 380px;
     background: #15151a;
     border: 1px solid #2a2a35;
-    border-radius: 16px;
+    border-radius: 18px;
     overflow: hidden;
     text-align: center;
   }
 
   .view-label {
-    padding: 14px 20px 10px;
-    font-size: 11px;
+    padding: 18px 24px 12px;
+    font-size: 12px;
     font-weight: 700;
     letter-spacing: 2px;
     text-transform: uppercase;
@@ -66,23 +71,40 @@
   }
 
   .view-img-wrap {
-    padding: 4px 16px 16px;
+    padding: 8px;
     background: #f8f8f8;
-    margin: 0 16px 16px;
-    border-radius: 10px;
+    margin: 0 16px 18px;
+    border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 200px;
+    min-height: 60vh;
   }
 
   .view-img-wrap img {
     width: 100%;
     height: auto;
-    max-height: 340px;
+    max-height: 75vh;
     object-fit: contain;
     border-radius: 6px;
     display: block;
+    cursor: zoom-in;
+  }
+
+  /* Modal lightbox plein écran au clic sur l'image */
+  .lightbox {
+    position: fixed; inset: 0; background: rgba(0,0,0,.92);
+    display: none; align-items: center; justify-content: center;
+    z-index: 9999; padding: 24px;
+  }
+  .lightbox.open { display: flex; }
+  .lightbox img { max-width: 100%; max-height: 100%; border-radius: 8px; }
+  .lightbox-close {
+    position: absolute; top: 16px; right: 16px;
+    background: rgba(255,255,255,.12); color: #fff;
+    border: 1px solid rgba(255,255,255,.2); border-radius: 999px;
+    width: 40px; height: 40px; cursor: pointer; font-size: 20px;
+    display: flex; align-items: center; justify-content: center;
   }
 
   .view-img-wrap.loading {
@@ -182,7 +204,7 @@
         }
 
         const grid = document.createElement('div');
-        grid.className = 'views-grid';
+        grid.className = 'views-grid' + (views.length === 1 ? ' single' : '');
 
         views.forEach(v => {
           const card = document.createElement('div');
@@ -191,6 +213,7 @@
             <div class="view-label">${v.name || 'Vue'}</div>
             <div class="view-img-wrap" id="wrap-${v.name}">
               <img src="${v.url}" alt="${v.name}"
+                   onclick="_tlOpenLightbox(this.src, this.alt)"
                    onload="this.parentElement.classList.remove('loading')"
                    onerror="this.parentElement.innerHTML='<span style=color:#555;font-size:12px>Image non disponible</span>'">
             </div>`;
@@ -199,6 +222,31 @@
 
         document.getElementById('app').innerHTML = '';
         document.getElementById('app').appendChild(grid);
+
+        // Lightbox plein écran : créée à la demande
+        if (!document.getElementById('tl-lightbox')) {
+          const lb = document.createElement('div');
+          lb.id = 'tl-lightbox';
+          lb.className = 'lightbox';
+          lb.innerHTML = '<button class="lightbox-close" onclick="_tlCloseLightbox()" aria-label="Fermer">&times;</button><img alt="">';
+          lb.addEventListener('click', (e) => { if (e.target === lb) _tlCloseLightbox(); });
+          document.body.appendChild(lb);
+        }
+        window._tlOpenLightbox = (src, alt) => {
+          const lb = document.getElementById('tl-lightbox');
+          const img = lb.querySelector('img');
+          img.src = src; img.alt = alt || '';
+          lb.classList.add('open');
+          document.body.style.overflow = 'hidden';
+        };
+        window._tlCloseLightbox = () => {
+          const lb = document.getElementById('tl-lightbox');
+          lb.classList.remove('open');
+          document.body.style.overflow = '';
+        };
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape') _tlCloseLightbox();
+        });
 
         // Méta-infos du design
         const PRODUCTS = { tshirt:'T-Shirt', hoodie:'Hoodie', cap:'Casquette', totebag:'Tote Bag' };
