@@ -5947,16 +5947,38 @@ async function _checkoutShopifyDirect() {
 
   // ── 4b. Upload CDN Shopify — appel séquentiel, résultat utilisé pour _preview_img ──
   // /api/render/save retourne previewUrl = cdn.shopify.com (ou Railway en fallback)
+  // IMPORTANT : on génère ICI un PNG HD multiplier 2 (mockup + design, fond
+  // transparent) au lieu de réutiliser le thumbnail JPEG basse def des
+  // viewThumbs. Sans ça l'email Shopify natif rend une image pixelisée avec
+  // fond noir (JPEG ne supporte pas la transparence → le canvas dark mode
+  // se rendait noir derrière le t-shirt).
   let _cdnPreviewUrl = null;
-  const _firstViewBase64 = viewsToUpload[0]?.png_base64 || null;
-  if (designId && _firstViewBase64) {
+  let _previewHdBase64 = null;
+  if (designId) {
+    try {
+      // PNG HD multiplier 2 + fond blanc forcé (fiable email + drawer des
+      // thèmes qui rendent les PNG transparents sur fond sombre).
+      _previewHdBase64 = _canvasToCleanDataURL({
+        keepMockup: true,
+        format:     'png',
+        multiplier: 2,
+        bg:         '#ffffff',
+      });
+    } catch (e) {
+      console.warn('[TextileLab] preview HD generation :', e.message);
+    }
+  }
+  // Fallback : si le PNG HD n'a pas pu être généré (canvas non prêt ?), on
+  // retombe sur le thumbnail JPEG (rendu dégradé mais drawer reste utilisable).
+  const _previewBase64 = _previewHdBase64 || (viewsToUpload[0]?.png_base64 || null);
+  if (designId && _previewBase64) {
     try {
       const _saveRes = await apiFetch('/api/render/save', {
         method: 'POST',
-        body: JSON.stringify({ design_id: designId, png_base64: _firstViewBase64 }),
+        body: JSON.stringify({ design_id: designId, png_base64: _previewBase64 }),
       });
       _cdnPreviewUrl = _saveRes?.previewUrl || null;
-      if (_cdnPreviewUrl) console.log('[TextileLab] previewUrl CDN ✅', _cdnPreviewUrl);
+      if (_cdnPreviewUrl) console.log('[TextileLab] previewUrl CDN HD', _cdnPreviewUrl);
       else console.warn('[TextileLab] render/save : previewUrl absent de la réponse', _saveRes);
     } catch(e) {
       console.warn('[TextileLab] render/save CDN :', e.message);
@@ -8201,7 +8223,7 @@ function applyFrameClipToObject(obj) {
 // Helper : exporter le canvas en cachant les guides (frame pointillé, masque, overlay couleur).
 // `keepMockup` = true → on garde le T-shirt en fond ; false → fond transparent (rendu HD imprimeur).
 function _canvasToCleanDataURL(opts = {}) {
-  const { keepMockup = true, format = 'png', multiplier = 1, quality = 1 } = opts;
+  const { keepMockup = true, format = 'png', multiplier = 1, quality = 1, bg } = opts;
   const HIDE_KEYS = ['__isFrame', '__isPrintMask', '__isColorOverlay'];
   if (!keepMockup) HIDE_KEYS.push('__isMockupBg');
   // Sauvegarder l'état visible de chaque objet à masquer puis cacher
@@ -8212,17 +8234,30 @@ function _canvasToCleanDataURL(opts = {}) {
       o.visible = false;
     }
   });
-  const prevBackgroundColor = canvas.backgroundColor;
+  // Neutraliser le canvas.backgroundColor pour éviter qu'un fond sombre
+  // (mode sombre du studio) ne se retrouve dans les exports PNG/JPEG.
+  //  - opts.bg explicite (ex: '#ffffff') prend priorité ;
+  //  - sinon  PNG  → backgroundColor=null (vraie transparence) ;
+  //  - sinon  JPEG → backgroundColor='#ffffff' (fond blanc plutôt que noir).
+  // Le helper restaure l'original dans le finally.
+  const origBg = canvas.backgroundColor;
+  let targetBg;
+  if (typeof bg !== 'undefined') {
+    targetBg = bg; // '#ffffff', null, 'transparent', etc.
+  } else if (format === 'jpeg' || format === 'jpg') {
+    targetBg = '#ffffff';
+  } else {
+    targetBg = null;
+  }
+  canvas.backgroundColor = targetBg;
+  canvas.renderAll();
   let dataUrl;
   try {
-    // Force transparent export: avoid dark studio background leaking into PNG
-    canvas.backgroundColor = null;
-    canvas.renderAll();
     dataUrl = canvas.toDataURL({ format, multiplier, quality });
   } finally {
     // Restaurer dans tous les cas (même si toDataURL throw)
-    canvas.backgroundColor = prevBackgroundColor;
     hidden.forEach(({ obj, prev }) => { obj.visible = prev; });
+    canvas.backgroundColor = origBg;
     canvas.renderAll();
   }
   return dataUrl;

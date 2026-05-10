@@ -102,6 +102,33 @@
     '[class*="cart-item__image"] > a:has(.tl-design-overlay) > img {',
     '  visibility: hidden !important;',
     '}',
+    /* 4b. ANTI-FLICKER properties : cacher préemptivement les line item    */
+    /*     properties (dt/dd, li) tant que tl-modal n'a pas eu le temps de   */
+    /*     transformer "Voir mon design: <url>" en bouton orange propre.    */
+    /*     - Le marker [data-tl-props-ready] est posé par _tlFixLineItemProps */
+    /*       sur les <dl> traités → elles ré-apparaissent unifiées.          */
+    /*     - Pour les éléments feuille (li/p/span/td), le marker            */
+    /*       [data-tl-leaf-ready] est posé sur le row → idem.                */
+    /*     visibility (pas display) garde le layout stable, juste invisible. */
+    '.cart-items dl:not([data-tl-props-ready]) > dt,',
+    '.cart-items dl:not([data-tl-props-ready]) > dd,',
+    '[class*="cart-item"] dl:not([data-tl-props-ready]) > dt,',
+    '[class*="cart-item"] dl:not([data-tl-props-ready]) > dd,',
+    '[class*="line-item"] dl:not([data-tl-props-ready]) > dt,',
+    '[class*="line-item"] dl:not([data-tl-props-ready]) > dd,',
+    'cart-drawer dl:not([data-tl-props-ready]) > dt,',
+    'cart-drawer dl:not([data-tl-props-ready]) > dd,',
+    '.cart-drawer dl:not([data-tl-props-ready]) > dt,',
+    '.cart-drawer dl:not([data-tl-props-ready]) > dd {',
+    '  visibility: hidden !important;',
+    '}',
+    /* Idem pour les structures non-<dl> (li[class*="property"], p, etc.) :  */
+    /* on cache les éléments line-item-property dans les rows non-fixés.     */
+    '[class*="cart-item"]:not([data-tl-leaf-ready]) [class*="line-item-property"],',
+    '[class*="cart-item"]:not([data-tl-leaf-ready]) [class*="line-item__properties"] li,',
+    'cart-drawer [class*="cart-item"]:not([data-tl-leaf-ready]) li[class*="property"] {',
+    '  visibility: hidden !important;',
+    '}',
     /* 5. Notre overlay : pleine cellule, fond TRANSPARENT, image en CONTAIN
           (préserve le ratio naturel du mockup, pas de crop). */
     '.tl-design-overlay {',
@@ -441,7 +468,13 @@
   // Debounce la sync pour les rafales de mutations DOM.
   function _tlScheduleSync() {
     clearTimeout(_tlSyncTimeout);
-    _tlSyncTimeout = setTimeout(_tlSyncCartImages, 200);
+    _tlSyncTimeout = setTimeout(function() {
+      _tlSyncCartImages();
+      _tlFixAllLineItems();
+    }, 200);
+    // Fix props immédiat (idempotent) → ne pas attendre le debounce pour
+    // relâcher le voile CSS anti-flicker.
+    _tlFixAllLineItems();
   }
 
   // Exposé pour réutilisation depuis le handler tl-add-to-cart.
@@ -494,20 +527,52 @@
       }
     });
 
-    // ─ Pattern 2 : balayage texte brut "_key: value" sur les éléments feuilles ─
-    // Masque tout élément dont le texte commence par "_xxx:" ou "_xxx="
-    // (signe d'une property interne non traitée par le pattern <dl>).
+    // Marquer tous les <dl> traités → CSS anti-flicker se relâche.
+    container.querySelectorAll('dl').forEach(function(dl) {
+      dl.setAttribute('data-tl-props-ready', '1');
+    });
+
+    // ─ Pattern 2 : balayage texte brut sur éléments feuilles ─────────────
+    // - "_xxx:" ou "_xxx=" → masquer (property technique)
+    // - "Voir mon design: https://..." → transformer en bouton orange
     var leafEls = container.querySelectorAll('li, p, span, div, td');
     leafEls.forEach(function(el) {
       if (el.dataset.tlFixed2) return;
       if (el.children.length > 2) return;
       var t = (el.textContent || '').trim();
       if (!t) return;
+      // Property technique préfixée '_'
       if (/^_[a-z_]+\s*[:=]/i.test(t)) {
         el.dataset.tlFixed2 = '1';
         el.style.display = 'none';
+        return;
+      }
+      // "Voir mon design: https://..." rendu en texte brut → bouton orange
+      var m = t.match(/^Voir mon design\s*[:=]\s*(https?:\/\/\S+)\s*$/i);
+      if (m) {
+        el.dataset.tlFixed2 = '1';
+        el.innerHTML = '<a href="' + m[1] + '" target="_blank" rel="noopener" ' +
+          'style="display:inline-flex;align-items:center;gap:6px;' +
+          'padding:6px 12px;margin-top:4px;border-radius:8px;' +
+          'background:#F59E0B;color:#0a0a0c !important;' +
+          'font-size:12px;font-weight:600;text-decoration:none;' +
+          'box-shadow:0 1px 2px rgba(0,0,0,.12);">' +
+          '<span aria-hidden="true">&#128065;</span> Voir mon design</a>';
       }
     });
+
+    // Le row entier est marqué "leaf-ready" → CSS anti-flicker se relâche.
+    container.setAttribute('data-tl-leaf-ready', '1');
+  }
+
+  // Helper : balayer TOUS les line items du DOM en un coup. Idempotent.
+  function _tlFixAllLineItems() {
+    var rows = document.querySelectorAll(
+      '[class*="cart-item"], [class*="line-item"], cart-drawer .cart-items > *, ' +
+      '.cart-drawer .cart-items > *, .cart-items__table-row, ' +
+      'cart-drawer-component [data-key], .cart-drawer [data-key]'
+    );
+    rows.forEach(function(row) { _tlFixLineItemProps(row); });
   }
 
   // ── Écoute des messages de l'iframe ────────────────────────────────────────
@@ -558,18 +623,21 @@
 
               // 3. Injection universelle de l'image design via [data-variant-id]
               if (_previewUrl) {
-                setTimeout(function() { _tlInjectCartImage(_vid, _previewUrl); }, 400);
+                _tlInjectCartImage(_vid, _previewUrl);
+                setTimeout(function() { _tlInjectCartImage(_vid, _previewUrl); }, 200);
+                setTimeout(function() { _tlInjectCartImage(_vid, _previewUrl); }, 600);
               }
 
-              // 4. Nettoyer les propriétés _ sur les items après re-render
-              setTimeout(function() {
-                var cartItems = document.querySelectorAll(
-                  '#cart-drawer .cart-item, .cart-drawer__content .cart-item, ' +
-                  '[id*="CartDrawer"] .cart-item, .cart-items .cart-item, ' +
-                  '.cart-drawer [class*="cart-item"]'
-                );
-                cartItems.forEach(function(item) { _tlFixLineItemProps(item); });
-              }, 800);
+              // 4. Nettoyer les propriétés _ sur les items IMMÉDIATEMENT
+              //    (anti-flicker : le CSS hide les <dl>/<li> tant que
+              //    [data-tl-props-ready]/[data-tl-leaf-ready] n'est pas posé).
+              //    On répète à plusieurs timings pour couvrir tous les
+              //    re-render du thème (Dawn, Studio, Sense…).
+              _tlFixAllLineItems();
+              setTimeout(_tlFixAllLineItems, 100);
+              setTimeout(_tlFixAllLineItems, 400);
+              setTimeout(_tlFixAllLineItems, 1000);
+              setTimeout(_tlFixAllLineItems, 2000);
             })
             .catch(function() { window.location.href = '/cart'; });
 
@@ -674,13 +742,18 @@
   // Comme _tlSyncCartImages() est idempotent (skip si overlay existe déjà),
   // appeler plusieurs fois est sans coût.
   function _tlInitCartSync() {
-    // Premier sync au load
+    // Premier sync au load + fix props
     _tlSyncCartImages();
+    _tlFixAllLineItems();
 
     // Évènements émis par les thèmes Shopify modernes
     ['cart:update', 'cart:refresh', 'theme:cart:update', 'cart-drawer:open']
       .forEach(function(ev) {
-        document.addEventListener(ev, _tlScheduleSync);
+        document.addEventListener(ev, function() {
+          _tlScheduleSync();
+          _tlFixAllLineItems();
+          setTimeout(_tlFixAllLineItems, 200);
+        });
       });
 
     // Observer permanent sur le DOM body — mutations enfants/sous-arbre +
@@ -704,15 +777,23 @@
       HTMLDialogElement.prototype.showModal = function() {
         var r = origShowModal.apply(this, arguments);
         _tlScheduleSync();
+        _tlFixAllLineItems();
         setTimeout(_tlSyncCartImages, 300);
+        setTimeout(_tlFixAllLineItems, 50);
+        setTimeout(_tlFixAllLineItems, 300);
         setTimeout(_tlSyncCartImages, 800);
+        setTimeout(_tlFixAllLineItems, 800);
         return r;
       };
       HTMLDialogElement.prototype.show = function() {
         var r = origShow.apply(this, arguments);
         _tlScheduleSync();
+        _tlFixAllLineItems();
         setTimeout(_tlSyncCartImages, 300);
+        setTimeout(_tlFixAllLineItems, 50);
+        setTimeout(_tlFixAllLineItems, 300);
         setTimeout(_tlSyncCartImages, 800);
+        setTimeout(_tlFixAllLineItems, 800);
         return r;
       };
     } catch (e) { /* HTMLDialogElement non dispo (vieux navigateur) — ignoré */ }

@@ -319,11 +319,14 @@ router.get('/file/:design_id/:filename', (req, res) => {
 });
 
 // ── GET /api/render/download/:design_id ── téléchargement direct (scopé shop, doit être avant /:design_id)
-router.get('/download/:design_id', attachShopId, (req, res) => {
+// Par défaut, le PNG est croppé sur la bounding box du contenu non-transparent (sharp.trim)
+// pour livrer un fichier "bord à bord" prêt pour l'impression. Pass ?raw=1 pour récupérer
+// l'original sans crop (utile debug ou si le trim coupe trop).
+router.get('/download/:design_id', attachShopId, async (req, res) => {
   const db = getDB();
   let design;
   try {
-    design = db.prepare('SELECT render_url FROM designs WHERE id=? AND shop_id=?').get(req.params.design_id, req.shopId);
+    design = db.prepare('SELECT id, name, render_url FROM designs WHERE id=? AND shop_id=?').get(req.params.design_id, req.shopId);
   } catch(e) {
     return res.status(404).json({ error: 'Design introuvable' });
   }
@@ -334,7 +337,33 @@ router.get('/download/:design_id', attachShopId, (req, res) => {
   if (!fs.existsSync(filepath)) {
     return res.status(404).json({ error: 'Fichier introuvable sur le disque' });
   }
-  res.download(filepath, path.basename(filepath));
+
+  // ── Mode raw : on renvoie le fichier brut (sans crop) ──────────────────
+  if (req.query.raw === '1') {
+    return res.download(filepath, path.basename(filepath));
+  }
+
+  // ── Mode défaut : crop bord à bord du visuel (impression) ──────────────
+  try {
+    const sharp = require('sharp');
+    // trim() : enlève les bords uniformes/transparents.
+    // threshold:0 = découpe au plus serré ; on garde 0 pour le PNG transparent.
+    // background : couleur de référence (transparent ici, défaut OK pour PNG RGBA).
+    const buffer = await sharp(filepath)
+      .trim({ threshold: 0 })
+      .png({ compressionLevel: 9 })
+      .toBuffer();
+    const safeName = (design.name || `design_${design.id}`).replace(/[^\w.-]+/g, '_');
+    const outName  = `${safeName}_print.png`;
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Content-Disposition', `attachment; filename="${outName}"`);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.send(buffer);
+  } catch (err) {
+    console.error('[render/download] sharp.trim failed, fallback raw:', err.message);
+    // Fallback : si le trim échoue (image vide, format non supporté…), on sert l'original.
+    return res.download(filepath, path.basename(filepath));
+  }
 });
 
 // ── GET /api/render/:design_id ──
