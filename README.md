@@ -2,6 +2,10 @@
 
 API REST Node.js 22 + Express + SQLite pour l'application Shopify de personnalisation textile.
 
+## Version
+
+`1.0.0`
+
 ## Démarrage rapide
 
 ```bash
