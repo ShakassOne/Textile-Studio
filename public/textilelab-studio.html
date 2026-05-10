@@ -2636,6 +2636,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="22" height="22"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
       <span>Calques</span>
     </button>
+    <button class="bnav-btn" onclick="openDrawer('product')" id="bnav-product">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="22" height="22"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+      <span>Produit</span>
+    </button>
     <button class="bnav-cart" onclick="openMobileCartMenu()">
       <svg style="width:28px;height:28px;fill:currentColor" id="Calque_2" data-name="Calque 2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 531.74 555.96">
   <g id="Calque_1-2" data-name="Calque 1">
@@ -2983,6 +2987,11 @@ const STATE = {
   // Générés automatiquement avant chaque switch de face — utilisés au checkout
   viewThumbs: {},
 };
+
+// Flag anti-boucle : vrai pendant un export propre (_canvasToCleanDataURL)
+// → bloque le callback after:render pour éviter une mise à jour 3D parasite
+// (et deux renders supplémentaires par export qui causaient la lenteur du studio)
+let _canvasExporting = false;
 
 const PRODUCTS = {
   tshirt:  { name: 'T-Shirt',    emoji: '👕', base: 19.90 },
@@ -3474,6 +3483,8 @@ function bindCanvasEvents() {
 
   let _reorderPending = false;
   canvas.on('after:render', () => {
+    // Bloquer pendant un export propre : évite la boucle render → 3D → render
+    if (_canvasExporting) return;
     // Mettre à jour la texture 3D si vue 3D active
     if (STATE.view === '3d') _update3DTexture();
   });
@@ -5431,13 +5442,19 @@ function openDrawer(name) {
   if (name === 'layers') updateLayerBar();
   if (name === 'image')  { _libCat = 'all'; setTimeout(_renderMobileLibGrid, 60); }
   if (name === 'cart') {
-    // Snapshot du canvas pour la préview
+    // Snapshot du canvas pour la préview — différé pour ne pas bloquer l'animation du drawer
     const preview = document.getElementById('drawer-cart-preview');
     if (preview && typeof canvas !== 'undefined') {
-      try {
-        const snap = _canvasToCleanDataURL({ keepMockup: true, format: 'png', multiplier: 0.5 });
-        preview.innerHTML = `<img src="${snap}" style="width:100%;height:100%;object-fit:contain">`;
-      } catch(e) {}
+      preview.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;opacity:.4;font-size:13px">Chargement…</div>`;
+      setTimeout(() => {
+        try {
+          const snap = _canvasToCleanDataURL({ keepMockup: true, format: 'png', multiplier: 0.5 });
+          preview.innerHTML = `<img src="${snap}" style="width:100%;height:100%;object-fit:contain">`;
+        } catch(e) {
+          preview.innerHTML = '';
+          console.warn('[preview cart]', e.message);
+        }
+      }, 80);
     }
     // Remplir nom + prix du produit sélectionné
     const prod = PRODUCTS[STATE.product];
@@ -8250,6 +8267,7 @@ function _canvasToCleanDataURL(opts = {}) {
     targetBg = null;
   }
   canvas.backgroundColor = targetBg;
+  _canvasExporting = true;   // bloquer after:render → 3D pendant l'export
   canvas.renderAll();
   let dataUrl;
   try {
@@ -8258,6 +8276,7 @@ function _canvasToCleanDataURL(opts = {}) {
     // Restaurer dans tous les cas (même si toDataURL throw)
     hidden.forEach(({ obj, prev }) => { obj.visible = prev; });
     canvas.backgroundColor = origBg;
+    _canvasExporting = false; // relâcher avant le render de restauration
     canvas.renderAll();
   }
   return dataUrl;

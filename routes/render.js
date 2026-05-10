@@ -38,6 +38,18 @@ const DATA_DIR    = process.env.DATA_DIR || path.join(__dirname, '..');
 const RENDERS_DIR = path.join(DATA_DIR, 'uploads', 'renders');
 fs.mkdirSync(RENDERS_DIR, { recursive: true });
 
+// ── Migration colonnes render (N4 fix) : exécutée une seule fois au démarrage ──
+// Évite les ALTER TABLE dans chaque handler (source de lenteur serveur)
+(function _migrateRenderColumns() {
+  try {
+    const db = getDB();
+    const cols = ['views_preview_json TEXT', 'render_url TEXT', 'render_size_kb INTEGER', 'preview_cdn_url TEXT'];
+    for (const col of cols) {
+      try { db.prepare(`ALTER TABLE designs ADD COLUMN ${col}`).run(); } catch { /* colonne déjà présente */ }
+    }
+  } catch(e) { console.warn('[render] migration colonnes:', e.message); }
+})();
+
 // ── GET /api/render ── liste tous les designs ayant un render HD (admin, scopé shop)
 router.get('/', requireAuth, attachShopId, (req, res) => {
   const db = getDB();
@@ -99,9 +111,6 @@ router.post('/save-views', attachShopId, renderRateLimiter, (req, res) => {
     }
   }
 
-  // Ajouter colonne si elle n'existe pas encore
-  try { db.prepare('ALTER TABLE designs ADD COLUMN views_preview_json TEXT').run(); } catch { /* ok */ }
-
   try {
     db.prepare('UPDATE designs SET views_preview_json=?, updated_at=datetime(\'now\') WHERE id=? AND shop_id=?')
       .run(JSON.stringify(result), design_id, req.shopId);
@@ -143,10 +152,6 @@ router.post('/save', attachShopId, renderRateLimiter, checkBodySize('png_base64'
 
     // ── Mise à jour DB avec l'URL Railway (disponible immédiatement) ─────
     const db = getDB();
-    try { db.prepare('ALTER TABLE designs ADD COLUMN render_url TEXT').run(); }      catch { /* ok */ }
-    try { db.prepare('ALTER TABLE designs ADD COLUMN render_size_kb INTEGER').run(); } catch { /* ok */ }
-    try { db.prepare('ALTER TABLE designs ADD COLUMN preview_cdn_url TEXT').run(); }  catch { /* ok */ }
-
     db.prepare('UPDATE designs SET render_url=?, render_size_kb=? WHERE id=? AND shop_id=?')
       .run(relUrl, sizeKb, design_id, req.shopId);
 
