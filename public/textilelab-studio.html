@@ -8212,12 +8212,16 @@ function _canvasToCleanDataURL(opts = {}) {
       o.visible = false;
     }
   });
-  canvas.renderAll();
+  const prevBackgroundColor = canvas.backgroundColor;
   let dataUrl;
   try {
+    // Force transparent export: avoid dark studio background leaking into PNG
+    canvas.backgroundColor = null;
+    canvas.renderAll();
     dataUrl = canvas.toDataURL({ format, multiplier, quality });
   } finally {
     // Restaurer dans tous les cas (même si toDataURL throw)
+    canvas.backgroundColor = prevBackgroundColor;
     hidden.forEach(({ obj, prev }) => { obj.visible = prev; });
     canvas.renderAll();
   }
