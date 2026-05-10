@@ -114,8 +114,9 @@
     '  display: block !important;',
     '}',
     '.tl-design-overlay > img {',
-    '  width: 140% !important;',
-    '  height: 140% !important;',
+    '  height: 100px !important;',
+    '  width: auto !important;',
+    '  max-width: 100px !important;',
     '  object-fit: contain !important;',
     '  display: block !important;',
     '  background: transparent !important;',
@@ -339,8 +340,9 @@
     ovImg.alt = '';
     ovImg.loading = 'eager';
     ovImg.style.cssText =
-      'width:100%;' +
-      'height:100%;' +
+      'height:100px;' +
+      'width:auto;' +
+      'max-width:100px;' +
       'object-fit:contain;' +
       'display:block;' +
       'background:transparent;';
