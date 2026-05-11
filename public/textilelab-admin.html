@@ -324,10 +324,10 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
         Produits & Mockups
       </div>
 
-      <div class="nav-section">Production</div>
-      <div class="nav-item" onclick="showView('orders')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>
-        Commandes
+      <div class="nav-section">Intelligence Artificielle</div>
+      <div class="nav-item" onclick="showView('ai-styles')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8 5.8 21.3l2.4-7.4L2 9.4h7.6z"/></svg>
+        Styles IA
       </div>
 
       <div class="nav-section">Système</div>
@@ -525,14 +525,20 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
       </div>
     </div>
 
-    <!-- ══ COMMANDES ══ -->
-    <div class="view" id="view-orders">
+    <!-- ══ AI STYLES ══ -->
+    <div class="view" id="view-ai-styles">
       <div class="page-header">
-        <div><div class="page-title">Commandes</div><div class="page-sub">Commandes Shopify avec designs à produire</div></div>
-        <button class="btn btn-sm" onclick="loadOrders()">↻ Actualiser</button>
+        <div><div class="page-title">Styles IA</div><div class="page-sub">Créer et gérer les styles visuels appliqués aux photos uploadées par les clients</div></div>
+        <div class="page-actions">
+          <button class="btn" onclick="loadAiStyles()">↻ Actualiser</button>
+          <button class="btn btn-primary" onclick="openAiStyleModal()">+ Nouveau style</button>
+        </div>
       </div>
       <div style="padding:24px">
-        <div id="orders-list"><div style="color:var(--text3);font-size:13px">Chargement…</div></div>
+        <div id="ai-styles-empty" style="display:none;color:var(--text3);font-size:13px;padding:32px;text-align:center;background:var(--bg3);border:1px dashed var(--border);border-radius:14px">
+          Aucun style configuré pour l'instant. Créez votre premier style ci-dessus.
+        </div>
+        <div id="ai-styles-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px"></div>
       </div>
     </div>
 
@@ -605,12 +611,58 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
   </div><!-- /content -->
 </div><!-- /shell -->
 
-<!-- ══ MODAL ORDER DETAIL ══ -->
-<div class="modal-overlay" id="order-modal" onclick="if(event.target===this)closeModal('order-modal')">
-  <div class="modal-box" style="width:min(600px,94vw)">
-    <div class="modal-header"><div class="modal-title" id="order-modal-title">Commande</div><button class="modal-close" onclick="closeModal('order-modal')">×</button></div>
-    <div class="modal-body" id="order-modal-body"></div>
-    <div class="modal-footer"><button class="btn" onclick="closeModal('order-modal')">Fermer</button></div>
+<!-- ══ MODAL AI STYLE EDITOR ══ -->
+<div class="modal-overlay" id="ai-style-modal" onclick="if(event.target===this)closeModal('ai-style-modal')">
+  <div class="modal-box" style="width:min(640px,94vw)">
+    <div class="modal-header">
+      <div class="modal-title" id="ai-style-modal-title">Nouveau style</div>
+      <button class="modal-close" onclick="closeModal('ai-style-modal')">×</button>
+    </div>
+    <div class="modal-body" style="display:flex;flex-direction:column;gap:14px">
+      <input type="hidden" id="ai-style-id" value="">
+      <input type="hidden" id="ai-style-builtin" value="0">
+
+      <div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:6px;font-weight:600">Nom du style</div>
+        <input type="text" id="ai-style-label" placeholder="Ex: Cyberpunk"
+          style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 14px;color:var(--text);font-size:13px;outline:none;box-sizing:border-box">
+      </div>
+
+      <div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:6px;font-weight:600">Identifiant (clé interne, lettres/chiffres/-)</div>
+        <input type="text" id="ai-style-code" placeholder="cyberpunk"
+          style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 14px;color:var(--text);font-size:13px;outline:none;font-family:'DM Mono',monospace;box-sizing:border-box">
+      </div>
+
+      <div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:6px;font-weight:600">Prompt envoyé à OpenAI</div>
+        <textarea id="ai-style-prompt" rows="4" placeholder="Transform this photo into…"
+          style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 14px;color:var(--text);font-size:13px;outline:none;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea>
+        <div style="font-size:10px;color:var(--text3);margin-top:4px">Conseil : terminer par <em>"transparent background, DTF print ready"</em> pour un rendu textile.</div>
+      </div>
+
+      <div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:6px;font-weight:600">Vignette (PNG/JPG, carré recommandé)</div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <img id="ai-style-image-preview" src="" alt=""
+            style="width:80px;height:80px;border-radius:10px;background:var(--bg3);border:1px solid var(--border);object-fit:cover;display:none">
+          <div style="flex:1">
+            <input type="file" id="ai-style-image-input" accept="image/*"
+              style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 14px;color:var(--text2);font-size:12px;outline:none;box-sizing:border-box">
+            <div id="ai-style-image-url" style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;margin-top:4px;word-break:break-all"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="ai-style-modal-feedback" style="font-size:12px;color:var(--text3);min-height:16px"></div>
+    </div>
+    <div class="modal-footer" style="display:flex;justify-content:space-between;align-items:center">
+      <button class="btn btn-danger btn-sm" id="ai-style-delete-btn" onclick="deleteAiStyle()" style="display:none">🗑 Supprimer</button>
+      <div style="display:flex;gap:8px;margin-left:auto">
+        <button class="btn" onclick="closeModal('ai-style-modal')">Annuler</button>
+        <button class="btn btn-primary" onclick="saveAiStyle()">💾 Enregistrer</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -789,7 +841,7 @@ function showView(name) {
   if (name === 'mockups')   loadMockupsView();
   if (name === 'library')   loadLibrary();
   if (name === 'pricing')   { loadProductLinks(); loadPricingEditor(); }
-  if (name === 'orders')    loadOrders();
+  if (name === 'ai-styles') loadAiStyles();
   if (name === 'settings')  loadSettingsInfo();
 }
 
@@ -2169,99 +2221,141 @@ function showToast(msg) {
 async function refreshAll() { await loadDashboard(); showToast('↻ Dashboard actualisé'); }
 
 // ============================================
-// COMMANDES — Shopify orders + PNG HD
+// STYLES IA — gestion des styles visuels (admin)
 // ============================================
-async function loadOrders() {
-  const container = document.getElementById('orders-list');
-  if (!container) return;
-  container.innerHTML = '<div style="color:var(--text3);font-size:13px">Chargement…</div>';
+let _aiStyles = [];
 
-  const orders = await api('/api/orders').catch(() => []) || [];
-  if (!orders.length) {
-    container.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:20px;text-align:center">Aucune commande pour l\'instant.<br><span style="font-size:11px;opacity:.6">Les commandes Shopify apparaissent ici dès que le webhook orders/paid est reçu.</span></div>';
+async function loadAiStyles() {
+  const list  = document.getElementById('ai-styles-list');
+  const empty = document.getElementById('ai-styles-empty');
+  if (!list) return;
+  list.innerHTML = '<div style="color:var(--text3);font-size:13px;grid-column:1/-1">Chargement…</div>';
+  empty.style.display = 'none';
+
+  const items = await api('/api/ai/styles').catch(() => []) || [];
+  _aiStyles = items;
+
+  if (!items.length) {
+    list.innerHTML = '';
+    empty.style.display = 'block';
     return;
   }
 
-  const STATUS_COLORS = { confirmed:'#4ade80', pending:'#facc15', cancelled:'#f87171', shipped:'#60a5fa' };
-  const STATUS_LABELS = { confirmed:'Confirmée', pending:'En attente', cancelled:'Annulée', shipped:'Expédiée' };
-
-  container.innerHTML = `
-    <table style="width:100%;border-collapse:collapse;font-size:13px">
-      <thead>
-        <tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text3);font-size:11px;font-family:'DM Mono',monospace">
-          <th style="padding:10px 12px">#</th>
-          <th style="padding:10px 12px">CLIENT</th>
-          <th style="padding:10px 12px">PRODUIT</th>
-          <th style="padding:10px 12px">STATUT</th>
-          <th style="padding:10px 12px">DATE</th>
-          <th style="padding:10px 12px">DESIGN / PNG HD</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${orders.map(o => {
-          const statusColor = STATUS_COLORS[o.status] || '#888';
-          const statusLabel = STATUS_LABELS[o.status] || o.status;
-          const date = o.created_at ? new Date(o.created_at).toLocaleDateString('fr-FR') : '—';
-
-          // Miniatures recto/verso depuis views_preview_json (stocké par save-views au checkout)
-          let thumbsHtml = '';
-          if (o.views_preview_json) {
-            try {
-              const vp = JSON.parse(o.views_preview_json);
-              const entries = Object.values(vp);
-              if (entries.length) {
-                thumbsHtml = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">` +
-                  entries.map(v => `
-                    <a href="${v.url}" target="_blank" title="Voir ${v.name}" style="display:inline-block">
-                      <img src="${v.url}" alt="${v.name}"
-                           style="width:52px;height:52px;object-fit:contain;border-radius:6px;border:1px solid var(--border);background:#f8f8f8">
-                      <div style="font-size:9px;text-align:center;color:var(--text3);margin-top:2px">${v.name}</div>
-                    </a>`).join('') +
-                `</div>`;
-              }
-            } catch {}
-          } else if (o.design_thumb) {
-            thumbsHtml = `<img src="${o.design_thumb}" style="width:48px;height:48px;object-fit:contain;border-radius:6px;border:1px solid var(--border);background:#f8f8f8;margin-bottom:4px">`;
-          }
-
-          const pngBtn = o.design_id
-            ? `<button class="btn btn-sm btn-primary" onclick="downloadOrderPng(${o.design_id})" title="Télécharger le PNG HD de ce design">📥 PNG HD</button>`
-            : '<span style="color:var(--text3);font-size:11px">pas de design</span>';
-
-          return `
-            <tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:10px 12px;color:var(--text3)">#${o.id}</td>
-              <td style="padding:10px 12px">
-                <div style="font-weight:600">${o.customer_name || '—'}</div>
-                <div style="font-size:11px;color:var(--text3)">${o.customer_email || ''}</div>
-              </td>
-              <td style="padding:10px 12px">
-                <div>${PRODUCT_NAMES[o.product]||o.product||'—'}</div>
-                <div style="font-size:11px;color:var(--text3)">${o.format||''} · qté ${o.quantity||1} · ${(o.total_price||0).toFixed(2)} €</div>
-              </td>
-              <td style="padding:10px 12px">
-                <span style="background:${statusColor}22;color:${statusColor};padding:3px 10px;border-radius:20px;font-size:11px;font-family:'DM Mono',monospace">${statusLabel}</span>
-              </td>
-              <td style="padding:10px 12px;color:var(--text3);font-size:12px">${date}</td>
-              <td style="padding:10px 12px">
-                ${thumbsHtml}
-                ${pngBtn}
-              </td>
-            </tr>`;
-        }).join('')}
-      </tbody>
-    </table>`;
+  list.innerHTML = items.map(s => {
+    const img = s.image_url
+      ? `<img src="${s.image_url}" alt="" style="width:100%;aspect-ratio:1;object-fit:cover;display:block">`
+      : `<div style="width:100%;aspect-ratio:1;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:11px;background:var(--bg3)">Sans visuel</div>`;
+    const badge = s.is_builtin
+      ? `<span style="position:absolute;top:8px;left:8px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;padding:2px 8px;border-radius:20px;font-family:'DM Mono',monospace">BUILT-IN</span>`
+      : `<span style="position:absolute;top:8px;left:8px;background:var(--amber);color:#000;font-size:10px;padding:2px 8px;border-radius:20px;font-family:'DM Mono',monospace;font-weight:700">CUSTOM</span>`;
+    return `
+      <div class="ai-style-card" style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;cursor:pointer;transition:transform .15s,border-color .15s"
+           onmouseover="this.style.borderColor='var(--amber)';this.style.transform='translateY(-2px)'"
+           onmouseout="this.style.borderColor='var(--border)';this.style.transform='translateY(0)'"
+           onclick="openAiStyleModal(${s.id})">
+        <div style="position:relative">${img}${badge}</div>
+        <div style="padding:12px 14px">
+          <div style="font-weight:700;font-size:13px;color:var(--text);font-family:'Syne',sans-serif">${escapeHtml(s.label)}</div>
+          <div style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;margin-top:2px">${escapeHtml(s.code)}</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:8px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escapeHtml(s.prompt || '')}</div>
+        </div>
+      </div>`;
+  }).join('');
 }
 
-async function downloadOrderPng(designId) {
-  // ?json=1 pour rester en JSON (la route par défaut fait une redirection 302 → image)
-  const info = await api(`/api/render/${designId}?json=1`).catch(() => null);
-  if (info?.render_url) {
-    // render_url est maintenant une URL absolue retournée par le backend
-    window.open(info.render_url, '_blank');
+function escapeHtml(str) {
+  return String(str || '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
+function openAiStyleModal(id) {
+  const isEdit  = !!id;
+  const style   = isEdit ? _aiStyles.find(s => s.id === id) : null;
+  const isBuiltin = style?.is_builtin ? 1 : 0;
+
+  document.getElementById('ai-style-modal-title').textContent =
+    isEdit ? (isBuiltin ? `Style intégré — ${style.label}` : `Modifier — ${style.label}`) : 'Nouveau style';
+  document.getElementById('ai-style-id').value       = id || '';
+  document.getElementById('ai-style-builtin').value  = isBuiltin;
+  document.getElementById('ai-style-label').value    = style?.label  || '';
+  document.getElementById('ai-style-code').value     = style?.code   || '';
+  document.getElementById('ai-style-prompt').value   = style?.prompt || '';
+  document.getElementById('ai-style-image-url').textContent = style?.image_url || '';
+  document.getElementById('ai-style-image-input').value = '';
+  document.getElementById('ai-style-modal-feedback').textContent = '';
+
+  const preview = document.getElementById('ai-style-image-preview');
+  if (style?.image_url) {
+    preview.src = style.image_url;
+    preview.style.display = 'block';
   } else {
-    showToast('⚠ Pas encore de PNG HD pour ce design. Le client doit avoir finalisé son design dans le studio.');
+    preview.src = '';
+    preview.style.display = 'none';
   }
+
+  // Le code interne d'un style built-in reste figé pour ne pas casser la compat
+  document.getElementById('ai-style-code').disabled = isBuiltin === 1;
+  // Bouton supprimer : visible uniquement pour les custom
+  document.getElementById('ai-style-delete-btn').style.display = (isEdit && !isBuiltin) ? 'inline-flex' : 'none';
+
+  document.getElementById('ai-style-modal').classList.add('open');
+}
+
+async function _readAiStyleImageAsBase64() {
+  const input = document.getElementById('ai-style-image-input');
+  const file = input.files?.[0];
+  if (!file) return null;
+  return await new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload  = () => resolve(fr.result);
+    fr.onerror = () => reject(fr.error);
+    fr.readAsDataURL(file);
+  });
+}
+
+async function saveAiStyle() {
+  const id       = document.getElementById('ai-style-id').value;
+  const label    = document.getElementById('ai-style-label').value.trim();
+  const code     = document.getElementById('ai-style-code').value.trim();
+  const prompt   = document.getElementById('ai-style-prompt').value.trim();
+  const feedback = document.getElementById('ai-style-modal-feedback');
+
+  if (!label)  return feedback.textContent = '⚠ Nom requis';
+  if (!code || !/^[a-z0-9][a-z0-9_-]*$/i.test(code)) return feedback.textContent = '⚠ Identifiant invalide (lettres/chiffres/-/_ seulement)';
+  if (!prompt) return feedback.textContent = '⚠ Prompt requis';
+
+  feedback.style.color = 'var(--text3)';
+  feedback.textContent = 'Enregistrement…';
+
+  let image_base64 = null;
+  try { image_base64 = await _readAiStyleImageAsBase64(); }
+  catch { feedback.textContent = '⚠ Lecture image impossible'; return; }
+
+  const body = { label, code, prompt };
+  if (image_base64) body.image_base64 = image_base64;
+
+  try {
+    const res = id
+      ? await api(`/api/ai/styles/${id}`, { method: 'PUT',  body: JSON.stringify(body) })
+      : await api('/api/ai/styles',       { method: 'POST', body: JSON.stringify(body) });
+    if (res?.error) { feedback.style.color = 'var(--danger)'; feedback.textContent = '⚠ ' + res.error; return; }
+    closeModal('ai-style-modal');
+    showToast(id ? '✓ Style mis à jour' : '✓ Style créé');
+    await loadAiStyles();
+  } catch (e) {
+    feedback.style.color = 'var(--danger)';
+    feedback.textContent = '⚠ ' + (e.message || 'Erreur');
+  }
+}
+
+async function deleteAiStyle() {
+  const id = document.getElementById('ai-style-id').value;
+  if (!id) return;
+  if (!confirm('Supprimer définitivement ce style ?')) return;
+  const res = await api(`/api/ai/styles/${id}`, { method: 'DELETE' });
+  if (res?.error) { showToast('⚠ ' + res.error); return; }
+  closeModal('ai-style-modal');
+  showToast('✓ Style supprimé');
+  await loadAiStyles();
 }
 
 // ============================================

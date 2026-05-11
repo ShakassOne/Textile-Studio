@@ -2,6 +2,8 @@
 const express   = require('express');
 const router    = express.Router();
 const rateLimit = require('express-rate-limit');
+const fs        = require('fs');
+const path      = require('path');
 const { requireAuth } = require('./auth');
 const { requireShopifySession, verifyJWT, setReauthHeaders } = require('./shopify-session');
 const { getDB, getShop } = require('../db/database');
@@ -76,7 +78,10 @@ function resolveOpenAIKey(shopId) {
   return getSetting(shopId, 'openai_api_key') || process.env.OPENAI_API_KEY || '';
 }
 
-const STYLE_PROMPTS = {
+// Fallback hardcodé conservé pour compatibilité descendante :
+// si pour une raison X la table ai_styles est vide / non seedée, on retombe
+// sur ces prompts pour ne pas casser /api/ai/transform.
+const STYLE_PROMPTS_FALLBACK = {
   cartoon:    'Transform this photo into a vibrant cartoon illustration, bold outlines, flat bright colors, expressive, transparent background, DTF print ready, no background',
   disney:     'Transform this photo into a Pixar 3D animated movie character, soft lighting, big expressive eyes, polished render, transparent background, DTF print ready',
   manga:      'Transform this photo into a Japanese manga/anime illustration, clean line art, cel shading, black and white with selective color accents, transparent background',
@@ -88,6 +93,42 @@ const STYLE_PROMPTS = {
   avatar:     'Transform this photo into a stylized avatar portrait, modern digital art, geometric simplification, vibrant gradient colors, transparent background, apparel print ready',
   lego:       'Transform this photo into a LEGO minifigure style character, blocky proportions, simple iconic face, plastic toy aesthetic, transparent background, DTF print ready',
 };
+
+// ── Helpers : résolution du prompt pour un style donné ──────────────────
+// Priorité DB (scopé shop) → fallback hardcodé → cartoon.
+function resolveStylePrompt(shopId, code) {
+  try {
+    const row = getDB()
+      .prepare('SELECT prompt FROM ai_styles WHERE shop_id=? AND code=?')
+      .get(shopId, code);
+    if (row?.prompt) return row.prompt;
+  } catch {}
+  return STYLE_PROMPTS_FALLBACK[code] || STYLE_PROMPTS_FALLBACK.cartoon;
+}
+
+// ── Stockage des images de vignettes (upload base64) ────────────────────
+const STYLE_UPLOADS_DIR = path.join(
+  process.env.DATA_DIR || path.join(__dirname, '..'),
+  'uploads',
+  'ai-styles'
+);
+fs.mkdirSync(STYLE_UPLOADS_DIR, { recursive: true });
+
+function saveStyleImageFromBase64(b64DataUrl) {
+  if (!b64DataUrl || typeof b64DataUrl !== 'string') return null;
+  const match = b64DataUrl.match(/^data:image\/(png|jpe?g|webp|gif|svg\+xml);base64,(.+)$/i);
+  if (!match) return null;
+  const ext = match[1].toLowerCase().replace('jpeg', 'jpg').replace('svg+xml', 'svg');
+  const buf = Buffer.from(match[2], 'base64');
+  if (buf.length > 5 * 1024 * 1024) throw new Error('Image trop volumineuse (max 5 MB)');
+  const filename = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  fs.writeFileSync(path.join(STYLE_UPLOADS_DIR, filename), buf);
+  return `/uploads/ai-styles/${filename}`;
+}
+
+function isValidCode(code) {
+  return typeof code === 'string' && /^[a-z0-9][a-z0-9_-]{0,40}$/i.test(code);
+}
 
 // ── GET  /api/ai/settings — Lire la config IA (admin, scopé shop) ───────────────
 router.get('/settings', requireAuth, attachShopId, (req, res) => {
@@ -168,7 +209,7 @@ router.post('/transform', requireAIContext, attachShopId, aiRateLimiter, async (
   const apiKey = resolveOpenAIKey(req.shopId);
   if (!apiKey) return res.status(500).json({ error: 'Clé OpenAI non configurée — rendez-vous dans Paramètres → IA' });
 
-  const prompt = STYLE_PROMPTS[style] || STYLE_PROMPTS.cartoon;
+  const prompt = resolveStylePrompt(req.shopId, style);
 
   try {
     // Extraire le buffer depuis base64
@@ -213,5 +254,131 @@ router.get('/status', attachShopId, (req, res) => {
 });
 
 router.post('/generate', async (_req, res) => { res.json({ ok: true }); });
+
+// ═══════════════════════════════════════════════════════════════════════
+// AI STYLES — CRUD pour la gestion des styles visuels (admin scopé shop)
+// ═══════════════════════════════════════════════════════════════════════
+
+// GET /api/ai/styles — Lister les styles du shop (admin)
+router.get('/styles', requireAuth, attachShopId, (req, res) => {
+  try {
+    const rows = getDB().prepare(
+      'SELECT id, code, label, prompt, image_url, is_builtin, sort_order, created_at, updated_at FROM ai_styles WHERE shop_id=? ORDER BY is_builtin DESC, sort_order ASC, id ASC'
+    ).all(req.shopId);
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/ai/styles/public — Lister pour le studio (storefront/embed)
+// Pas d'auth admin ; on accepte JWT App Bridge ou X-Shop-Domain comme /transform.
+router.get('/styles/public', requireAIContext, attachShopId, (req, res) => {
+  try {
+    const rows = getDB().prepare(
+      'SELECT code, label, image_url, is_builtin, sort_order FROM ai_styles WHERE shop_id=? ORDER BY is_builtin DESC, sort_order ASC, id ASC'
+    ).all(req.shopId);
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/ai/styles — Créer un nouveau style custom (admin)
+router.post('/styles', requireAuth, attachShopId, (req, res) => {
+  try {
+    const { code, label, prompt, image_base64 } = req.body || {};
+    if (!label || !label.trim()) return res.status(400).json({ error: 'Nom requis' });
+    if (!isValidCode(code))      return res.status(400).json({ error: 'Identifiant invalide' });
+    if (!prompt || !prompt.trim()) return res.status(400).json({ error: 'Prompt requis' });
+
+    const db = getDB();
+    const exists = db.prepare('SELECT id FROM ai_styles WHERE shop_id=? AND code=?').get(req.shopId, code);
+    if (exists) return res.status(409).json({ error: 'Identifiant déjà utilisé pour ce shop' });
+
+    let image_url = '';
+    if (image_base64) {
+      try { image_url = saveStyleImageFromBase64(image_base64) || ''; }
+      catch (e) { return res.status(400).json({ error: e.message }); }
+    }
+
+    // sort_order : à la fin des custom
+    const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order),0) as m FROM ai_styles WHERE shop_id=?').get(req.shopId).m;
+
+    const info = db.prepare(
+      'INSERT INTO ai_styles (shop_id, code, label, prompt, image_url, is_builtin, sort_order) VALUES (?, ?, ?, ?, ?, 0, ?)'
+    ).run(req.shopId, code.trim(), label.trim(), prompt.trim(), image_url, maxOrder + 1);
+
+    res.status(201).json({ id: info.lastInsertRowid, ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PUT /api/ai/styles/:id — Modifier un style (admin)
+// Pour les built-in : seul prompt + image + label modifiables, code figé.
+router.put('/styles/:id', requireAuth, attachShopId, (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'ID invalide' });
+
+    const db = getDB();
+    const row = db.prepare('SELECT * FROM ai_styles WHERE id=? AND shop_id=?').get(id, req.shopId);
+    if (!row) return res.status(404).json({ error: 'Style introuvable' });
+
+    const { code, label, prompt, image_base64 } = req.body || {};
+    const updates = [];
+    const params  = [];
+
+    if (label && label.trim()) { updates.push('label=?'); params.push(label.trim()); }
+
+    if (!row.is_builtin && code && isValidCode(code) && code !== row.code) {
+      const dup = db.prepare('SELECT id FROM ai_styles WHERE shop_id=? AND code=? AND id<>?').get(req.shopId, code, id);
+      if (dup) return res.status(409).json({ error: 'Identifiant déjà utilisé' });
+      updates.push('code=?'); params.push(code.trim());
+    }
+
+    if (prompt && prompt.trim()) { updates.push('prompt=?'); params.push(prompt.trim()); }
+
+    if (image_base64) {
+      let image_url;
+      try { image_url = saveStyleImageFromBase64(image_base64); }
+      catch (e) { return res.status(400).json({ error: e.message }); }
+      if (image_url) { updates.push('image_url=?'); params.push(image_url); }
+    }
+
+    if (!updates.length) return res.json({ ok: true, unchanged: true });
+
+    updates.push("updated_at=datetime('now')");
+    params.push(id, req.shopId);
+    db.prepare(`UPDATE ai_styles SET ${updates.join(', ')} WHERE id=? AND shop_id=?`).run(...params);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE /api/ai/styles/:id — Supprimer un style custom (admin)
+// Les styles built-in ne sont pas supprimables.
+router.delete('/styles/:id', requireAuth, attachShopId, (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'ID invalide' });
+    const db = getDB();
+    const row = db.prepare('SELECT is_builtin, image_url FROM ai_styles WHERE id=? AND shop_id=?').get(id, req.shopId);
+    if (!row) return res.status(404).json({ error: 'Style introuvable' });
+    if (row.is_builtin) return res.status(403).json({ error: 'Les styles intégrés ne peuvent pas être supprimés' });
+
+    db.prepare('DELETE FROM ai_styles WHERE id=? AND shop_id=?').run(id, req.shopId);
+
+    // Nettoyer le fichier image s'il existe et nous appartient
+    if (row.image_url && row.image_url.startsWith('/uploads/ai-styles/')) {
+      try { fs.unlinkSync(path.join(STYLE_UPLOADS_DIR, path.basename(row.image_url))); } catch {}
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 module.exports = router;

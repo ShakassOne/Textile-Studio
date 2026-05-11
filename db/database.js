@@ -227,6 +227,57 @@ function initDB() {
     )
   `);
 
+  // ── Table: ai_styles (styles visuels appliqués aux photos clients via OpenAI) ──
+  // Scopée par shop. Les styles "built-in" sont créés au démarrage pour chaque
+  // shop existant ; l'admin peut ajouter ses propres styles custom.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ai_styles (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      shop_id     INTEGER NOT NULL REFERENCES shops(id),
+      code        TEXT    NOT NULL,
+      label       TEXT    NOT NULL,
+      prompt      TEXT    NOT NULL DEFAULT '',
+      image_url   TEXT    NOT NULL DEFAULT '',
+      is_builtin  INTEGER NOT NULL DEFAULT 0,
+      sort_order  INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT    DEFAULT (datetime('now')),
+      updated_at  TEXT    DEFAULT (datetime('now')),
+      UNIQUE (shop_id, code)
+    )
+  `);
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_ai_styles_shop_id ON ai_styles(shop_id)"); } catch {}
+
+  // Seed des styles built-in pour tout shop actif qui n'en a pas encore.
+  // Idempotent : INSERT OR IGNORE sur (shop_id, code).
+  try {
+    const BUILTIN_STYLES = [
+      { code: 'disney',     label: 'Pixar',      image_url: '/assets/styles/style-disney.png',     prompt: 'Transform this photo into a Pixar 3D animated movie character, soft lighting, big expressive eyes, polished render, transparent background, DTF print ready', sort_order: 0 },
+      { code: 'manga',      label: 'Manga',      image_url: '/assets/styles/style-manga.png',      prompt: 'Transform this photo into a Japanese manga/anime illustration, clean line art, cel shading, black and white with selective color accents, transparent background', sort_order: 1 },
+      { code: 'sticker',    label: 'Sticker',    image_url: '/assets/styles/style-sticker.png',    prompt: 'Transform this photo into a cute kawaii sticker design, thick white outline, vibrant colors, glossy finish, transparent background, DTF print ready', sort_order: 2 },
+      { code: 'caricature', label: 'Caricature', image_url: '/assets/styles/style-caricature.png', prompt: 'Transform this photo into an exaggerated caricature, emphasize distinctive features humorously, expressive cartoon style, transparent background, DTF print ready', sort_order: 3 },
+      { code: 'lego',       label: 'Lego',       image_url: '/assets/styles/style-lego.png',       prompt: 'Transform this photo into a LEGO minifigure style character, blocky proportions, simple iconic face, plastic toy aesthetic, transparent background, DTF print ready', sort_order: 4 },
+      { code: 'cartoon',    label: 'Cartoon',    image_url: '/assets/styles/style-cartoon.png',    prompt: 'Transform this photo into a vibrant cartoon illustration, bold outlines, flat bright colors, expressive, transparent background, DTF print ready, no background', sort_order: 5 },
+      { code: 'sketch',     label: 'Sketch',     image_url: '/assets/styles/style-sketch.png',     prompt: 'Transform this photo into a detailed pencil sketch drawing, fine line work, cross-hatching, artistic black and white illustration, transparent background', sort_order: 6 },
+      { code: 'graffiti',   label: 'Graffiti',   image_url: '/assets/styles/style-graffiti.png',   prompt: 'Transform this photo into a bold street art graffiti illustration, spray paint texture, urban colors, thick outlines, stencil art, transparent background, DTF print ready', sort_order: 7 },
+      { code: 'simple',     label: 'Simple',     image_url: '/assets/styles/style-simple.png',     prompt: 'Transform this photo into a simple flat cartoon, minimal details, 4 colors max, clean bold shapes and outlines, transparent background, DTF print ready', sort_order: 8 },
+      { code: 'avatar',     label: 'Avatar',     image_url: '/assets/styles/style-avatar.png',     prompt: 'Transform this photo into a stylized avatar portrait, modern digital art, geometric simplification, vibrant gradient colors, transparent background, apparel print ready', sort_order: 9 },
+    ];
+    const allShops = db.prepare('SELECT id FROM shops WHERE is_active=1').all();
+    const insertStyle = db.prepare(
+      'INSERT OR IGNORE INTO ai_styles (shop_id, code, label, prompt, image_url, is_builtin, sort_order) VALUES (?, ?, ?, ?, ?, 1, ?)'
+    );
+    let seeded = 0;
+    for (const s of allShops) {
+      for (const st of BUILTIN_STYLES) {
+        const info = insertStyle.run(s.id, st.code, st.label, st.prompt, st.image_url, st.sort_order);
+        if (info.changes) seeded++;
+      }
+    }
+    if (seeded) console.log(`🎨  ai_styles : ${seeded} style(s) built-in seedé(s)`);
+  } catch (e) {
+    console.warn('⚠️  Seed ai_styles built-in échoué :', e.message);
+  }
+
   // ── Migration 001 : multi-tenant scoping (shop_id) ──────────────────────
   // Audit B1 (2026-04-19) : voir db/migrations/001_multi_tenant.js
   try {

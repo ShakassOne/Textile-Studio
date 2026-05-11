@@ -2442,29 +2442,10 @@
           </div>
         </div>
 
-        <!-- Styles 3 colonnes -->
+        <!-- Styles — peuplés dynamiquement par loadPhotoStyles() depuis /api/ai/styles/public -->
         <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Choisir un style</div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-bottom:14px" id="photo-styles-grid">
-          <button class="pstyle-btn active" data-style="disney" onclick="selectPhotoStyle('disney')">
-            <img src="/assets/styles/style-disney.png" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;display:block;pointer-events:none">
-            <span style="margin-top:4px">Pixar</span>
-          </button>
-          <button class="pstyle-btn" data-style="manga" onclick="selectPhotoStyle('manga')">
-            <img src="/assets/styles/style-manga.png" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;display:block;pointer-events:none">
-            <span style="margin-top:4px">Manga</span>
-          </button>
-          <button class="pstyle-btn" data-style="sticker" onclick="selectPhotoStyle('sticker')">
-            <img src="/assets/styles/style-sticker.png" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;display:block;pointer-events:none">
-            <span style="margin-top:4px">Sticker</span>
-          </button>
-          <button class="pstyle-btn" data-style="caricature" onclick="selectPhotoStyle('caricature')">
-            <img src="/assets/styles/style-caricature.png" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;display:block;pointer-events:none">
-            <span style="margin-top:4px">Caricature</span>
-          </button>
-          <button class="pstyle-btn" data-style="lego" onclick="selectPhotoStyle('lego')">
-            <img src="/assets/styles/style-lego.png" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;display:block;pointer-events:none">
-            <span style="margin-top:4px">Lego</span>
-          </button>
+          <div style="grid-column:1/-1;color:var(--text3);font-size:11px;text-align:center;padding:18px 0">Chargement des styles…</div>
         </div>
 
         <!-- CTA -->
@@ -5586,6 +5567,7 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === `tab-${tab}`));
   if (tab === 'layers') updateDesktopLayerPanel();
   if (tab === 'qr')   setTimeout(updateQRPreview, 50);
+  if (tab === 'photo') loadPhotoStyles();
   if (tab === 'text') {
     // Si un texte est sélectionné, synchroniser le panel et rafraîchir la preview
     const obj = canvas?.getActiveObject();
@@ -7016,6 +6998,45 @@ function selectPhotoStyle(style) {
   document.querySelectorAll('.pstyle-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.style === style);
   });
+}
+
+// Charger dynamiquement les styles (built-in + custom du shop) depuis le backend
+let _photoStylesLoaded = false;
+async function loadPhotoStyles(force) {
+  if (_photoStylesLoaded && !force) return;
+  const grid = document.getElementById('photo-styles-grid');
+  if (!grid) return;
+  try {
+    const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+      ? 'http://localhost:3001' : '';
+    const headers  = window._TL_SHOP ? { 'X-Shop-Domain': window._TL_SHOP } : {};
+    const res = await fetch(`${API_BASE}/api/ai/styles/public`, { headers });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const styles = await res.json();
+    if (!Array.isArray(styles) || !styles.length) {
+      grid.innerHTML = '<div style="grid-column:1/-1;color:var(--text3);font-size:11px;text-align:center;padding:18px 0">Aucun style configuré</div>';
+      return;
+    }
+    // Restaurer la sélection courante si elle existe encore, sinon premier style
+    const codes = styles.map(s => s.code);
+    if (!codes.includes(_photoStyle)) _photoStyle = codes[0];
+
+    grid.innerHTML = styles.map(s => {
+      const img = s.image_url
+        ? `<img src="${s.image_url}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;display:block;pointer-events:none">`
+        : `<div style="width:100%;aspect-ratio:1;border-radius:6px;background:var(--bg3);display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:18px">🎨</div>`;
+      const active = s.code === _photoStyle ? ' active' : '';
+      const label  = String(s.label || s.code).replace(/[<>&"]/g, c => ({ '<':'&lt;', '>':'&gt;', '&':'&amp;', '"':'&quot;' }[c]));
+      return `<button class="pstyle-btn${active}" data-style="${s.code}" onclick="selectPhotoStyle('${s.code}')">
+        ${img}
+        <span style="margin-top:4px">${label}</span>
+      </button>`;
+    }).join('');
+    _photoStylesLoaded = true;
+  } catch (e) {
+    console.warn('loadPhotoStyles:', e);
+    grid.innerHTML = '<div style="grid-column:1/-1;color:var(--text3);font-size:11px;text-align:center;padding:18px 0">Impossible de charger les styles</div>';
+  }
 }
 
 async function transformPhoto() {
