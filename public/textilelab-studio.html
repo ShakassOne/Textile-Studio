@@ -3983,13 +3983,23 @@ async function loadShopifyProductLinks() {
   try {
     const res = await fetch(`${window.location.origin}/api/product-links/public?shop=${encodeURIComponent(window._TL_SHOP)}`);
     const data = res.ok ? await res.json() : [];
-    SHOPIFY_PRODUCT_LINKS = (Array.isArray(data) ? data : []).map(r => ({
-      handle: r.shopify_product_handle || '',
-      title:  r.shopify_product_title || r.shopify_product_handle || 'Produit',
-      mockup_id: r.mockup_id,
-      mockup_product: r.mockup_product || '',
-      product_id: r.shopify_product_id || ''
-    }));
+    SHOPIFY_PRODUCT_LINKS = (Array.isArray(data) ? data : [])
+      .map(r => ({
+        handle: r.shopify_product_handle || '',
+        title:  r.shopify_product_title || r.shopify_product_handle || 'Produit',
+        mockup_id: r.mockup_id,
+        mockup_product: r.mockup_product || '',
+        product_id: r.shopify_product_id || ''
+      }))
+      // Filtrer les produits de démo Shopify ("Example product" / "example-product")
+      // qui polluent la liste sans correspondre à de vrais produits.
+      .filter(p => {
+        const t = (p.title || '').trim();
+        const h = (p.handle || '').toLowerCase();
+        if (/^example\s+product$/i.test(t)) return false;
+        if (h === 'example-product') return false;
+        return true;
+      });
 
     // Les liaisons arrivent en async: re-synchroniser le produit résolu
     // puis rafraîchir le panneau mockup/produit pour afficher la sélection.
@@ -4239,8 +4249,7 @@ function renderMobileProductsList() {
       { key:'totebag', label:'Tote Bag',  price:'14,90 €' },
     ];
     wrap.innerHTML = generics.map(p =>
-      `<button type="button" class="m-product-card"
-        onclick="selectProduct('${p.key}');closeDrawer()"
+      `<button type="button" class="m-product-card" data-tl-generic="${p.key}"
         style="display:flex;align-items:center;gap:12px;padding:12px 14px;
                background:var(--bg3);border:1.5px solid var(--border);
                border-radius:14px;cursor:pointer;text-align:left;color:var(--text);
@@ -4254,14 +4263,27 @@ function renderMobileProductsList() {
     return;
   }
 
-  // Mode Shopify : ordre par titre, dédupliqué par handle
+  // Mode Shopify : ordre par titre, dédupliqué par handle, ET on retire les
+  // titres parasites de démo ("Example product", "Example Product", etc.)
   const seen = new Set();
   const items = links.filter(l => {
     const key = l.handle || ('id:' + l.product_id);
     if (!key || seen.has(key)) return false;
+    const meta = l.handle ? (_shopifyProductMetaByHandle[l.handle] || {}) : {};
+    const title = (l.title || meta.title || '').trim();
+    // Filtre démo : "Example product" / "Example Product" / vide
+    if (!title) return false;
+    if (/^example\s+product$/i.test(title)) return false;
     seen.add(key);
     return true;
   });
+
+  if (!items.length) {
+    wrap.innerHTML = `<div style="color:var(--text3);font-size:12px;text-align:center;padding:24px 12px">
+      Aucun produit lié à un mockup. Configure les liaisons dans l'admin.
+    </div>`;
+    return;
+  }
 
   wrap.innerHTML = items.map((p) => {
     const ref = p.handle || ('id:' + p.product_id);
@@ -4276,27 +4298,54 @@ function renderMobileProductsList() {
       : (Number.isFinite(fallbackPrice) ? fallbackPrice : null);
     const price = (priceN != null) ? `${priceN.toFixed(2).replace('.', ',')} €` : '';
     const isActive = ref === _resolvedProductHandle;
-    const safeRef = String(ref).replace(/'/g, "\\'");
+    // Encodage HTML des attributs (apostrophe + guillemets) → robuste pour
+    // tous les caractères dans handle/title (apostrophes françaises etc.)
+    const enc = (s) => String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;');
     return `<button type="button" class="m-product-card${isActive ? ' active' : ''}"
-      onclick="_mobileSelectShopifyProduct('${safeRef}', ${JSON.stringify(p.mockup_id || '')}, ${JSON.stringify(p.mockup_product || '')})"
+      data-tl-shopify-ref="${enc(ref)}"
+      data-tl-mockup-id="${enc(p.mockup_id || '')}"
+      data-tl-mockup-product="${enc(p.mockup_product || '')}"
       style="display:flex;align-items:center;gap:12px;padding:10px 12px;
              background:var(--bg3);border:1.5px solid ${isActive ? 'var(--amber)' : 'var(--border)'};
              border-radius:14px;cursor:pointer;text-align:left;color:var(--text);
              font-family:'DM Sans',sans-serif;width:100%">
       <div style="width:64px;height:64px;flex-shrink:0;border-radius:8px;overflow:hidden;
                   background:#f5f5f5;display:flex;align-items:center;justify-content:center">
-        ${img ? `<img src="${img}" alt="" style="width:100%;height:100%;object-fit:cover">` :
+        ${img ? `<img src="${enc(img)}" alt="" style="width:100%;height:100%;object-fit:cover">` :
                 `<svg viewBox="0 0 32 32" fill="none" stroke="#bbb" stroke-width="1.6" width="32" height="32"><path d="M11 4 C11 4 10 7 8 7 L3 9.5 L6 15 L9 13.5 L9 27 L23 27 L23 13.5 L26 15 L29 9.5 L24 7 C22 7 21 4 21 4 C20 6 18.5 7 16 7 C13.5 7 12 6 11 4Z"/></svg>`}
       </div>
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:600;line-height:1.25;
-                    overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${title}</div>
-        ${sizes ? `<div style="font-size:11px;color:var(--text3);margin-top:2px">Tailles : ${sizes}</div>` : ''}
-        ${price ? `<div style="font-size:12px;color:var(--amber);font-family:'DM Mono',monospace;margin-top:3px">${price}</div>` : ''}
+                    overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${enc(title)}</div>
+        ${sizes ? `<div style="font-size:11px;color:var(--text3);margin-top:2px">Tailles : ${enc(sizes)}</div>` : ''}
+        ${price ? `<div style="font-size:12px;color:var(--amber);font-family:'DM Mono',monospace;margin-top:3px">${enc(price)}</div>` : ''}
       </div>
       <span style="color:var(--text3);font-size:18px;flex-shrink:0">›</span>
     </button>`;
   }).join('');
+
+  // Event delegation — clic sur les boutons (génériques OU Shopify).
+  // Une seule init suffit : on guard avec un dataset sur le container.
+  if (!wrap.dataset.tlClickInit) {
+    wrap.dataset.tlClickInit = '1';
+    wrap.addEventListener('click', function (e) {
+      const btn = e.target.closest('.m-product-card');
+      if (!btn) return;
+      const genKey = btn.dataset.tlGeneric;
+      if (genKey) {
+        selectProduct(genKey);
+        closeDrawer();
+        return;
+      }
+      const ref = btn.dataset.tlShopifyRef || '';
+      const mockupId = btn.dataset.tlMockupId || '';
+      const mockupProduct = btn.dataset.tlMockupProduct || '';
+      _mobileSelectShopifyProduct(ref, mockupId, mockupProduct);
+    });
+  }
 }
 
 // Au clic sur un produit Shopify dans le drawer mobile : sélectionner le bon
@@ -4321,7 +4370,7 @@ function _mobileSelectShopifyProduct(ref, mockupId, mockupProduct) {
   } else if (mockupProduct && STATE.product !== mockupProduct) {
     selectProduct(mockupProduct);
   }
-  chooseShopifyProductHandle(ref);
+  if (ref) chooseShopifyProductHandle(ref);
   closeDrawer();
 }
 
@@ -5194,10 +5243,13 @@ RULES:
       });
       const data = await response.json();
       if (data.error) throw new Error(data.error);
-      const imageUrl = data.url;
+      // Le backend renvoie `data.base64` (data URL PNG). On accepte aussi
+      // `data.url` pour la rétro-compat si on rebranche un jour une route
+      // qui retournerait une vraie URL HTTPS.
+      const imageUrl = data.base64 || data.url;
       if (!imageUrl) throw new Error('Pas d image retournée');
       addToAIGalleryImage(imageUrl);
-      showToast('✓ Image DALL-E générée !');
+      showToast('✓ Image IA générée !');
 
     } else {
       // ── Mode Claude SVG ──
@@ -6208,15 +6260,14 @@ async function _checkoutShopifyDirect() {
     '_faces':     String(viewsCount),
   };
 
-  // Lien "Voir mon design" — DEUX clés :
-  //  1. "Voir mon design" (visible Shopify natif → fallback sur checkout standard
-  //     si la Checkout UI Extension n'est pas déployée). Côté drawer panier,
-  //     tl-modal.js intercepte cette clé et la rend en bouton orange propre.
-  //  2. "_voir_mon_design" (masquée Shopify natif → utilisée par la Checkout UI
-  //     Extension TextileLab pour afficher image + bouton sur shop.app).
+  // Lien "Voir mon design" — propriété MASQUÉE uniquement (préfixe _) :
+  //   _voir_mon_design est invisible côté Shopify natif (checkout, email
+  //   confirmation, admin), donc plus d'URL brute affichée. Côté drawer
+  //   panier du thème storefront, tl-modal.js intercepte cette clé et la
+  //   transforme en bouton orange cliquable. L'extension Checkout UI a été
+  //   retirée du repo, donc on n'a plus de cas qui nécessite la clé visible.
   if (designId) {
     const _designUrl = `${APP_ORIGIN}/design-preview/${designId}`;
-    propsObj['Voir mon design'] = _designUrl;
     propsObj['_voir_mon_design'] = _designUrl;
   }
   // ── UID unique pour éviter la fusion des lignes dans le panier Shopify ──

@@ -150,12 +150,13 @@
     '  display: block !important;',
     '}',
     '.tl-design-overlay > img {',
-    '  height: 100px !important;',
+    '  height: 160px !important;',
     '  width: auto !important;',
-    '  max-width: 100px !important;',
+    '  max-width: 160px !important;',
     '  object-fit: contain !important;',
     '  display: block !important;',
     '  background: transparent !important;',
+    '  margin: auto !important;',
     '}',
   ].join('\n');
 
@@ -375,15 +376,17 @@
     ovImg.src = previewUrl;
     ovImg.alt = '';
     ovImg.loading = 'eager';
-    // Pas d'inline width/height : on laisse la CSS de classe gérer
-    // (width 100%, height 100%, object-fit contain) pour éviter les
-    // incohérences visuelles avec l'aspect-ratio appliqué au container.
+    // Taille fixée à 160×160 max (Alan a calé cette valeur via DevTools sur le
+    // drawer Studio). object-fit contain + margin auto centre l'image dans le
+    // container et préserve le ratio naturel du mockup.
     ovImg.style.cssText =
-      'width:100%;' +
-      'height:100%;' +
+      'height:160px;' +
+      'width:auto;' +
+      'max-width:160px;' +
       'object-fit:contain;' +
       'display:block;' +
-      'background:transparent;';
+      'background:transparent;' +
+      'margin:auto;';
 
     // Quand l'image mockup est chargée, on applique son aspect-ratio naturel
     // au container parent → le container suit le ratio du mockup au lieu d'être
