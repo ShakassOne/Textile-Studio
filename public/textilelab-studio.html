@@ -2366,28 +2366,6 @@
           </div>
         </div>
 
-        <div class="tool-section">
-          <div class="tool-section-title">Style graphique</div>
-          <div class="ai-styles-grid" id="ai-styles-grid">
-            <button class="ai-style-btn active" data-style="streetwear" onclick="selectAiStyle('streetwear')">
-              <span class="ai-style-icon">🏙</span>Streetwear
-            </button>
-            <button class="ai-style-btn" data-style="vintage" onclick="selectAiStyle('vintage')">
-              <span class="ai-style-icon">📻</span>Vintage
-            </button>
-            <button class="ai-style-btn" data-style="minimal" onclick="selectAiStyle('minimal')">
-              <span class="ai-style-icon">◻</span>Minimal
-            </button>
-
-            <button class="ai-style-btn" data-style="nature" onclick="selectAiStyle('nature')">
-              <span class="ai-style-icon">🌿</span>Nature
-            </button>
-            <button class="ai-style-btn" data-style="geometric" onclick="selectAiStyle('geometric')">
-              <span class="ai-style-icon">🔷</span>Géométrique
-            </button>
-          </div>
-        </div>
-
         <!-- DALL-E options (masquées par défaut) -->
         <div id="dalle-options" style="display:none">
           <div class="tool-section">
@@ -2403,9 +2381,13 @@
 
         <div class="tool-section">
           <div class="tool-section-title">Description</div>
-          <textarea class="input-field" id="ai-prompt" rows="3" placeholder="Ex: dragon stylisé avec flammes, noir et blanc..." style="resize:none"></textarea>
+          <textarea class="input-field" id="ai-prompt" rows="3" placeholder="Ex: dragon stylisé avec flammes en aquarelle, fond blanc..." style="resize:none"></textarea>
+          <div style="font-size:10px;color:var(--text3);margin-top:6px;line-height:1.4">
+            Décris librement ce que tu veux. Précise le style si tu en as un (cartoon, vintage, minimaliste, manga…) — sinon on te le demandera.
+          </div>
         </div>
         <button class="btn-primary" id="ai-generate-btn" onclick="generateAI()">✨ Générer le design</button>
+        <div id="ai-quota-info" style="font-size:11px;color:var(--text3);margin-top:8px;text-align:center"></div>
         <div class="ai-gallery" id="ai-gallery"></div>
       </div>
 
@@ -3997,23 +3979,32 @@ async function loadShopifyProductLinks() {
         l.handle === _initialHandle ||
         ('id:' + l.product_id) === _initialHandle
       );
-      if (_link && _link.mockup_id) {
-        const _mockupIdx = MOCKUPS_DATA.findIndex(m => String(m.id) === String(_link.mockup_id));
-        if (_mockupIdx >= 0) {
-          const _m = MOCKUPS_DATA[_mockupIdx];
-          // selectProduct met à jour STATE.product si différent
-          if (_m.product && STATE.product !== _m.product) {
-            STATE.product = _m.product;
-            document.querySelectorAll('[data-product]').forEach(el => {
-              el.classList.toggle('active', el.dataset.product === _m.product);
-            });
-            const stat = document.getElementById('stat-product');
-            if (stat && PRODUCTS[_m.product]) stat.textContent = PRODUCTS[_m.product].name;
+      if (_link) {
+        // Verrouiller le handle résolu sur le produit d'arrivée — évite que
+        // le panel "Produits disponibles" se ré-ouvre quand on change de
+        // face recto/verso. Le flag _productsPanelDismissed est déjà à true
+        // (posé dans init()), on le re-confirme ici.
+        _resolvedProductHandle = _link.handle || ('id:' + _link.product_id);
+        _productsPanelDismissed = true;
+
+        if (_link.mockup_id) {
+          const _mockupIdx = MOCKUPS_DATA.findIndex(m => String(m.id) === String(_link.mockup_id));
+          if (_mockupIdx >= 0) {
+            const _m = MOCKUPS_DATA[_mockupIdx];
+            // selectProduct met à jour STATE.product si différent
+            if (_m.product && STATE.product !== _m.product) {
+              STATE.product = _m.product;
+              document.querySelectorAll('[data-product]').forEach(el => {
+                el.classList.toggle('active', el.dataset.product === _m.product);
+              });
+              const stat = document.getElementById('stat-product');
+              if (stat && PRODUCTS[_m.product]) stat.textContent = PRODUCTS[_m.product].name;
+            }
+            // Recalculer l'index local dans le sous-tableau du produit
+            const _mForProduct = MOCKUPS_DATA.filter(m => m.product === _m.product);
+            const _miLocal = _mForProduct.findIndex(m => String(m.id) === String(_link.mockup_id));
+            applyMockup(_m.product || STATE.product, 0, Math.max(0, _miLocal));
           }
-          // Recalculer l'index local dans le sous-tableau du produit
-          const _mForProduct = MOCKUPS_DATA.filter(m => m.product === _m.product);
-          const _miLocal = _mForProduct.findIndex(m => String(m.id) === String(_link.mockup_id));
-          applyMockup(_m.product || STATE.product, 0, Math.max(0, _miLocal));
         }
       }
     }
@@ -4392,6 +4383,7 @@ async function loadLinksForActiveMockup() {
 function applyMockup(productKey, viewIdx, mockupIdx) {
   const allMockups = getMockupsForProduct(productKey);
   const changingProduct = productKey !== STATE.product;
+  const _prevMockupIdx = _STATE_mockupIdx;
 
   // ── ÉTAPE 1 : Sauvegarder les calques de la vue ACTUELLE (synchrone) ──
   if (changingProduct) {
@@ -4409,7 +4401,17 @@ function applyMockup(productKey, viewIdx, mockupIdx) {
   _syncResolvedProductHandle();
   // Le mockup vient de changer → relâcher le flag dismissal pour permettre
   // au panel "Produits disponibles" de s'afficher de nouveau si pertinent.
-  _productsPanelDismissed = false;
+  // EXCEPTION : un simple switch de vue (recto/verso = même produit + même
+  // mockupIdx) ne doit PAS ré-ouvrir le panel ; idem si un produit est déjà
+  // résolu et toujours valide pour le nouveau mockup → l'utilisateur l'a
+  // choisi ou est arrivé via une fiche produit Shopify, on respecte sa
+  // sélection. Le bouton ✕ + clic produit pose lui-même le flag à true.
+  const _isViewOnlySwitch = !changingProduct && (_STATE_mockupIdx === _prevMockupIdx);
+  const _validLinkedHandles = _getLinkedProductsForActiveMockup().map(p => p.handle || ('id:' + p.product_id));
+  const _resolvedStillValid = !!_resolvedProductHandle && _validLinkedHandles.includes(_resolvedProductHandle);
+  if (!_isViewOnlySwitch && !_resolvedStillValid) {
+    _productsPanelDismissed = false;
+  }
   loadLinksForActiveMockup();
 
   if (viewIdx !== undefined) {
@@ -5174,9 +5176,107 @@ function selectPaletteColor(hex) {
 // ============================================
 let currentAiStyle = 'streetwear';
 
+// ── Quota de générations IA (prompt libre) par session ─────────────────────
+// Limite déliquente côté client uniquement (anti-spam). On stocke le compteur
+// dans sessionStorage → reset à la fermeture de l'onglet, MAIS les créations
+// elles-mêmes restent dans localStorage pour réutilisation sans regénérer.
+const TL_AI_USER_GEN_LIMIT = 3;
+const TL_AI_USER_CAT       = '__user_ai__';
+const TL_AI_USER_CAT_LABEL = '✨ Mes créations IA';
+
+function _tlAiGenCount() {
+  try { return parseInt(sessionStorage.getItem('tl_ai_gen_count') || '0', 10) || 0; }
+  catch (_) { return 0; }
+}
+function _tlIncAiGenCount() {
+  try { sessionStorage.setItem('tl_ai_gen_count', String(_tlAiGenCount() + 1)); }
+  catch (_) {}
+}
+function _tlGetUserAiCreations() {
+  try {
+    const raw = localStorage.getItem('tl_user_ai_creations');
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch (_) { return []; }
+}
+function _tlAddUserAiCreation(url, prompt) {
+  if (!url) return;
+  try {
+    const list = _tlGetUserAiCreations();
+    // Cap localStorage à 30 créations (anti-overflow quota navigateur, ~5MB)
+    list.unshift({ url, prompt: (prompt || '').slice(0, 200), ts: Date.now() });
+    if (list.length > 30) list.length = 30;
+    localStorage.setItem('tl_user_ai_creations', JSON.stringify(list));
+  } catch (e) {
+    // Quota dépassé → drop la plus ancienne et réessaie
+    try {
+      const list = _tlGetUserAiCreations();
+      while (list.length > 5) list.pop();
+      list.unshift({ url, prompt: (prompt || '').slice(0, 200), ts: Date.now() });
+      localStorage.setItem('tl_user_ai_creations', JSON.stringify(list));
+    } catch (_) {}
+  }
+}
+function _tlUpdateAiQuotaUI() {
+  const left = Math.max(0, TL_AI_USER_GEN_LIMIT - _tlAiGenCount());
+  ['ai-quota-info', 'm-ai-quota-info'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (left > 0) {
+      el.textContent = `${left} génération${left > 1 ? 's' : ''} restante${left > 1 ? 's' : ''} dans cette session`;
+      el.style.color = 'var(--text3)';
+    } else {
+      el.textContent = `Quota atteint (${TL_AI_USER_GEN_LIMIT}/session) — réutilisez vos créations dans Images › ${TL_AI_USER_CAT_LABEL}`;
+      el.style.color = 'var(--amber)';
+    }
+  });
+}
+
 function selectAiStyle(style) {
   currentAiStyle = style;
   document.querySelectorAll('.ai-style-btn').forEach(b => b.classList.toggle('active', b.dataset.style === style));
+}
+
+// Détecte si le prompt utilisateur mentionne déjà un style/esthétique. Si oui
+// on génère directement ; sinon on lui propose d'en saisir un via popup (ou
+// continuer sans). Le but : éviter de coller un style hardcodé, l'utilisateur
+// décrit ce qu'il veut.
+function _tlHasStyleMention(s) {
+  if (!s) return false;
+  return /\b(style|esth[ée]tique|vibe|look|fa[çc]on|mani[èe]re|inspir[ée]|comme un[e]?|cartoon|manga|anime|chibi|disney|pixar|aquarelle|watercolor|r[ée]aliste|photoreal|minimal|minimaliste|vintage|r[ée]tro|streetwear|graffiti|sketch|crayonn[ée]|sticker|caricature|lego|3d|pixel\s?art|cyberpunk|gothique|n[ée]on|bd|bande\s?dessin[ée]e|comic|pop\s?art|surr[ée]aliste|fantasy|aquarelle|peinture|gravure|tatouage|tattoo|geometric|g[ée]om[ée]trique|tribal|kawaii|gothic|baroque)\b/i.test(s);
+}
+
+async function _tlAskStyleIfMissing(promptText) {
+  // Retourne le style à ajouter au prompt (chaîne vide si aucun).
+  if (_tlHasStyleMention(promptText)) return '';
+  return await new Promise((resolve) => {
+    // Modal léger injecté à la volée
+    const back = document.createElement('div');
+    back.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2147483646;display:flex;align-items:center;justify-content:center;padding:18px';
+    back.innerHTML = `
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:22px;width:100%;max-width:380px;box-shadow:0 12px 32px rgba(0,0,0,.4);font-family:'DM Sans',sans-serif;color:var(--text)">
+        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:17px;margin-bottom:6px">Quel style visuel ?</div>
+        <div style="font-size:12px;color:var(--text3);line-height:1.5;margin-bottom:14px">
+          Précise un style si tu en as un en tête (ex : cartoon, vintage, minimaliste, manga, aquarelle…). Sinon, l'IA choisira pour toi.
+        </div>
+        <input id="tl-ai-style-input" type="text" placeholder="Style facultatif"
+          style="width:100%;padding:10px 12px;border-radius:10px;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-size:14px;outline:none;margin-bottom:12px"/>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button type="button" id="tl-ai-style-skip"
+            style="padding:8px 14px;border-radius:10px;background:transparent;border:1px solid var(--border);color:var(--text2);font-size:12px;cursor:pointer">Sans style particulier</button>
+          <button type="button" id="tl-ai-style-ok"
+            style="padding:8px 14px;border-radius:10px;background:var(--amber);border:none;color:#0a0a0c;font-size:13px;font-weight:700;cursor:pointer">Générer</button>
+        </div>
+      </div>`;
+    document.body.appendChild(back);
+    const input = back.querySelector('#tl-ai-style-input');
+    setTimeout(() => { try { input.focus(); } catch (_) {} }, 30);
+    const finish = (val) => { try { document.body.removeChild(back); } catch (_) {} resolve(val); };
+    back.querySelector('#tl-ai-style-ok').addEventListener('click', () => finish((input.value || '').trim()));
+    back.querySelector('#tl-ai-style-skip').addEventListener('click', () => finish(''));
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') finish((input.value || '').trim()); });
+    back.addEventListener('click', (e) => { if (e.target === back) finish(''); });
+  });
 }
 
 async function generateAI() {
@@ -5184,76 +5284,54 @@ async function generateAI() {
   const promptEl = document.getElementById('m-ai-prompt') || document.getElementById('ai-prompt');
   const prompt = promptEl ? promptEl.value.trim() : '';
   if (!prompt) { showToast('Décrivez votre design d\'abord'); return; }
+
+  // ── Quota par session (anti-spam frontend) ────────────────────────────
+  if (_tlAiGenCount() >= TL_AI_USER_GEN_LIMIT) {
+    showToast(`✋ Limite de ${TL_AI_USER_GEN_LIMIT} générations atteinte. Réutilise tes créations via l'onglet Images.`);
+    _tlUpdateAiQuotaUI();
+    return;
+  }
+
+  // ── Si l'utilisateur n'a pas mentionné de style, popup pour en proposer un
+  const askedStyle = await _tlAskStyleIfMissing(prompt);
+
   const btn = document.getElementById('m-ai-generate-btn') || document.getElementById('ai-generate-btn');
   btn.innerHTML = '<span class="loading-spinner"></span> Génération...';
   btn.disabled = true;
 
-  const stylePrompts = {
-    streetwear: 'urban streetwear graphic, bold lines, high contrast',
-    vintage: 'vintage retro distressed style, aged texture, classic typography',
-    minimal: 'minimal clean SVG, simple geometric, negative space',
-    graffiti: 'graffiti street art style, bold outlines, dynamic',
-    nature: 'organic nature illustration, botanical, hand-drawn feel',
-    geometric: 'geometric abstract, sharp angles, mathematical patterns',
-  };
-
-  const systemPrompt = `You are an expert SVG designer for textile printing. Create clean, print-ready SVG graphics.
-RULES:
-- Return ONLY valid SVG code, nothing else
-- Use viewBox="0 0 400 400"
-- No background rectangle
-- Use only solid fills, no gradients unless essential
-- Max 3-4 colors for screen printing
-- Make it bold and impactful for t-shirt printing`;
-
-  const userPrompt = `Create a ${stylePrompts[currentAiStyle]} SVG design of: ${prompt}. Single color or 2-3 colors max. Bold graphic for t-shirt printing.`;
-
-  // Toujours passer par le backend DALL-E (appel Anthropic direct = CORS bloqué depuis navigateur)
-  const isDalle = true;
+  // Construire le prompt envoyé à GPT Image :
+  //  - description utilisateur en clair (le client a saisi ce qu'il voulait)
+  //  - style optionnel (saisi librement, ou rien si l'IA choisit)
+  //  - rappel des contraintes textile (fond blanc/transparent, print-ready)
+  const styleClause = askedStyle ? `, ${askedStyle} style` : '';
+  const finalPrompt = `T-shirt print design${styleClause}: ${prompt}. White background, transparent-ready, bold graphic, print-ready, no text unless explicitly requested.`;
 
   try {
-    if (isDalle) {
-      // ── Mode GPT Image — via backend proxy ──
-      const dalleSize = window._dalleSize || '1024x1024';
-      const dallePrompt = `T-shirt print design, ${stylePrompts[currentAiStyle]}, ${prompt}. White background, transparent-ready, bold graphic, print-ready, no text unless requested.`;
-      const _aiHdr = window._TL_SHOP ? { 'X-Shop-Domain': window._TL_SHOP } : {};
-      const response = await fetch('/api/ai/dalle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ..._aiHdr },
-        body: JSON.stringify({ prompt: dallePrompt, size: dalleSize }),
-      });
-      const data = await response.json();
-      if (data.error) throw new Error(data.error);
-      // Le backend renvoie `data.base64` (data URL PNG). On accepte aussi
-      // `data.url` pour la rétro-compat si on rebranche un jour une route
-      // qui retournerait une vraie URL HTTPS.
-      const imageUrl = data.base64 || data.url;
-      if (!imageUrl) throw new Error('Pas d image retournée');
-      addToAIGalleryImage(imageUrl);
-      showToast('✓ Image IA générée !');
+    // ── Mode GPT Image — via backend proxy ──
+    const dalleSize = window._dalleSize || '1024x1024';
+    const _aiHdr = window._TL_SHOP ? { 'X-Shop-Domain': window._TL_SHOP } : {};
+    const response = await fetch('/api/ai/dalle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ..._aiHdr },
+      body: JSON.stringify({ prompt: finalPrompt, size: dalleSize }),
+    });
+    const data = await response.json();
+    if (data.error) throw new Error(data.error);
+    // Le backend renvoie `data.base64` (data URL PNG). On accepte aussi
+    // `data.url` pour la rétro-compat si on rebranche un jour une route
+    // qui retournerait une vraie URL HTTPS.
+    const imageUrl = data.base64 || data.url;
+    if (!imageUrl) throw new Error('Pas d image retournée');
+    addToAIGalleryImage(imageUrl);
 
-    } else {
-      // ── Mode Claude SVG ──
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: userPrompt }],
-        })
-      });
-      const data = await response.json();
-      const svgText = data.content?.map(c => c.text || '').join('');
-      const svgMatch = svgText.match(/<svg[\s\S]*?<\/svg>/i);
-      if (svgMatch) {
-        addToAIGallery(svgMatch[0]);
-        showToast('Design SVG généré ✓');
-      } else {
-        showToast('Erreur: réessayez');
-      }
-    }
+    // Persister dans "Mes créations IA" + incrémenter le compteur session
+    _tlAddUserAiCreation(imageUrl, prompt + (askedStyle ? ' — ' + askedStyle : ''));
+    _tlIncAiGenCount();
+    _tlUpdateAiQuotaUI();
+    // Rafraîchir la bibliothèque pour faire apparaître la nouvelle création
+    try { loadLibrary(); } catch (_) {}
+
+    showToast('✓ Image IA générée !');
   } catch (e) {
     console.error('AI error:', e);
     // PAS de SVG démo en fallback : l'utilisateur croyait que c'était son design.
@@ -5568,6 +5646,7 @@ function switchTab(tab) {
   if (tab === 'layers') updateDesktopLayerPanel();
   if (tab === 'qr')   setTimeout(updateQRPreview, 50);
   if (tab === 'photo') loadPhotoStyles();
+  if (tab === 'ai') { try { _tlUpdateAiQuotaUI(); } catch (_) {} }
   if (tab === 'text') {
     // Si un texte est sélectionné, synchroniser le panel et rafraîchir la preview
     const obj = canvas?.getActiveObject();
@@ -5818,6 +5897,7 @@ function switchMobileToolTab(tab) {
   // m-ai-gallery (cloné vide). Sans ça, l'utilisateur perd la liste de ses
   // générations à chaque réouverture du drawer.
   if (tab === 'ai') {
+    setTimeout(() => { try { _tlUpdateAiQuotaUI(); } catch (_) {} }, 30);
     setTimeout(() => {
       const gal = document.getElementById('m-ai-gallery');
       if (!gal) return;
@@ -5903,11 +5983,17 @@ function _renderMobileLibGrid(cat) {
         const div = document.createElement('div');
         div.className = 'lib-thumb';
         const img = document.createElement('img');
-        img.src     = API_BASE + (item.thumb_url || item.url);
+        const isUserAi = !!item.__isUserAi;
+        const thumbSrc = item.thumb_url || item.url;
+        const fullSrc  = item.url;
+        img.src     = isUserAi ? thumbSrc : (API_BASE + thumbSrc);
         img.alt     = item.filename || '';
         img.loading = 'lazy';
         div.appendChild(img);
-        div.addEventListener('click', () => addLibraryImageToCanvas(API_BASE + item.url, item.filename));
+        div.addEventListener('click', () => {
+          const src = isUserAi ? fullSrc : (API_BASE + fullSrc);
+          addLibraryImageToCanvas(src, item.filename);
+        });
         grid.appendChild(div);
       });
     }
@@ -5918,8 +6004,9 @@ function _renderMobileLibGrid(cat) {
   if (chipsContainer && _libraryItems.length) {
     // Collecter les catégories uniques dans l'ordre d'apparition
     const cats = [...new Set(_libraryItems.map(i => i.category).filter(Boolean))];
+    const catLabel = (c) => c === TL_AI_USER_CAT ? TL_AI_USER_CAT_LABEL : c;
     chipsContainer.innerHTML = cats.map(c =>
-      `<button class="lib-cat-btn${c === activeCat ? ' active' : ''}" data-cat="${c.replace(/"/g,'&quot;')}">${c.replace(/</g,'&lt;')}</button>`
+      `<button class="lib-cat-btn${c === activeCat ? ' active' : ''}" data-cat="${c.replace(/"/g,'&quot;')}">${catLabel(c).replace(/</g,'&lt;')}</button>`
     ).join('') +
     `<button class="lib-cat-btn${activeCat === 'all' ? ' active' : ''}" data-cat="all">Tout</button>`;
     // Event delegation pour éviter les problèmes d'apostrophe dans les noms de catégorie
@@ -7584,12 +7671,28 @@ function init() {
   setTimeout(_initDrawerCloseTap, 1000);
   setTimeout(_initPinchToScale, 1500);
   loadMockupsFromBackoffice().then(() => {
-    // ── Params URL : ?shop=, ?product=, ?mockup= (depuis fiche produit Shopify)
+    // ── Params URL : ?shop=, ?product=, ?product_id=, ?mockup= (depuis fiche produit Shopify)
     const _up = new URLSearchParams(window.location.search);
     window._TL_SHOP           = _up.get('shop')    || '';
     window._TL_PRODUCT_HANDLE = _up.get('product') || '';
+    // tl-modal.js peut passer ?product_id=<numeric_id> au lieu de ?product=<handle>
+    // (cf. buildStudioUrl) — on normalise en "id:<id>" pour matcher la convention
+    // utilisée dans SHOPIFY_PRODUCT_LINKS / _resolvedProductHandle.
+    if (!window._TL_PRODUCT_HANDLE) {
+      const _urlProductId = _up.get('product_id') || '';
+      if (_urlProductId) window._TL_PRODUCT_HANDLE = 'id:' + _urlProductId;
+    }
     const _urlMockupId = _up.get('mockup');
     _resolvedProductHandle = window._TL_PRODUCT_HANDLE || '';
+    // Si l'utilisateur arrive depuis une fiche produit Shopify (handle ou
+    // product_id en URL), on considère le produit déjà sélectionné → le panel
+    // "Produits disponibles" ne doit pas s'auto-ouvrir, ni au load, ni quand
+    // l'utilisateur change de face recto/verso. Le résolveur de mockup
+    // (loadShopifyProductLinks) confirmera la validité une fois les liaisons
+    // chargées en arrière-plan.
+    if (window._TL_PRODUCT_HANDLE) {
+      _productsPanelDismissed = true;
+    }
 
     // ── Mode iframe (tl-modal.js) — afficher le bouton Fermer ──────────────
     if (window.self !== window.top) {
@@ -7634,6 +7737,7 @@ function init() {
   initPalette();
   updateQRPreview();
   updatePrice();
+  try { _tlUpdateAiQuotaUI(); } catch (_) {}
   // Charger d'abord les catégories (peuple PRODUCTS avec les nouvelles clés),
   // puis les prix (sinon les nouvelles catégories sont ignorées par loadPricingFromAPI)
   loadProductCategories().then(() => loadPricingFromAPI());
@@ -8049,25 +8153,52 @@ async function loadLibrary() {
     if (status) status.textContent = 'API hors-ligne';
   }
 
+  // ── Merger les créations IA locales (catégorie virtuelle "__user_ai__") ───
+  // Stockées en localStorage par generateAI(), elles sont disponibles sans
+  // ré-appel API. Pseudo-items au format {url, thumb_url, category, filename}
+  // pour rester compatibles avec renderLibraryGrid().
+  const userAiItems = _tlGetUserAiCreations().map((it, idx) => ({
+    id: '__user_ai_' + idx,
+    url: it.url,             // dataURL ou URL absolue → utilisée telle quelle
+    thumb_url: it.url,
+    category: TL_AI_USER_CAT,
+    filename: (it.prompt || 'IA').slice(0, 60),
+    __isUserAi: true,        // marker pour skip API_BASE dans renderLibraryGrid
+  }));
+  _libraryItems = _libraryItems.concat(userAiItems);
+
   // Construire les boutons de filtre dynamiquement
-  if (cats && cats.length) {
+  const allCats = Array.isArray(cats) ? cats.slice() : [];
+  // Ajouter la catégorie virtuelle "Mes créations IA" si l'utilisateur a déjà
+  // généré au moins une image dans cette session ou les précédentes.
+  if (userAiItems.length && !allCats.includes(TL_AI_USER_CAT)) {
+    allCats.unshift(TL_AI_USER_CAT);
+  }
+
+  if (allCats.length) {
     const container = document.getElementById('lib-cats');
     if (container) {
       const labels = {
         logos: 'Logos', illustrations: 'Illustrations', patterns: 'Patterns',
-        textes: 'Textes', divers: 'Divers', 'GPT Image': '✨ GPT Image'
+        textes: 'Textes', divers: 'Divers', 'GPT Image': '✨ GPT Image',
+        [TL_AI_USER_CAT]: TL_AI_USER_CAT_LABEL,
       };
       const dalleStyle = `style="background:rgba(245,158,11,.08);border-color:rgba(245,158,11,.3);color:var(--amber)"`;
       // Première catégorie réelle comme défaut, "Tout" en dernier
-      const firstCat = cats[0] || 'all';
-      _libCat = firstCat;
+      const firstCat = allCats[0] || 'all';
+      // Si l'utilisateur n'a pas encore choisi, on garde sa sélection précédente
+      if (!_libCat || !allCats.includes(_libCat)) _libCat = firstCat;
       // Utiliser des data-cat + event delegation pour éviter les problèmes d'échappement
-      container.innerHTML = cats.map(cat => `
-        <button class="lib-cat-btn ${cat === firstCat ? 'active' : ''}" data-cat="${cat.replace(/"/g,'&quot;')}"
-          ${cat === 'GPT Image' ? dalleStyle : ''}>
-          ${(labels[cat] || cat).replace(/</g,'&lt;')}
-        </button>`).join('') +
-        '<button class="lib-cat-btn" data-cat="all">Tout</button>';
+      container.innerHTML = allCats.map(cat => {
+        const isUserAi = cat === TL_AI_USER_CAT;
+        const styleAttr = (cat === 'GPT Image' || isUserAi) ? dalleStyle : '';
+        return `
+          <button class="lib-cat-btn ${cat === _libCat ? 'active' : ''}" data-cat="${cat.replace(/"/g,'&quot;')}"
+            ${styleAttr}>
+            ${(labels[cat] || cat).replace(/</g,'&lt;')}
+          </button>`;
+      }).join('') +
+        '<button class="lib-cat-btn' + (_libCat === 'all' ? ' active' : '') + '" data-cat="all">Tout</button>';
       // Event delegation — plus robuste que les onclick inline
       container.onclick = e => {
         const btn = e.target.closest('.lib-cat-btn');
@@ -8105,12 +8236,19 @@ function renderLibraryGrid(cat) {
     const div = document.createElement('div');
     div.className = 'lib-thumb';
     const img = document.createElement('img');
-    // Toujours utiliser thumb_url si disponible (évite charger les PNG lourds)
-    img.src     = API_BASE + (item.thumb_url || item.url);
+    // Créations utilisateur IA : URL absolue/dataURL → ne pas préfixer API_BASE.
+    // Bibliothèque admin : URL relative au backend → préfixer.
+    const isUserAi = !!item.__isUserAi;
+    const thumbSrc = item.thumb_url || item.url;
+    const fullSrc  = item.url;
+    img.src     = isUserAi ? thumbSrc : (API_BASE + thumbSrc);
     img.alt     = item.filename || '';
     img.loading = 'lazy';
     div.appendChild(img);
-    div.addEventListener('click', () => addLibraryImageToCanvas(API_BASE + item.url, item.filename));
+    div.addEventListener('click', () => {
+      const src = isUserAi ? fullSrc : (API_BASE + fullSrc);
+      addLibraryImageToCanvas(src, item.filename);
+    });
     grid.appendChild(div);
   });
 }

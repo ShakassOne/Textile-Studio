@@ -2248,12 +2248,23 @@ async function loadAiStyles() {
     const badge = s.is_builtin
       ? `<span style="position:absolute;top:8px;left:8px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;padding:2px 8px;border-radius:20px;font-family:'DM Mono',monospace">BUILT-IN</span>`
       : `<span style="position:absolute;top:8px;left:8px;background:var(--amber);color:#000;font-size:10px;padding:2px 8px;border-radius:20px;font-family:'DM Mono',monospace;font-weight:700">CUSTOM</span>`;
+    // Bouton "Supprimer" direct sur la carte : visible UNIQUEMENT pour les
+    // styles custom (le backend refuse les DELETE sur les built-in).
+    // Le bouton s'arrête lui-même la propagation pour ne pas ouvrir la modale.
+    const deleteBtn = !s.is_builtin
+      ? `<button type="button"
+           onclick="event.stopPropagation(); deleteAiStyleDirect(${s.id}, '${escapeHtml(s.label).replace(/'/g, "\\'")}')"
+           title="Supprimer ce style"
+           style="position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,.65);color:#fff;border:none;font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s"
+           onmouseover="this.style.background='var(--danger,#ef4444)'"
+           onmouseout="this.style.background='rgba(0,0,0,.65)'">🗑</button>`
+      : '';
     return `
       <div class="ai-style-card" style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;cursor:pointer;transition:transform .15s,border-color .15s"
            onmouseover="this.style.borderColor='var(--amber)';this.style.transform='translateY(-2px)'"
            onmouseout="this.style.borderColor='var(--border)';this.style.transform='translateY(0)'"
            onclick="openAiStyleModal(${s.id})">
-        <div style="position:relative">${img}${badge}</div>
+        <div style="position:relative">${img}${badge}${deleteBtn}</div>
         <div style="padding:12px 14px">
           <div style="font-weight:700;font-size:13px;color:var(--text);font-family:'Syne',sans-serif">${escapeHtml(s.label)}</div>
           <div style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;margin-top:2px">${escapeHtml(s.code)}</div>
@@ -2261,6 +2272,17 @@ async function loadAiStyles() {
         </div>
       </div>`;
   }).join('');
+}
+
+// Suppression rapide directement depuis la carte (sans passer par la modale).
+// Utilisée par le bouton 🗑 affiché sur les styles CUSTOM uniquement.
+async function deleteAiStyleDirect(id, label) {
+  if (!id) return;
+  if (!confirm(`Supprimer définitivement le style « ${label} » ?`)) return;
+  const res = await api(`/api/ai/styles/${id}`, { method: 'DELETE' });
+  if (res?.error) { showToast('⚠ ' + res.error); return; }
+  showToast('✓ Style supprimé');
+  await loadAiStyles();
 }
 
 function escapeHtml(str) {
