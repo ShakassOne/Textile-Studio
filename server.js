@@ -399,22 +399,15 @@ app.get('/api/stats', requireAuth, attachShopId, (req, res) => {
 // ── Health ─────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => res.json({ ok: true, version: '1.0.0', ts: new Date().toISOString() }));
 
-// ── Webhooks GDPR obligatoires (Shopify App Store) ──────────────────────────
-
-app.post('/webhooks/customers/data_request', (req, res) => {
-  // Textile Studio Lab ne stocke aucune donnée client
-  res.sendStatus(200);
-});
-
-app.post('/webhooks/customers/redact', (req, res) => {
-  // Aucune donnée à supprimer
-  res.sendStatus(200);
-});
-
-app.post('/webhooks/shop/redact', (req, res) => {
-  // Aucune donnée boutique à supprimer
-  res.sendStatus(200);
-});
+// ── Webhooks GDPR ───────────────────────────────────────────────────────────
+// Audit M1 — les 3 webhooks GDPR doublons ont été supprimés ici.
+// Les vraies routes sont dans routes/shopify.js (/shopify/gdpr/*) avec :
+//   - vérification HMAC base64 timing-safe
+//   - raw body parsing
+//   - traitement effectif (la table orders stocke customer_name/email, donc
+//     répondre 200 aveuglément serait faux côté GDPR).
+// Mettre à jour les URLs GDPR dans Partners Dashboard et shopify.app.toml
+// pour qu'elles pointent sur /shopify/gdpr/* exclusivement.
 
 // ── Start ──────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
