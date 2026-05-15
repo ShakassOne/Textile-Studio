@@ -91,12 +91,16 @@
 
   // ── App Bridge 4 : shopify est deja initialise par le CDN via la meta tag ──
   // Pas de createApp() — on appelle directement shopify.idToken()
+  // Audit M3 — on ne stocke PLUS le token JWT (TTL ~60 s) en sessionStorage :
+  // chaque appel API coté admin.html doit redemander un token frais via
+  // shopify.idToken() (cf. window.getShopifyIdToken dans textilelab-admin.html).
   async function bootstrap() {
     try {
       // idToken() = JWT signe par Shopify, valide ~1 min (remplace getSessionToken)
       const token = await shopify.idToken();
 
-      sessionStorage.setItem('shopify_session_token', token);
+      // On garde uniquement les identifiants de contexte (shop/host),
+      // pas le JWT lui-meme.
       sessionStorage.setItem('shopify_shop', shop);
       sessionStorage.setItem('shopify_host', host);
 

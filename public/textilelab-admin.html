@@ -786,6 +786,44 @@ let dragging=false, resizing=false, dragOff={x:0,y:0}, resizeDir='', zoneRafId=n
 // ============================================
 // AUTH
 // ============================================
+// ── Audit M3 — App Bridge en mode embed Shopify ────────────────────────
+// Quand admin.html est ouvert dans l'iframe Shopify (?shop=xxx&host=xxx),
+// on charge App Bridge 4 et on expose window.getShopifyIdToken() pour que
+// le client puisse demander un JWT Shopify FRAIS (TTL ~60s) à chaque appel
+// au lieu de lire un token périmé en sessionStorage.
+// Hors embed, le helper retourne null (no-op) et l'auth admin TextileLab
+// classique (tl_admin_token) prend le relais.
+(function setupShopifyEmbed() {
+  const params = new URLSearchParams(location.search);
+  const shop = params.get('shop');
+  const host = params.get('host');
+  if (!shop || !host) {
+    window.getShopifyIdToken = async () => null;
+    return;
+  }
+  // Meta tag requis par App Bridge 4 (auto-init via CDN)
+  if (!document.getElementById('shopify-api-key')) {
+    const meta = document.createElement('meta');
+    meta.id = 'shopify-api-key';
+    meta.name = 'shopify-api-key';
+    meta.content = '9f77ba5672b593f4e6a5d32d2093e460';
+    document.head.appendChild(meta);
+  }
+  if (!document.querySelector('script[data-shopify-app-bridge]')) {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.shopify.com/shopifycloud/app-bridge.js';
+    s.async = true;
+    s.setAttribute('data-shopify-app-bridge', '1');
+    document.head.appendChild(s);
+  }
+  // Helper : retourne un JWT Shopify frais à chaque appel.
+  // Ne JAMAIS mettre en cache : le token expire en ~60s.
+  window.getShopifyIdToken = async () => {
+    if (typeof window.shopify === 'undefined' || !window.shopify.idToken) return null;
+    try { return await window.shopify.idToken(); }
+    catch (e) { console.warn('shopify.idToken() failed:', e.message); return null; }
+  };
+})();
 // Token partagé entre tous les onglets (localStorage)
 // Fallback sessionStorage pour compatibilité ancienne version
 const token = localStorage.getItem('tl_admin_token') || sessionStorage.getItem('tl_admin_token');
