@@ -43,6 +43,9 @@ app.use((req, res, next) => {
   next();
 });
 
+// Audit M2 — match strict sur le hostname pour éviter
+//   « evil.shopify.com.attacker.com » qui passait avec `.includes('.shopify.com')`.
+const SHOPIFY_ORIGIN_REGEX = /\.(myshopify\.com|shopify\.com)$/;
 app.use(cors({
   origin: (origin, cb) => {
     // Autoriser les requêtes sans origin (curl, Postman, server-to-server)
@@ -50,15 +53,21 @@ app.use(cors({
     // En développement, autoriser localhost
     if (process.env.NODE_ENV !== 'production') return cb(null, true);
     // Toujours autoriser les boutiques Shopify (storefront → notre API)
-    if (origin.endsWith('.myshopify.com') || origin.includes('.shopify.com')) return cb(null, true);
+    try {
+      const host = new URL(origin).hostname;
+      if (SHOPIFY_ORIGIN_REGEX.test(host)) return cb(null, true);
+    } catch (_) { /* origin malformée → on ignore et on tombe sur la whitelist */ }
     // Whitelist configurée dans ALLOWED_ORIGIN
     if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
     cb(new Error(`CORS: origine non autorisée — ${origin}`));
   },
   credentials: true,
 }));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// Audit M4 — limite globale 1 Mo pour les routes JSON classiques.
+// Les routes qui ont besoin de plus (PNG base64 render/mockup-gen) ont leur
+// propre middleware express.json({ limit: '10mb' }) monté en amont du router.
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use('/uploads', express.static(UPLOADS_DIR));
 // Servir les fichiers PWA et pages HTML depuis la racine du backend
 // Les fichiers HTML ne sont JAMAIS mis en cache (toujours servis frais)
@@ -135,10 +144,13 @@ try {
   console.warn('⚠️  Migration M5 (chiffrement secrets) skip :', err.message);
 }
 
-// ── Bootstrap shop OAuth (survie aux redémarrages Railway sans volume) ──
-// Définir SHOPIFY_BOOTSTRAP_SHOP + SHOPIFY_BOOTSTRAP_TOKEN dans Railway env vars
-// → le shop est réinséré dans la DB à chaque démarrage sans refaire OAuth
+// ── Bootstrap shop OAuth (DEV / staging uniquement) ──────────────────────
+// Audit M8 — en production multi-tenant, on ne réinjecte PAS un shop "privilégié"
+// hardcodé : chaque marchand passe par le flow OAuth standard. Le bootstrap
+// reste utile en dev pour ne pas refaire OAuth à chaque redémarrage.
+// Définir SHOPIFY_BOOTSTRAP_SHOP + SHOPIFY_BOOTSTRAP_TOKEN dans .env de dev.
 (function bootstrapShop() {
+  if (process.env.NODE_ENV === 'production') return;
   const bShop  = process.env.SHOPIFY_BOOTSTRAP_SHOP;
   const bToken = process.env.SHOPIFY_BOOTSTRAP_TOKEN;
   if (!bShop || !bToken) return;
@@ -159,10 +171,13 @@ try {
   }
 })();
 
-// ── Bootstrap webhooks (fire-and-forget au démarrage) ──────────────────
-// Enregistre orders/paid + app/uninstalled si SHOPIFY_BOOTSTRAP_SHOP est défini.
+// ── Bootstrap webhooks (DEV / staging uniquement) ───────────────────────
+// Audit M8 — en production, les webhooks sont déclarés dans shopify.app.toml
+// (deploy via shopify CLI) et enregistrés via le callback OAuth. On ne touche
+// pas à la boutique d'un marchand au démarrage du serveur en prod.
 // 422 = webhook déjà existant → ignoré silencieusement.
 (function bootstrapWebhooks() {
+  if (process.env.NODE_ENV === 'production') return;
   const shop     = process.env.SHOPIFY_BOOTSTRAP_SHOP;
   const token    = process.env.SHOPIFY_BOOTSTRAP_TOKEN;
   const appUrl   = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
@@ -363,11 +378,13 @@ app.use((req, res, next) => {
 app.use('/api/auth',       require('./routes/auth'));
 app.use('/api/designs',    require('./routes/designs'));
 app.use('/api/orders',     require('./routes/orders'));
-app.use('/api/render',     require('./routes/render'));
+// Audit M4 — override 10 Mo scopé aux routes qui acceptent du PNG base64.
+// Monté AVANT le router pour court-circuiter le express.json({limit:'1mb'}) global.
+app.use('/api/render',     express.json({ limit: '10mb' }), require('./routes/render'));
 app.use('/api/library',    require('./routes/library'));
 app.use('/api/pricing',    require('./routes/pricing'));
 app.use('/api/mockups',             require('./routes/mockups'));
-app.use('/api/mockup-gen',          require('./routes/mockup-gen'));
+app.use('/api/mockup-gen', express.json({ limit: '10mb' }), require('./routes/mockup-gen'));
 app.use('/api/product-categories', require('./routes/product-categories'));
 app.use('/api/product-links',      require('./routes/product-links'));
 app.use('/api/email',              require('./routes/email'));
@@ -399,22 +416,15 @@ app.get('/api/stats', requireAuth, attachShopId, (req, res) => {
 // ── Health ─────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => res.json({ ok: true, version: '1.0.0', ts: new Date().toISOString() }));
 
-// ── Webhooks GDPR obligatoires (Shopify App Store) ──────────────────────────
-
-app.post('/webhooks/customers/data_request', (req, res) => {
-  // Textile Studio Lab ne stocke aucune donnée client
-  res.sendStatus(200);
-});
-
-app.post('/webhooks/customers/redact', (req, res) => {
-  // Aucune donnée à supprimer
-  res.sendStatus(200);
-});
-
-app.post('/webhooks/shop/redact', (req, res) => {
-  // Aucune donnée boutique à supprimer
-  res.sendStatus(200);
-});
+// ── Webhooks GDPR ───────────────────────────────────────────────────────────
+// Audit M1 — les 3 webhooks GDPR doublons ont été supprimés ici.
+// Les vraies routes sont dans routes/shopify.js (/shopify/gdpr/*) avec :
+//   - vérification HMAC base64 timing-safe
+//   - raw body parsing
+//   - traitement effectif (la table orders stocke customer_name/email, donc
+//     répondre 200 aveuglément serait faux côté GDPR).
+// Mettre à jour les URLs GDPR dans Partners Dashboard et shopify.app.toml
+// pour qu'elles pointent sur /shopify/gdpr/* exclusivement.
 
 // ── Start ──────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
