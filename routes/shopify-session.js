@@ -102,8 +102,8 @@ function setReauthHeaders(res, shopDomain) {
   // URL de réauth — App Bridge ouvrira cette URL dans une popup pour relancer OAuth
   // si le token a expiré ET que le shop n'est plus authentifié. Pour un simple
   // refresh de session token, le client appelle shopify.idToken() et retry.
-  const apiKey = process.env.SHOPIFY_API_KEY || '';
-  if (shopDomain && apiKey) {
+  // M7 (audit) : SHOPIFY_API_KEY n'est pas requis ici — /oauth/start le lit lui-même.
+  if (shopDomain) {
     const reauthUrl = `/oauth/start?shop=${encodeURIComponent(shopDomain)}`;
     res.setHeader('X-Shopify-API-Request-Failure-Reauthorize-Url', reauthUrl);
   }
