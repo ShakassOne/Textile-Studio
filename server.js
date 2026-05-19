@@ -111,22 +111,16 @@ app.get('/privacy', (_req, res) => {
 // ── App Bridge 4 — Point d'entrée Shopify embed ────────────────────────────
 // URL à déclarer dans Partners Dashboard → App setup → App URL
 // Shopify ouvrira : https://your-app.railway.app/?shop=xxx&host=<base64>
-// La page injecte SHOPIFY_API_KEY et initialise App Bridge 4
+// M7 (audit) : le client_id Shopify est déjà hardcodé dans la meta tag
+// de public/shopify-embed.html (valeur publique, non-secret). L'ancien
+// fs.readFile + replace('{{SHOPIFY_API_KEY}}', …) était devenu code mort.
 app.get('/', (req, res) => {
   // Si pas de paramètres Shopify → rediriger vers l'admin standalone
   if (!req.query.shop && !req.query.host) {
     return res.redirect('/textilelab-admin.html');
   }
-  // Injecter la clé API dans le HTML (côté serveur, pas besoin de .env côté client)
-  const htmlPath = path.join(__dirname, 'public', 'shopify-embed.html');
-  fs.readFile(htmlPath, 'utf8', (err, html) => {
-    if (err) return res.status(500).send('Erreur de lecture du fichier embed.');
-    const apiKey = process.env.SHOPIFY_API_KEY || '';
-    const injected = html.replace('{{SHOPIFY_API_KEY}}', apiKey);
-    res.setHeader('Content-Type', 'text/html');
-    res.setHeader('Cache-Control', 'no-store'); // pas de cache — token dans l'URL
-    res.send(injected);
-  });
+  res.setHeader('Cache-Control', 'no-store'); // pas de cache — host/shop dans l'URL
+  res.sendFile(path.join(__dirname, 'public', 'shopify-embed.html'));
 });
 
 // ── Init DB ────────────────────────────────────────────────────────────
