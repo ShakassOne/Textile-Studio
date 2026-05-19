@@ -377,7 +377,11 @@ app.use('/api/orders',     require('./routes/orders'));
 app.use('/api/render',     express.json({ limit: '10mb' }), require('./routes/render'));
 app.use('/api/library',    require('./routes/library'));
 app.use('/api/pricing',    require('./routes/pricing'));
-app.use('/api/mockups',             require('./routes/mockups'));
+// Audit M4 — override 25 Mo : le PUT mockup envoie views[i].imageData (PNG
+// base64 du mockup, typiquement 1500×1500 = 2–5 Mo par view), payload total
+// 2 views ≈ 8 Mo. Sans cet override, express.json({limit:'1mb'}) global
+// rejette silencieusement la requête → mockup pas sauvegardé.
+app.use('/api/mockups',    express.json({ limit: '25mb' }), require('./routes/mockups'));
 app.use('/api/mockup-gen', express.json({ limit: '10mb' }), require('./routes/mockup-gen'));
 app.use('/api/product-categories', require('./routes/product-categories'));
 app.use('/api/product-links',      require('./routes/product-links'));
