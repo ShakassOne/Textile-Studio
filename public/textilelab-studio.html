@@ -3549,35 +3549,90 @@ function _updateCtxToolbar() {
   tb.innerHTML = html;
 }
 
-// Redimensionner l'objet sélectionné à un format d'impression donné.
-// On garde le ratio du dessin : la dim MAX du visuel devient le côté long
-// du format cible (A3→420 mm, A4→297 mm, A5→210 mm, A6→148 mm).
-// Conversion px↔mm unifiée via _getPxPerMm() (calibration admin par mockup).
+// Retourne la liste des objets "design" sur le canvas (ajoutés par l'utilisateur,
+// hors décors mockup/frame/colorOverlay/printMask).
+function _getUserDesignObjects() {
+  if (!canvas) return [];
+  return canvas.getObjects().filter(
+    o => !o.__isFrame && !o.__isMockupBg && !o.__isColorOverlay && !o.__isPrintMask
+  );
+}
+
+// Redimensionner les objets "design" de la vue active à un format d'impression
+// donné. On garde le ratio de la composition : la dim MAX de la bounding box
+// collective devient le côté long du format cible (A3→420 mm, A4→297 mm,
+// A5→210 mm, A6→148 mm). Conversion px↔mm unifiée via _getPxPerMm().
+//
+// Sélection cible :
+//   - objet actif s'il y en a un → resize de cet objet seul
+//   - sinon : tous les objets design → resize collectif autour du centre
 function _ctxSetFormat(fmt) {
-  const obj  = canvas.getActiveObject();
-  if (!obj) return;
+  if (!canvas) return;
   const zone = STATE_mockup?.views?.[STATE_viewIdx]?.zone;
   if (!zone) { setFormat(fmt, { resize: false }); return; }
 
-  const ppm        = _getPxPerMm();
-  const targetMmL  = FORMATS[fmt].mmH; // côté long du format (420/297/210/148)
-  const targetPxL  = targetMmL * ppm;
+  const ppm       = _getPxPerMm();
+  const targetMmL = FORMATS[fmt].mmH; // côté long du format
+  const targetPxL = targetMmL * ppm;
 
-  // dim max actuelle du visuel en px (avant scale)
-  const baseMaxPx  = Math.max(obj.width, obj.height);
-  const scale      = targetPxL / baseMaxPx;
+  const active   = canvas.getActiveObject();
+  const allUser  = _getUserDesignObjects();
+  if (allUser.length === 0) {
+    // Pas d'objet à redimensionner — juste maj du state
+    setFormat(fmt, { resize: false });
+    return;
+  }
 
-  obj.set({
-    scaleX: scale,
-    scaleY: scale,
-    left:   zone.x + (zone.w - obj.width  * scale) / 2,
-    top:    zone.y + (zone.h - obj.height * scale) / 2,
+  // Cible = objet actif si présent, sinon tous les objets user
+  const targets = active && allUser.includes(active) ? [active] : allUser;
+
+  // Calculer la bounding box COURANTE de la cible (en coordonnées canvas)
+  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+  targets.forEach(o => {
+    const w = o.getScaledWidth(), h = o.getScaledHeight();
+    const l = o.left, t = o.top;
+    minX = Math.min(minX, l);
+    minY = Math.min(minY, t);
+    maxX = Math.max(maxX, l + w);
+    maxY = Math.max(maxY, t + h);
   });
-  obj.setCoords();
+  const curW = maxX - minX;
+  const curH = maxY - minY;
+  const curMax = Math.max(curW, curH);
+  if (!isFinite(curMax) || curMax <= 0) return;
+
+  const scale = targetPxL / curMax;
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+
+  // Re-positionner et re-scaler chaque objet par rapport au centre de la bbox
+  targets.forEach(o => {
+    const dx = o.left - cx;
+    const dy = o.top  - cy;
+    o.set({
+      scaleX: (o.scaleX || 1) * scale,
+      scaleY: (o.scaleY || 1) * scale,
+      left:   cx + dx * scale,
+      top:    cy + dy * scale,
+    });
+    o.setCoords();
+  });
+
+  // Re-centrer la composition dans la zone d'impression
+  const newW = curW * scale;
+  const newH = curH * scale;
+  const targetCenterX = zone.x + zone.w / 2;
+  const targetCenterY = zone.y + zone.h / 2;
+  const offsetX = targetCenterX - (cx);
+  const offsetY = targetCenterY - (cy);
+  targets.forEach(o => {
+    o.set({ left: o.left + offsetX, top: o.top + offsetY });
+    o.setCoords();
+  });
+
   canvas.renderAll();
   historySave();
 
-  // Mettre à jour le format de l'état (sans déclencher un nouveau resize)
   setFormat(fmt, { resize: false });
   _updateCtxToolbar();
 }
@@ -4731,18 +4786,20 @@ function updatePrice() {
 // ============================================
 // FORMAT
 // ============================================
-// setFormat — change le format courant ET, par défaut, redimensionne l'objet
-// sélectionné pour qu'il occupe le format cible (dim max = côté long du format).
-// Si aucun objet n'est sélectionné, ne fait que mettre à jour l'état + le prix.
-// Option { resize: false } : appelé depuis _ctxSetFormat qui a déjà fait le resize.
+// setFormat — change le format courant ET redimensionne le design pour qu'il
+// occupe ce format (dim max = côté long du format cible). Le resize cible
+// l'objet actif s'il y en a un, sinon tous les objets design de la vue.
+// Si aucun objet design n'est sur le canvas, met juste à jour l'état + prix.
+// Option { resize: false } : appelé depuis _ctxSetFormat qui a déjà resize.
 function setFormat(fmt, opts) {
   const wantResize = !opts || opts.resize !== false;
 
-  // Si l'utilisateur a un objet sélectionné et qu'on attend un resize → déléguer.
-  if (wantResize && canvas?.getActiveObject()) {
-    // Si on n'est pas déjà sur ce format, _ctxSetFormat fera le job complet
-    // (resize + maj STATE + maj UI). Sinon on ne fait rien (clic redondant).
-    if (STATE.format !== fmt) { _ctxSetFormat(fmt); return; }
+  // Si on attend un resize, qu'on n'est pas déjà sur ce format,
+  // et qu'il y a au moins un objet design → déléguer à _ctxSetFormat
+  // qui gère le cas actif/non-actif et finit par rappeler setFormat avec resize:false.
+  if (wantResize && STATE.format !== fmt && canvas && _getUserDesignObjects().length > 0) {
+    _ctxSetFormat(fmt);
+    return;
   }
 
   STATE.format = fmt;
