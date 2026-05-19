@@ -64,10 +64,17 @@ app.use(cors({
   credentials: true,
 }));
 // Audit M4 — limite globale 1 Mo pour les routes JSON classiques.
-// Les routes qui ont besoin de plus (PNG base64 render/mockup-gen) ont leur
-// propre middleware express.json({ limit: '10mb' }) monté en amont du router.
-app.use(express.json({ limit: '1mb' }));
-app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+// Les routes qui ont besoin de plus (PNG base64 render/mockups/mockup-gen)
+// ont leur propre middleware express.json({ limit: '25mb' }) monté en aval.
+// On SKIPPE le global pour ces paths, sinon il rejette en 413 AVANT que
+// l'override puisse se déclencher (bug introduit avec M4, jamais détecté
+// car les payloads /api/render restaient sous 1 Mo dans la majorité des cas).
+const HIGH_LIMIT_PATHS = ['/api/render', '/api/mockups', '/api/mockup-gen'];
+const _isHighLimitPath = (req) => HIGH_LIMIT_PATHS.some(p => req.path === p || req.path.startsWith(p + '/'));
+const _jsonGlobal = express.json({ limit: '1mb' });
+const _urlGlobal  = express.urlencoded({ extended: true, limit: '1mb' });
+app.use((req, res, next) => _isHighLimitPath(req) ? next() : _jsonGlobal(req, res, next));
+app.use((req, res, next) => _isHighLimitPath(req) ? next() : _urlGlobal(req, res, next));
 app.use('/uploads', express.static(UPLOADS_DIR));
 // Servir les fichiers PWA et pages HTML depuis la racine du backend
 // Les fichiers HTML ne sont JAMAIS mis en cache (toujours servis frais)
