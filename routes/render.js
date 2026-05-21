@@ -259,6 +259,82 @@ router.post('/ftp-retry/:design_id', requireAuth, attachShopId, (req, res) => {
   res.json({ ok: true, message: 'FTP upload relancé en arrière-plan' });
 });
 
+// ── GET /api/render/maintenance/orphans ── Nettoyage des renders orphelins (admin) ──
+// Volume Railway : supprime les PNG de /data/uploads/renders qui ne sont plus
+// référencés par AUCUN design (render_url / preview_cdn_url / views_preview_json).
+// SÉCURISÉ : dry-run par défaut (ne supprime rien). Ajouter ?confirm=1 pour
+// supprimer réellement. ?min_age_hours=N (défaut 1) protège les fichiers récents
+// (évite une suppression pendant une écriture dont la DB n'est pas encore à jour).
+// Ne touche jamais à la base SQLite ni aux autres dossiers.
+router.get('/maintenance/orphans', requireAuth, (req, res) => {
+  try {
+    const confirm     = req.query.confirm === '1';
+    const minAgeHours = Math.max(0, Number(req.query.min_age_hours ?? 1) || 0);
+    const minAgeMs    = minAgeHours * 3600 * 1000;
+    const now         = Date.now();
+
+    // 1) Ensemble des fichiers référencés (tous shops confondus → on ne supprime
+    //    que ce qui n'appartient plus à personne).
+    const db = getDB();
+    const referenced = new Set();
+    const addIfLocal = (url) => {
+      if (typeof url === 'string' && url.includes('/uploads/renders/')) {
+        referenced.add(url.split('/uploads/renders/')[1].split('?')[0]);
+      }
+    };
+    const rows = db.prepare('SELECT render_url, preview_cdn_url, views_preview_json FROM designs').all();
+    for (const r of rows) {
+      addIfLocal(r.render_url);
+      addIfLocal(r.preview_cdn_url);
+      if (r.views_preview_json) {
+        try { Object.values(JSON.parse(r.views_preview_json)).forEach(v => addIfLocal(v && v.url)); }
+        catch { /* JSON invalide → ignoré */ }
+      }
+    }
+
+    // 2) Scan du dossier des renders + repérage des orphelins.
+    let files = [];
+    try { files = fs.readdirSync(RENDERS_DIR); } catch { files = []; }
+    let totalFiles = 0, totalBytes = 0, orphanCount = 0, orphanBytes = 0, deleted = 0, freed = 0;
+    const sample = [];
+
+    for (const name of files) {
+      const fp = path.join(RENDERS_DIR, name);
+      let st;
+      try { st = fs.statSync(fp); } catch { continue; }
+      if (!st.isFile()) continue;
+      totalFiles++; totalBytes += st.size;
+
+      if (referenced.has(name)) continue;          // encore utilisé → on garde
+      if (now - st.mtimeMs < minAgeMs) continue;   // trop récent → on garde
+
+      orphanCount++; orphanBytes += st.size;
+      if (sample.length < 10) sample.push({ file: name, size_kb: Math.round(st.size / 1024) });
+
+      if (confirm) {
+        try { fs.unlinkSync(fp); deleted++; freed += st.size; }
+        catch { /* non bloquant */ }
+      }
+    }
+
+    res.json({
+      dir:              '/uploads/renders',
+      dry_run:          !confirm,
+      min_age_hours:    minAgeHours,
+      total_files:      totalFiles,
+      total_size_mb:    +(totalBytes / 1048576).toFixed(1),
+      referenced_count: referenced.size,
+      orphans:          { count: orphanCount, size_mb: +(orphanBytes / 1048576).toFixed(1) },
+      deleted,
+      freed_mb:         +(freed / 1048576).toFixed(1),
+      sample,
+    });
+  } catch (e) {
+    console.error('[render][maintenance] orphans:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── POST /api/render/cart-set/:design_id ─────────────────────────────────────
 // Génère le set complet de mockups (print-front, print-back, mockup-cart, email-hero,
 // email-thumb) à partir de PNG transparents recto/verso fournis par le studio.
