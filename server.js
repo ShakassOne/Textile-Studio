@@ -69,7 +69,12 @@ app.use(cors({
 // On SKIPPE le global pour ces paths, sinon il rejette en 413 AVANT que
 // l'override puisse se déclencher (bug introduit avec M4, jamais détecté
 // car les payloads /api/render restaient sous 1 Mo dans la majorité des cas).
-const HIGH_LIMIT_PATHS = ['/api/render', '/api/mockups', '/api/mockup-gen'];
+// Régression M4 corrigée le 2026-05-21 : /api/designs (layers_json = canvas
+// avec images base64, souvent plusieurs Mo) et /api/ai (transform + styles
+// reçoivent des images base64) tombaient sous la limite globale 1 Mo → 413
+// silencieux → design non sauvé (designId null) → plus de _preview_img ni de
+// bouton "Voir mon design" dans le drawer, et styles/photo IA cassés.
+const HIGH_LIMIT_PATHS = ['/api/render', '/api/mockups', '/api/mockup-gen', '/api/designs', '/api/ai'];
 const _isHighLimitPath = (req) => HIGH_LIMIT_PATHS.some(p => req.path === p || req.path.startsWith(p + '/'));
 const _jsonGlobal = express.json({ limit: '1mb' });
 const _urlGlobal  = express.urlencoded({ extended: true, limit: '1mb' });
@@ -377,7 +382,10 @@ app.use((req, res, next) => {
 
 // ── Routes ─────────────────────────────────────────────────────────────
 app.use('/api/auth',       require('./routes/auth'));
-app.use('/api/designs',    require('./routes/designs'));
+// Audit M4 — override 10 Mo : layers_json embarque le canvas (images base64).
+// Sans ça, le express.json({limit:'1mb'}) global rejette en 413 → designId null
+// → drawer panier sans preview ni bouton "Voir mon design".
+app.use('/api/designs',    express.json({ limit: '10mb' }), require('./routes/designs'));
 app.use('/api/orders',     require('./routes/orders'));
 // Audit M4 — override 10 Mo scopé aux routes qui acceptent du PNG base64.
 // Monté AVANT le router pour court-circuiter le express.json({limit:'1mb'}) global.
@@ -394,7 +402,9 @@ app.use('/api/product-categories', require('./routes/product-categories'));
 app.use('/api/product-links',      require('./routes/product-links'));
 app.use('/api/email',              require('./routes/email'));
 app.use('/api/shopify',    require('./routes/storefront'));
-app.use('/api/ai',         require('./routes/ai'));
+// Audit M4 — override 10 Mo : /api/ai/transform (photo → style IA) et
+// /api/ai/styles (vignette base64, max 5 Mo décodé) reçoivent des images.
+app.use('/api/ai',         express.json({ limit: '10mb' }), require('./routes/ai'));
 app.use('/api/models3d',   require('./routes/models3d'));
 app.use('/shopify',              require('./routes/shopify'));
 app.use('/oauth',               require('./routes/oauth'));
