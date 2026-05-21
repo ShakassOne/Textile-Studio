@@ -163,9 +163,25 @@ router.post('/save', attachShopId, renderRateLimiter, checkBodySize('png_base64'
     if (kind === 'print') {
       // PNG impression : on enregistre uniquement render_url. Le download admin
       // tirera ce fichier (et appliquera sharp.trim côté /download/:id).
+      // Nettoyage volume (Railway ~78% le 2026-05-21) : récupérer l'ancien render
+      // de ce design AVANT l'update pour pouvoir supprimer le fichier orphelin
+      // ensuite — sinon chaque render laisse un PNG horodaté qui ne sert plus.
+      let _oldRenderUrl = null;
+      try {
+        _oldRenderUrl = db.prepare('SELECT render_url FROM designs WHERE id=? AND shop_id=?')
+          .get(design_id, req.shopId)?.render_url || null;
+      } catch { /* non bloquant */ }
+
       db.prepare('UPDATE designs SET render_url=?, render_size_kb=? WHERE id=? AND shop_id=?')
         .run(relUrl, sizeKb, design_id, req.shopId);
       console.log(`[render][print] ${filename} (${sizeKb} Ko)`);
+
+      // Supprimer l'ancien fichier de render (remplacé) — uniquement s'il s'agit
+      // bien d'un fichier local /uploads/renders/ différent du nouveau.
+      if (_oldRenderUrl && _oldRenderUrl !== relUrl && _oldRenderUrl.startsWith('/uploads/renders/')) {
+        try { fs.unlinkSync(path.join(DATA_DIR, _oldRenderUrl)); }
+        catch { /* déjà absent ou non supprimable — non bloquant */ }
+      }
 
       // FTP fallback secondaire pour archive externe si configuré
       if (isFtpConfigured()) uploadToFtpAsync(filepath, filename, 3);
