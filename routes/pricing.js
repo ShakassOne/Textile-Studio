@@ -107,3 +107,6 @@ router.put('/', requireAuth, (req, res) => {
 module.exports = router;
 module.exports.getProductPrice  = (key)    => PRICING.products.find(p => p.key === key)?.base  || 0;
 module.exports.getFormatExtra   = (key)    => PRICING.formatList.find(f => f.key === key)?.extra || 0;
+// Clés connues — exposées pour la validation des entrées (audit N3).
+module.exports.getProductKeys   = ()       => PRICING.products.map(p => p.key);
+module.exports.getFormatKeys    = ()       => PRICING.formatList.map(f => f.key);

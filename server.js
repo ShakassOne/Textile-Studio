@@ -4,6 +4,7 @@ const cors       = require('cors');
 const path       = require('path');
 const fs         = require('fs');
 const { initDB } = require('./db/database');
+const logger     = require('./utils/logger'); // logger structuré (audit N6)
 
 // ── Répertoire de données (Railway : /data, local : dossier projet) ──────────
 // Railway → configurer un Volume avec Mount path = /data dans le dashboard
@@ -80,6 +81,8 @@ const _jsonGlobal = express.json({ limit: '1mb' });
 const _urlGlobal  = express.urlencoded({ extended: true, limit: '1mb' });
 app.use((req, res, next) => _isHighLimitPath(req) ? next() : _jsonGlobal(req, res, next));
 app.use((req, res, next) => _isHighLimitPath(req) ? next() : _urlGlobal(req, res, next));
+// Log structuré des requêtes (audit N6) — ignore assets statiques & health-checks.
+app.use(logger.httpMiddleware());
 app.use('/uploads', express.static(UPLOADS_DIR));
 // Servir les fichiers PWA et pages HTML depuis la racine du backend
 // Les fichiers HTML ne sont JAMAIS mis en cache (toujours servis frais)
@@ -442,8 +445,44 @@ app.get('/health', (_req, res) => res.json({ ok: true, version: '1.0.0', ts: new
 // pour qu'elles pointent sur /shopify/gdpr/* exclusivement.
 
 // ── Start ──────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`\n✅  TextileLab Backend running on http://localhost:${PORT}`);
-  console.log(`📦  Database : textilelab.db`);
-  console.log(`📁  Uploads  : ./uploads\n`);
+const server = app.listen(PORT, () => {
+  logger.info('TextileLab backend démarré', {
+    port:     PORT,
+    database: 'textilelab.db',
+    data_dir: DATA_DIR,
+    env:      process.env.NODE_ENV || 'development',
+  });
 });
+
+// ── Graceful shutdown (audit N5) ─────────────────────────────────────────
+// Railway envoie SIGTERM avant de couper le conteneur (redeploy / scale).
+// On arrête d'accepter de nouvelles connexions, on laisse les requêtes en
+// cours se terminer, puis on ferme proprement la base SQLite avant de sortir.
+let _shuttingDown = false;
+function gracefulShutdown(signal) {
+  if (_shuttingDown) return;
+  _shuttingDown = true;
+  logger.warn('arrêt en cours', { signal });
+
+  // Filet de sécurité : si une connexion reste bloquée, on force la sortie.
+  const forceTimer = setTimeout(() => {
+    logger.error('arrêt forcé après 10s (connexions toujours actives)');
+    process.exit(1);
+  }, 10000);
+  forceTimer.unref();
+
+  server.close((err) => {
+    if (err) logger.error('server.close', { err: err.message });
+    try {
+      require('./db/database').getDB().close();
+      logger.info('base SQLite fermée proprement');
+    } catch (e) {
+      logger.error('fermeture DB', { err: e.message });
+    }
+    clearTimeout(forceTimer);
+    logger.info('arrêt propre terminé');
+    process.exit(err ? 1 : 0);
+  });
+}
+
+['SIGTERM', 'SIGINT'].forEach((sig) => process.on(sig, () => gracefulShutdown(sig)));
