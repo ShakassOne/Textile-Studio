@@ -130,6 +130,89 @@ function isValidCode(code) {
   return typeof code === 'string' && /^[a-z0-9][a-z0-9_-]{0,40}$/i.test(code);
 }
 
+// ── Résolution complète d'un style : prompt + cover (image de référence) ──
+// Contrairement à resolveStylePrompt(), renvoie aussi image_url pour pouvoir
+// injecter la cover comme "style reference image" dans le pipeline IA.
+function resolveStyle(shopId, code) {
+  try {
+    const row = getDB()
+      .prepare('SELECT prompt, image_url FROM ai_styles WHERE shop_id=? AND code=?')
+      .get(shopId, code);
+    if (row) {
+      return {
+        prompt:    row.prompt || STYLE_PROMPTS_FALLBACK[code] || STYLE_PROMPTS_FALLBACK.cartoon,
+        image_url: row.image_url || null,
+      };
+    }
+  } catch {}
+  return { prompt: STYLE_PROMPTS_FALLBACK[code] || STYLE_PROMPTS_FALLBACK.cartoon, image_url: null };
+}
+
+// ── Charger la cover du style comme entrée image exploitable par OpenAI ──
+// Accepte un chemin local (/uploads/ai-styles/...) OU une URL absolue http(s)
+// (point 7 : la cover doit être accessible côté serveur au moment de la génération).
+// Renvoie { buffer, filename, mime } ou null si introuvable / format inexploitable.
+async function loadStyleCoverInput(imageUrl) {
+  if (!imageUrl || typeof imageUrl !== 'string') return null;
+  const MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' };
+  try {
+    // Cas 1 : URL absolue → on télécharge.
+    if (/^https?:\/\//i.test(imageUrl)) {
+      const r = await fetch(imageUrl);
+      if (!r.ok) return null;
+      const buffer = Buffer.from(await r.arrayBuffer());
+      let ext = (r.headers.get('content-type') || '').split('/')[1] || 'png';
+      ext = ext.split(';')[0].toLowerCase().replace('jpeg', 'jpg');
+      if (!MIME[ext]) return null; // gpt-image-1 edits : png/jpg/webp uniquement
+      return { buffer, filename: `style_reference.${ext}`, mime: MIME[ext] };
+    }
+    // Cas 2 : chemin local stocké en DB (/uploads/ai-styles/<fichier>).
+    const safeName = path.basename(imageUrl);
+    const filepath = path.join(STYLE_UPLOADS_DIR, safeName);
+    if (!fs.existsSync(filepath)) return null;
+    let ext = (path.extname(safeName).slice(1) || 'png').toLowerCase().replace('jpeg', 'jpg');
+    if (!MIME[ext]) return null; // SVG/GIF non exploitables comme image d'édition
+    return { buffer: fs.readFileSync(filepath), filename: `style_reference.${ext}`, mime: MIME[ext] };
+  } catch {
+    return null;
+  }
+}
+
+// ── Construction du prompt de transformation ──
+// hasStyleReference=true → prompt structuré Image A (identité) / Image B (style),
+// sinon fallback texte seul (point 5). Le prompt custom du style est conservé
+// puis enrichi (point 9) avec les contraintes d'identité et de rendu.
+function buildTransformPrompt(customPrompt, hasStyleReference) {
+  const base = (customPrompt || STYLE_PROMPTS_FALLBACK.cartoon).trim();
+  const commonRules = [
+    'Keep the EXACT number of people present in the source photo.',
+    "Preserve each person's likeness: face, glasses, beard, hairstyle and hair length, and smile/expression.",
+    'Clean illustration: avoid any greasy, oily, waxy or pasty over-rendered look — keep crisp, clean edges.',
+    'Fully transparent background (PNG alpha): no background scene, no backdrop, no canvas, no drop shadow.',
+    'Frame the whole subject with comfortable margins: do NOT crop the hair at the top, do NOT crop the feet or the bottom of the artwork; leave headroom and footroom.',
+    'Deliver a print-ready DTF transfer: high contrast, clean separated colors, no semi-transparent halo around the edges.',
+  ];
+  if (hasStyleReference) {
+    return [
+      'You are given TWO reference images.',
+      'IMAGE A (the FIRST image) = SOURCE IDENTITY. The people, their count and their likeness must come EXCLUSIVELY from IMAGE A.',
+      'IMAGE B (the SECOND image) = STYLE REFERENCE. Use IMAGE B ONLY as a strict graphic-style reference (line work, shading, color treatment, finish). Do NOT copy the people, faces, objects, composition or background of IMAGE B.',
+      '',
+      'Redraw the subject of IMAGE A in this style: ' + base,
+      '',
+      'Strict requirements:',
+      '- Use IMAGE B as a STRICT style reference only; identity and number of people come solely from IMAGE A.',
+      ...commonRules.map((r) => '- ' + r),
+    ].join('\n');
+  }
+  return [
+    base,
+    '',
+    'Strict requirements:',
+    ...commonRules.map((r) => '- ' + r),
+  ].join('\n');
+}
+
 // ── GET  /api/ai/settings — Lire la config IA (admin, scopé shop) ───────────────
 router.get('/settings', requireAuth, attachShopId, (req, res) => {
   const key = getSetting(req.shopId, 'openai_api_key');
@@ -204,28 +287,53 @@ router.post('/dalle', requireAIContext, attachShopId, aiRateLimiter, async (req,
 // Auth Shopify session token (App Bridge 4) + rate-limit par shop (audit B3)
 router.post('/transform', requireAIContext, attachShopId, aiRateLimiter, async (req, res) => {
   const { imageBase64, style = 'cartoon' } = req.body;
+  // Point 6 — comportement par défaut : la cover du style sert de référence de
+  // style. Désactivable explicitement par requête (useCoverAsStyleReference:false).
+  const useCoverAsStyleReference = req.body.useCoverAsStyleReference !== false;
   if (!imageBase64) return res.status(400).json({ error: 'imageBase64 requis' });
 
   const apiKey = resolveOpenAIKey(req.shopId);
   if (!apiKey) return res.status(500).json({ error: 'Clé OpenAI non configurée — rendez-vous dans Paramètres → IA' });
 
-  const prompt = resolveStylePrompt(req.shopId, style);
+  // Résoudre prompt custom + cover du style (image de référence).
+  const { prompt: customPrompt, image_url: coverUrl } = resolveStyle(req.shopId, style);
 
   try {
-    // Extraire le buffer depuis base64
+    // ── Image A : photo source de l'utilisateur (identité) ──
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
     const imgBuffer  = Buffer.from(base64Data, 'base64');
     const mimeType   = imageBase64.match(/^data:(image\/\w+);base64,/)?.[1] || 'image/png';
 
-    // Utiliser FormData natif Node 22 + Blob
-    const blob = new Blob([imgBuffer], { type: mimeType });
+    // ── Image B : cover du style comme référence visuelle stricte ──
+    // Points 1, 2, 7, 8 : la vignette n'est pas que pour l'affichage front, elle
+    // est injectée dans le vrai pipeline IA si elle est disponible côté serveur.
+    let cover = null;
+    if (useCoverAsStyleReference && coverUrl) {
+      cover = await loadStyleCoverInput(coverUrl);
+    }
+    const styleReferenceUsed = !!cover;
+
+    // Point 3, 4, 5, 9 : prompt structuré (Image A/Image B) si cover, sinon texte seul.
+    const prompt = buildTransformPrompt(customPrompt, styleReferenceUsed);
+
+    // FormData natif (Node 22) + Blob.
     const form = new FormData();
-    form.append('image', blob, 'photo.png');
+    if (styleReferenceUsed) {
+      // gpt-image-1 accepte plusieurs images via le champ répété image[].
+      // ORDRE IMPORTANT : Image A (identité) puis Image B (style).
+      form.append('image[]', new Blob([imgBuffer],     { type: mimeType }),  'source_identity.png');
+      form.append('image[]', new Blob([cover.buffer],  { type: cover.mime }), cover.filename);
+    } else {
+      // Fallback (point 5) : une seule image, prompt texte seul.
+      form.append('image', new Blob([imgBuffer], { type: mimeType }), 'photo.png');
+    }
     form.append('prompt', prompt);
     form.append('model', 'gpt-image-1');
     form.append('n', '1');
     form.append('size', '1024x1024');
     form.append('quality', 'high');
+    form.append('output_format', 'png');
+    form.append('background', 'transparent'); // fond transparent (point 4)
 
     const response = await fetch('https://api.openai.com/v1/images/edits', {
       method:  'POST',
@@ -239,7 +347,12 @@ router.post('/transform', requireAIContext, attachShopId, aiRateLimiter, async (
     const b64 = data.data?.[0]?.b64_json;
     if (!b64) return res.status(500).json({ error: "Pas d'image retournée" });
 
-    res.json({ base64: `data:image/png;base64,${b64}`, style, model: 'gpt-image-1' });
+    res.json({
+      base64:               `data:image/png;base64,${b64}`,
+      style,
+      model:                'gpt-image-1',
+      style_reference_used: styleReferenceUsed,
+    });
 
   } catch (e) {
     console.error('Transform error:', e);
