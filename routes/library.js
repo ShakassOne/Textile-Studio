@@ -55,8 +55,10 @@ router.get('/categories', attachShopId, (req, res) => {
   res.json(merged);
 });
 
-// POST /api/library/categories — crée une catégorie (scopé shop)
-router.post('/categories', attachShopId, (req, res) => {
+// POST /api/library/categories — crée une catégorie (admin, scopé shop)
+// Audit N2 : requireAuth ajouté (création réservée à l'admin, comme les routes
+// soeurs POST/PATCH/DELETE ci-dessous). Le studio storefront ne fait que des GET.
+router.post('/categories', requireAuth, attachShopId, (req, res) => {
   const name = (req.body?.name || '').trim();
   if (!name) return res.status(400).json({ error: 'Nom requis' });
   const db = getDB();
