@@ -64,10 +64,17 @@ app.use(cors({
   credentials: true,
 }));
 // Audit M4 — limite globale 1 Mo pour les routes JSON classiques.
-// Les routes qui ont besoin de plus (PNG base64 render/mockup-gen) ont leur
-// propre middleware express.json({ limit: '10mb' }) monté en amont du router.
-app.use(express.json({ limit: '1mb' }));
-app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+// Les routes qui ont besoin de plus (PNG base64 render/mockups/mockup-gen)
+// ont leur propre middleware express.json({ limit: '25mb' }) monté en aval.
+// On SKIPPE le global pour ces paths, sinon il rejette en 413 AVANT que
+// l'override puisse se déclencher (bug introduit avec M4, jamais détecté
+// car les payloads /api/render restaient sous 1 Mo dans la majorité des cas).
+const HIGH_LIMIT_PATHS = ['/api/render', '/api/mockups', '/api/mockup-gen'];
+const _isHighLimitPath = (req) => HIGH_LIMIT_PATHS.some(p => req.path === p || req.path.startsWith(p + '/'));
+const _jsonGlobal = express.json({ limit: '1mb' });
+const _urlGlobal  = express.urlencoded({ extended: true, limit: '1mb' });
+app.use((req, res, next) => _isHighLimitPath(req) ? next() : _jsonGlobal(req, res, next));
+app.use((req, res, next) => _isHighLimitPath(req) ? next() : _urlGlobal(req, res, next));
 app.use('/uploads', express.static(UPLOADS_DIR));
 // Servir les fichiers PWA et pages HTML depuis la racine du backend
 // Les fichiers HTML ne sont JAMAIS mis en cache (toujours servis frais)
@@ -111,22 +118,16 @@ app.get('/privacy', (_req, res) => {
 // ── App Bridge 4 — Point d'entrée Shopify embed ────────────────────────────
 // URL à déclarer dans Partners Dashboard → App setup → App URL
 // Shopify ouvrira : https://your-app.railway.app/?shop=xxx&host=<base64>
-// La page injecte SHOPIFY_API_KEY et initialise App Bridge 4
+// M7 (audit) : le client_id Shopify est déjà hardcodé dans la meta tag
+// de public/shopify-embed.html (valeur publique, non-secret). L'ancien
+// fs.readFile + replace('{{SHOPIFY_API_KEY}}', …) était devenu code mort.
 app.get('/', (req, res) => {
   // Si pas de paramètres Shopify → rediriger vers l'admin standalone
   if (!req.query.shop && !req.query.host) {
     return res.redirect('/textilelab-admin.html');
   }
-  // Injecter la clé API dans le HTML (côté serveur, pas besoin de .env côté client)
-  const htmlPath = path.join(__dirname, 'public', 'shopify-embed.html');
-  fs.readFile(htmlPath, 'utf8', (err, html) => {
-    if (err) return res.status(500).send('Erreur de lecture du fichier embed.');
-    const apiKey = process.env.SHOPIFY_API_KEY || '';
-    const injected = html.replace('{{SHOPIFY_API_KEY}}', apiKey);
-    res.setHeader('Content-Type', 'text/html');
-    res.setHeader('Cache-Control', 'no-store'); // pas de cache — token dans l'URL
-    res.send(injected);
-  });
+  res.setHeader('Cache-Control', 'no-store'); // pas de cache — host/shop dans l'URL
+  res.sendFile(path.join(__dirname, 'public', 'shopify-embed.html'));
 });
 
 // ── Init DB ────────────────────────────────────────────────────────────
@@ -383,7 +384,11 @@ app.use('/api/orders',     require('./routes/orders'));
 app.use('/api/render',     express.json({ limit: '10mb' }), require('./routes/render'));
 app.use('/api/library',    require('./routes/library'));
 app.use('/api/pricing',    require('./routes/pricing'));
-app.use('/api/mockups',             require('./routes/mockups'));
+// Audit M4 — override 25 Mo : le PUT mockup envoie views[i].imageData (PNG
+// base64 du mockup, typiquement 1500×1500 = 2–5 Mo par view), payload total
+// 2 views ≈ 8 Mo. Sans cet override, express.json({limit:'1mb'}) global
+// rejette silencieusement la requête → mockup pas sauvegardé.
+app.use('/api/mockups',    express.json({ limit: '25mb' }), require('./routes/mockups'));
 app.use('/api/mockup-gen', express.json({ limit: '10mb' }), require('./routes/mockup-gen'));
 app.use('/api/product-categories', require('./routes/product-categories'));
 app.use('/api/product-links',      require('./routes/product-links'));
