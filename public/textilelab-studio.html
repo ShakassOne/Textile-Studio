@@ -4442,10 +4442,12 @@ async function loadLinksForActiveMockup() {
   }
 }
 
-function applyMockup(productKey, viewIdx, mockupIdx) {
+function applyMockup(productKey, viewIdx, mockupIdx, userAction = false) {
   const allMockups = getMockupsForProduct(productKey);
   const changingProduct = productKey !== STATE.product;
-  const _prevMockupIdx = _STATE_mockupIdx;
+  // ID du mockup AVANT changement → permet de détecter un vrai changement de
+  // mockup (vs un simple switch de face, qui garde le même mockup).
+  const _prevMockupId = STATE_mockup?.id ?? null;
 
   // ── ÉTAPE 1 : Sauvegarder les calques de la vue ACTUELLE (synchrone) ──
   if (changingProduct) {
@@ -4460,18 +4462,17 @@ function applyMockup(productKey, viewIdx, mockupIdx) {
   if (_STATE_mockupIdx >= allMockups.length) _STATE_mockupIdx = 0;
 
   STATE_mockup = allMockups[_STATE_mockupIdx] || null;
+  const _newMockupId = STATE_mockup?.id ?? null;
   _syncResolvedProductHandle();
-  // Le mockup vient de changer → relâcher le flag dismissal pour permettre
-  // au panel "Produits disponibles" de s'afficher de nouveau si pertinent.
-  // EXCEPTION : un simple switch de vue (recto/verso = même produit + même
-  // mockupIdx) ne doit PAS ré-ouvrir le panel ; idem si un produit est déjà
-  // résolu et toujours valide pour le nouveau mockup → l'utilisateur l'a
-  // choisi ou est arrivé via une fiche produit Shopify, on respecte sa
-  // sélection. Le bouton ✕ + clic produit pose lui-même le flag à true.
-  const _isViewOnlySwitch = !changingProduct && (_STATE_mockupIdx === _prevMockupIdx);
-  const _validLinkedHandles = _getLinkedProductsForActiveMockup().map(p => p.handle || ('id:' + p.product_id));
-  const _resolvedStillValid = !!_resolvedProductHandle && _validLinkedHandles.includes(_resolvedProductHandle);
-  if (!_isViewOnlySwitch && !_resolvedStillValid) {
+  // Panneau "Produits disponibles" : on ne le ré-ouvre QUE sur une action
+  // utilisateur qui change réellement de mockup (ou de type de produit).
+  //   • Changement de face (recto/verso = même mockup) → on NE ré-ouvre pas.
+  //   • Application programmatique (arrivée par une fiche produit, init,
+  //     changement de format)                          → on NE ré-ouvre pas.
+  //   • Clic utilisateur sur un autre mockup / produit → on ré-ouvre.
+  // Le bouton ✕ et le clic sur un produit reposent eux-mêmes le flag à true.
+  const _mockupChanged = changingProduct || (_newMockupId !== _prevMockupId);
+  if (userAction && _mockupChanged) {
     _productsPanelDismissed = false;
   }
   loadLinksForActiveMockup();
@@ -4707,7 +4708,7 @@ function updateViewSwitcher() {
 
 function switchMockupSelection(mockupIdx) {
   _STATE_mockupIdx = mockupIdx;
-  applyMockup(STATE.product, 0, mockupIdx);
+  applyMockup(STATE.product, 0, mockupIdx, true); // action utilisateur → ré-ouvre le panneau Produits
 }
 
 let _switchViewDebounceTimer = null;
@@ -4738,7 +4739,7 @@ function selectProduct(key) {
   });
   document.getElementById('stat-product').textContent = PRODUCTS[key].name;
   updatePrice();
-  applyMockup(key, 0, 0);
+  applyMockup(key, 0, 0, true); // changement de type produit → ré-ouvre le panneau Produits
 }
 
 function updatePrice() {
