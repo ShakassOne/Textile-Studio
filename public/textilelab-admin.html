@@ -724,6 +724,19 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
         <button class="btn btn-ghost btn-sm" onclick="resetZone()">↺ Reset</button>
         <button class="btn btn-ghost btn-sm" onclick="centerZone()">⊕ Centrer</button>
       </div>
+      <div class="zone-info-bar" style="margin-top:8px;align-items:center;gap:10px;flex-wrap:wrap">
+        <div class="zone-coord" style="flex:1;min-width:200px">
+          <label style="white-space:nowrap">Largeur réelle de la zone</label>
+          <input type="number" id="zc-print-width-mm" min="20" max="1500" step="1" value="420"
+            style="width:80px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-family:'DM Mono',monospace;font-size:12px"
+            oninput="updatePrintWidthMm(this.value)">
+          <label>mm</label>
+        </div>
+        <div style="font-size:10px;color:var(--text3);max-width:260px;line-height:1.4">
+          Largeur physique du carré d'impression sur le produit réel.<br>
+          T-shirt : ~420 mm (A3 plein) · Casquette : ~140 mm · Tote bag : ~340 mm
+        </div>
+      </div>
     </div>
   </div>
   <div class="mockup-modal-footer">
@@ -1671,10 +1684,20 @@ function populateMockupModal() {
 
 function addView(defaultName) {
   const name = defaultName || `Vue ${ED.views.length+1}`;
-  ED.views.push({id:'v'+Date.now()+Math.random(),name,imageData:null,previewW:0,previewH:0,zone:null});
+  ED.views.push({id:'v'+Date.now()+Math.random(),name,imageData:null,previewW:0,previewH:0,zone:null,printWidthMm:420});
   renderViewsList(); renderViewSelector();
   ED.activeViewIdx = ED.views.length-1;
   loadZoneCanvas(ED.activeViewIdx);
+}
+
+// Mise à jour de la largeur physique de la zone d'impression (mm)
+// Cette valeur calibre la conversion px↔mm côté studio : un dessin de
+// largeur égale à zone.w (en px) correspond exactement à printWidthMm mm.
+function updatePrintWidthMm(val) {
+  const v = ED.views[ED.activeViewIdx];
+  if (!v) return;
+  const n = Math.max(20, Math.min(1500, parseInt(val, 10) || 420));
+  v.printWidthMm = n;
 }
 
 function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
@@ -1764,6 +1787,12 @@ function loadZoneCanvas(viewIdx) {
   if(noImg) noImg.style.display=v?.imageData?'none':'flex';
   const savedZone=v?.zone || v?.zones?.A3 || v?.zones?.A4; // compat ancienne structure
   if(savedZone){zone={...savedZone};}else{centerZoneDefault();}
+  // Rafraîchir l'input "Largeur réelle" depuis la view active (fallback 420 mm)
+  const pwEl = document.getElementById('zc-print-width-mm');
+  if (pwEl) {
+    if (v && typeof v.printWidthMm !== 'number') v.printWidthMm = 420;
+    pwEl.value = v?.printWidthMm ?? 420;
+  }
   zImg=null;
   if(v?.imageData){const img=new Image();img.onload=()=>{zImg=img;startZoneLoop();};img.src=v.imageData;}
   else{startZoneLoop();}

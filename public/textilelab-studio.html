@@ -2941,28 +2941,40 @@ const FORMATS = {
   A6: { label: 'A6 · 105×148mm', dims: '105×148mm', extra: 2.00, aspect: 105/148, mmW: 105, mmH: 148 },
 };
 
-// Largeur max de la zone = référence pour 1px en mm
-// La zone couvre quasi tout le devant = ~30cm de large sur un L
-const ZONE_REF_MM = 300; // mm de référence pour la zone d'impression
+// Largeur physique de la zone d'impression — calibrée par mockup en admin.
+// Source de vérité : STATE_mockup.views[i].printWidthMm (configurable par l'admin
+// pour s'adapter au produit : t-shirt ~420 mm, casquette ~140 mm, tote ~340 mm).
+// Fallback 420 mm = côté long A3 → un dessin de largeur égale à zone.w pixels
+// correspond exactement à un A3 plein-cadre.
+const DEFAULT_PRINT_WIDTH_MM = 420;
+
+function _getPrintWidthMm() {
+  const v = STATE_mockup?.views?.[STATE_viewIdx];
+  return (v && typeof v.printWidthMm === 'number' && v.printWidthMm > 0)
+    ? v.printWidthMm
+    : DEFAULT_PRINT_WIDTH_MM;
+}
 
 function _getPxPerMm() {
   const zone = STATE_mockup?.views?.[STATE_viewIdx]?.zone;
-  if (!zone || !zone.w) return 2; // fallback
-  return zone.w / ZONE_REF_MM;
+  if (!zone || !zone.w) return 2; // fallback hors-mockup
+  return zone.w / _getPrintWidthMm();
 }
 
-// Convertit taille px → objet {mmW, mmH, fmt, label}
+// Convertit taille px → objet {mmW, mmH, fmt}
+// Classement par DIM MAX (et non par aire) : si un côté dépasse le seuil
+// d'un format A, le dessin est classé dans ce format même si l'autre côté
+// est petit. Règle : max(mmW,mmH) ≥ 297 → A3, ≥ 210 → A4, ≥ 148 → A5, sinon A6.
 function _pxToFormat(pxW, pxH) {
   const ppm  = _getPxPerMm();
   const mmW  = Math.round(pxW / ppm);
   const mmH  = Math.round(pxH / ppm);
-  const area = mmW * mmH;
-  // Seuils basés sur la surface
+  const max  = Math.max(mmW, mmH);
   let fmt;
-  if (area >= 297*420*0.7)      fmt = 'A3';
-  else if (area >= 210*297*0.7) fmt = 'A4';
-  else if (area >= 148*210*0.7) fmt = 'A5';
-  else                           fmt = 'A6';
+  if      (max >= 297) fmt = 'A3';
+  else if (max >= 210) fmt = 'A4';
+  else if (max >= 148) fmt = 'A5';
+  else                 fmt = 'A6';
   return { mmW, mmH, fmt };
 }
 
@@ -3537,44 +3549,91 @@ function _updateCtxToolbar() {
   tb.innerHTML = html;
 }
 
-// Redimensionner l'objet sélectionné à un format d'impression donné
+// Retourne la liste des objets "design" sur le canvas (ajoutés par l'utilisateur,
+// hors décors mockup/frame/colorOverlay/printMask).
+function _getUserDesignObjects() {
+  if (!canvas) return [];
+  return canvas.getObjects().filter(
+    o => !o.__isFrame && !o.__isMockupBg && !o.__isColorOverlay && !o.__isPrintMask
+  );
+}
+
+// Redimensionner les objets "design" de la vue active à un format d'impression
+// donné. On garde le ratio de la composition : la dim MAX de la bounding box
+// collective devient le côté long du format cible (A3→420 mm, A4→297 mm,
+// A5→210 mm, A6→148 mm). Conversion px↔mm unifiée via _getPxPerMm().
+//
+// Sélection cible :
+//   - objet actif s'il y en a un → resize de cet objet seul
+//   - sinon : tous les objets design → resize collectif autour du centre
 function _ctxSetFormat(fmt) {
-  const obj  = canvas.getActiveObject();
-  if (!obj) return;
+  if (!canvas) return;
   const zone = STATE_mockup?.views?.[STATE_viewIdx]?.zone;
-  if (!zone) { setFormat(fmt); return; }
+  if (!zone) { setFormat(fmt, { resize: false }); return; }
 
-  // px par mm dans la zone courante
-  const currentFmt = FORMATS[STATE.format];
-  const currentMmW = currentFmt.aspect >= 1
-    ? (STATE.format === 'A3' ? 297 : STATE.format === 'A4' ? 210 : STATE.format === 'A5' ? 148 : 105)
-    : (STATE.format === 'A3' ? 297 : 210);
-  const pxPerMm = zone.w / (STATE.format === 'A3' ? 297 : STATE.format === 'A4' ? 210 : STATE.format === 'A5' ? 148 : 105);
+  const ppm       = _getPxPerMm();
+  const targetMmL = FORMATS[fmt].mmH; // côté long du format
+  const targetPxL = targetMmL * ppm;
 
-  // Nouvelles dimensions en px selon le format cible
-  const targetMmW = fmt === 'A3' ? 297 : fmt === 'A4' ? 210 : fmt === 'A5' ? 148 : 105;
-  const targetMmH = fmt === 'A3' ? 420 : fmt === 'A4' ? 297 : fmt === 'A5' ? 210 : 148;
-  const newW = targetMmW * pxPerMm;
-  const newH = targetMmH * pxPerMm;
+  const active   = canvas.getActiveObject();
+  const allUser  = _getUserDesignObjects();
+  if (allUser.length === 0) {
+    // Pas d'objet à redimensionner — juste maj du state
+    setFormat(fmt, { resize: false });
+    return;
+  }
 
-  // Calculer le scale pour que le visuel fasse exactement ce format
-  const scaleX = newW / obj.width;
-  const scaleY = newH / obj.height;
-  const scale  = Math.min(scaleX, scaleY); // garder proportions
+  // Cible = objet actif si présent, sinon tous les objets user
+  const targets = active && allUser.includes(active) ? [active] : allUser;
 
-  // Centrer dans la zone
-  obj.set({
-    scaleX: scale,
-    scaleY: scale,
-    left:   zone.x + (zone.w - obj.width  * scale) / 2,
-    top:    zone.y + (zone.h - obj.height * scale) / 2,
+  // Calculer la bounding box COURANTE de la cible (en coordonnées canvas)
+  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+  targets.forEach(o => {
+    const w = o.getScaledWidth(), h = o.getScaledHeight();
+    const l = o.left, t = o.top;
+    minX = Math.min(minX, l);
+    minY = Math.min(minY, t);
+    maxX = Math.max(maxX, l + w);
+    maxY = Math.max(maxY, t + h);
   });
-  obj.setCoords();
+  const curW = maxX - minX;
+  const curH = maxY - minY;
+  const curMax = Math.max(curW, curH);
+  if (!isFinite(curMax) || curMax <= 0) return;
+
+  const scale = targetPxL / curMax;
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+
+  // Re-positionner et re-scaler chaque objet par rapport au centre de la bbox
+  targets.forEach(o => {
+    const dx = o.left - cx;
+    const dy = o.top  - cy;
+    o.set({
+      scaleX: (o.scaleX || 1) * scale,
+      scaleY: (o.scaleY || 1) * scale,
+      left:   cx + dx * scale,
+      top:    cy + dy * scale,
+    });
+    o.setCoords();
+  });
+
+  // Re-centrer la composition dans la zone d'impression
+  const newW = curW * scale;
+  const newH = curH * scale;
+  const targetCenterX = zone.x + zone.w / 2;
+  const targetCenterY = zone.y + zone.h / 2;
+  const offsetX = targetCenterX - (cx);
+  const offsetY = targetCenterY - (cy);
+  targets.forEach(o => {
+    o.set({ left: o.left + offsetX, top: o.top + offsetY });
+    o.setCoords();
+  });
+
   canvas.renderAll();
   historySave();
 
-  // Mettre à jour le format de l'état
-  setFormat(fmt);
+  setFormat(fmt, { resize: false });
   _updateCtxToolbar();
 }
 
@@ -4727,11 +4786,28 @@ function updatePrice() {
 // ============================================
 // FORMAT
 // ============================================
-function setFormat(fmt) {
+// setFormat — change le format courant ET redimensionne le design pour qu'il
+// occupe ce format (dim max = côté long du format cible). Le resize cible
+// l'objet actif s'il y en a un, sinon tous les objets design de la vue.
+// Si aucun objet design n'est sur le canvas, met juste à jour l'état + prix.
+// Option { resize: false } : appelé depuis _ctxSetFormat qui a déjà resize.
+function setFormat(fmt, opts) {
+  const wantResize = !opts || opts.resize !== false;
+
+  // Si on attend un resize, qu'on n'est pas déjà sur ce format,
+  // et qu'il y a au moins un objet design → déléguer à _ctxSetFormat
+  // qui gère le cas actif/non-actif et finit par rappeler setFormat avec resize:false.
+  if (wantResize && STATE.format !== fmt && canvas && _getUserDesignObjects().length > 0) {
+    _ctxSetFormat(fmt);
+    return;
+  }
+
   STATE.format = fmt;
   document.querySelectorAll('.format-btn').forEach(b => b.classList.toggle('active', b.dataset.fmt === fmt));
-  document.getElementById('format-badge').textContent = FORMATS[fmt].label;
+  const badge = document.getElementById('format-badge');
+  if (badge) badge.textContent = FORMATS[fmt].label;
   updatePrice();
+  if (typeof updateFormatCards === 'function') updateFormatCards();
   resizeCanvas();
   // Re-appliquer le mockup avec la nouvelle zone pour ce format
   applyMockup(STATE.product, STATE_viewIdx);
