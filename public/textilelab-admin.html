@@ -329,6 +329,10 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8 5.8 21.3l2.4-7.4L2 9.4h7.6z"/></svg>
         Styles IA
       </div>
+      <div class="nav-item" onclick="showView('ai-creations')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+        Créations IA
+      </div>
 
       <div class="nav-section">Système</div>
       <div class="nav-item" onclick="showView('settings')">
@@ -539,6 +543,23 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
           Aucun style configuré pour l'instant. Créez votre premier style ci-dessus.
         </div>
         <div id="ai-styles-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px"></div>
+      </div>
+    </div>
+
+    <!-- ══ CRÉATIONS IA (modération) ══ -->
+    <div class="view" id="view-ai-creations">
+      <div class="page-header">
+        <div><div class="page-title">Créations IA</div><div class="page-sub">Valider les visuels générés par les clients → visibles dans « Vos créations IA » du studio</div></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn" id="aicr-tab-pending" onclick="loadAiCreations('pending')">À valider</button>
+          <button class="btn" id="aicr-tab-approved" onclick="loadAiCreations('approved')">Validées</button>
+        </div>
+      </div>
+      <div style="padding:24px">
+        <div id="ai-creations-empty" style="display:none;color:var(--text3);font-size:13px;padding:32px;text-align:center;background:var(--bg3);border:1px dashed var(--border);border-radius:14px">
+          Aucune création pour l'instant.
+        </div>
+        <div id="ai-creations-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px"></div>
       </div>
     </div>
 
@@ -901,7 +922,56 @@ function showView(name) {
   if (name === 'library')   loadLibrary();
   if (name === 'pricing')   { loadProductLinks(); loadPricingEditor(); }
   if (name === 'ai-styles') loadAiStyles();
+  if (name === 'ai-creations') loadAiCreations('pending');
   if (name === 'settings')  loadSettingsInfo();
+}
+
+// ── Créations IA — modération (valider / rejeter) ──────────────────────
+let _aiCrStatus = 'pending';
+async function loadAiCreations(status) {
+  _aiCrStatus = (status === 'approved') ? 'approved' : 'pending';
+  const list  = document.getElementById('ai-creations-list');
+  const empty = document.getElementById('ai-creations-empty');
+  const tp = document.getElementById('aicr-tab-pending');
+  const ta = document.getElementById('aicr-tab-approved');
+  if (tp) tp.classList.toggle('btn-primary', _aiCrStatus === 'pending');
+  if (ta) ta.classList.toggle('btn-primary', _aiCrStatus === 'approved');
+  if (list) list.innerHTML = '<div style="color:var(--text3);font-size:12px">Chargement…</div>';
+  const rows  = await api('/api/ai/creations?status=' + _aiCrStatus);
+  const items = Array.isArray(rows) ? rows : [];
+  if (empty) empty.style.display = items.length ? 'none' : 'block';
+  if (!list) return;
+  if (!items.length) { list.innerHTML = ''; return; }
+  list.innerHTML = items.map(it => {
+    const url = (typeof it.image_url === 'string' && it.image_url.startsWith('http')) ? it.image_url : (API_BASE + it.image_url);
+    const prompt = (it.prompt || '').replace(/[<>&"]/g, c => ({ '<':'&lt;', '>':'&gt;', '&':'&amp;', '"':'&quot;' }[c]));
+    const approveBtn = _aiCrStatus === 'pending'
+      ? `<button class="btn btn-primary" style="flex:1;font-size:12px" onclick="approveAiCreation(${it.id})">✓ Valider</button>`
+      : '';
+    return `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:12px;overflow:hidden;display:flex;flex-direction:column">
+      <div style="aspect-ratio:1;background-image:linear-gradient(45deg,#ddd 25%,transparent 25%),linear-gradient(-45deg,#ddd 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#ddd 75%),linear-gradient(-45deg,transparent 75%,#ddd 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0;background-color:#fff">
+        <img src="${url}" style="width:100%;height:100%;object-fit:contain;display:block">
+      </div>
+      <div style="padding:8px;display:flex;flex-direction:column;gap:6px">
+        <div style="font-size:10px;color:var(--text3);min-height:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${prompt}">${prompt || '—'}</div>
+        <div style="display:flex;gap:6px">
+          ${approveBtn}
+          <button class="btn" style="${approveBtn ? '' : 'flex:1;'}font-size:12px;color:var(--danger);border-color:var(--danger)" onclick="deleteAiCreation(${it.id})">🗑 ${_aiCrStatus === 'pending' ? 'Rejeter' : 'Suppr.'}</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+async function approveAiCreation(id) {
+  const r = await api('/api/ai/creations/' + id + '/approve', { method: 'POST' });
+  if (r) { showToast('✓ Validée — visible dans le studio'); loadAiCreations(_aiCrStatus); }
+  else showToast('❌ Échec de la validation');
+}
+async function deleteAiCreation(id) {
+  if (!confirm('Supprimer définitivement cette création ?')) return;
+  const r = await api('/api/ai/creations/' + id, { method: 'DELETE' });
+  if (r) { showToast('🗑 Supprimée'); loadAiCreations(_aiCrStatus); }
+  else showToast('❌ Échec de la suppression');
 }
 
 // ============================================

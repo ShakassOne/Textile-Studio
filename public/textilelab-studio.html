@@ -5289,7 +5289,7 @@ let currentAiStyle = 'streetwear';
 // elles-mêmes restent dans localStorage pour réutilisation sans regénérer.
 const TL_AI_USER_GEN_LIMIT = 3;
 const TL_AI_USER_CAT       = '__user_ai__';
-const TL_AI_USER_CAT_LABEL = '✨ Mes créations IA';
+const TL_AI_USER_CAT_LABEL = '✨ Vos créations IA';
 
 function _tlAiGenCount() {
   try { return parseInt(sessionStorage.getItem('tl_ai_gen_count') || '0', 10) || 0; }
@@ -5431,8 +5431,10 @@ async function generateAI() {
     if (!imageUrl) throw new Error('Pas d image retournée');
     addToAIGalleryImage(imageUrl);
 
-    // Persister dans "Mes créations IA" + incrémenter le compteur session
+    // Persister localement + soumettre au pool partagé "Vos créations IA"
+    // (en attente de validation admin) + incrémenter le compteur session.
     _tlAddUserAiCreation(imageUrl, prompt + (askedStyle ? ' — ' + askedStyle : ''));
+    try { apiFetch('/api/ai/creations', { method: 'POST', body: JSON.stringify({ image_base64: imageUrl, prompt: prompt + (askedStyle ? ' — ' + askedStyle : '') }) }); } catch (_) {}
     _tlIncAiGenCount();
     _tlUpdateAiQuotaUI();
     // Rafraîchir la bibliothèque pour faire apparaître la nouvelle création
@@ -7273,8 +7275,9 @@ async function transformPhoto() {
     const data = await res.json();
     if (data.error) throw new Error(data.error);
 
-    // Afficher le résultat + compter la génération dans le quota session
+    // Afficher le résultat + soumettre au pool partagé + compter le quota
     _addPhotoResult(data.base64, _photoStyle);
+    try { apiFetch('/api/ai/creations', { method: 'POST', body: JSON.stringify({ image_base64: data.base64, prompt: 'Photo → ' + _photoStyle }) }); } catch (_) {}
     _tlIncAiGenCount();
     _tlUpdateAiQuotaUI();
     showToast('✓ Transformation réussie !');
@@ -8258,9 +8261,10 @@ async function loadLibrary() {
   const status = document.getElementById('lib-status');
   if (status) status.textContent = '…';
 
-  const [data, cats] = await Promise.all([
+  const [data, cats, aiPub] = await Promise.all([
     apiFetch('/api/library'),
     apiFetch('/api/library/categories'),
+    apiFetch('/api/ai/creations/public'), // pool "Vos créations IA" validé (partagé)
   ]);
 
   if (data) {
@@ -8275,14 +8279,22 @@ async function loadLibrary() {
   // Stockées en localStorage par generateAI(), elles sont disponibles sans
   // ré-appel API. Pseudo-items au format {url, thumb_url, category, filename}
   // pour rester compatibles avec renderLibraryGrid().
-  const userAiItems = _tlGetUserAiCreations().map((it, idx) => ({
-    id: '__user_ai_' + idx,
-    url: it.url,             // dataURL ou URL absolue → utilisée telle quelle
-    thumb_url: it.url,
-    category: TL_AI_USER_CAT,
-    filename: (it.prompt || 'IA').slice(0, 60),
-    __isUserAi: true,        // marker pour skip API_BASE dans renderLibraryGrid
-  }));
+  // "Vos créations IA" = pool PARTAGÉ validé par l'admin (visible par tous les
+  // clients du shop). Source serveur (/api/ai/creations/public) au lieu du
+  // localStorage privé d'avant. URL préfixée API_BASE si relative.
+  const sharedAi = Array.isArray(aiPub) ? aiPub : [];
+  const userAiItems = sharedAi.map((it) => {
+    const u = (typeof it.image_url === 'string' && it.image_url.startsWith('http'))
+      ? it.image_url : (API_BASE + it.image_url);
+    return {
+      id: '__user_ai_' + it.id,
+      url: u,
+      thumb_url: u,
+      category: TL_AI_USER_CAT,
+      filename: (it.prompt || 'IA').slice(0, 60),
+      __isUserAi: true,        // marker pour skip API_BASE dans renderLibraryGrid
+    };
+  });
   _libraryItems = _libraryItems.concat(userAiItems);
 
   // Construire les boutons de filtre dynamiquement
