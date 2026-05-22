@@ -3019,19 +3019,30 @@ const PALETTE = TOPTEX_COLORS.map(c => c.hex);
 let canvas, canvasSize = 600;
 
 function getCanvasSize() {
+  // Aspect EFFECTIF du canvas : celui du mockup affiché (carré pour du 1500×1500),
+  // sinon celui du format. La hauteur du canvas = size / aspect, donc on borne la
+  // largeur pour que la hauteur tienne dans l'espace dispo.
+  const fmt = FORMATS[STATE.format];
+  let aspect = fmt.aspect;
+  if (typeof canvas !== 'undefined' && canvas) {
+    const _bg = canvas.getObjects().find(o => o.__isMockupBg);
+    if (_bg && _bg.width && _bg.height) aspect = _bg.width / _bg.height;
+  }
   const isMobile = window.innerWidth <= 768;
   if (isMobile) {
     const vw = window.innerWidth - 20;
     // Available height: dvh - topbar - mobile-layers - bottom-nav - padding
     const vh = window.innerHeight - 52 - 40 - 64 - 20;
-    const fmt = FORMATS[STATE.format];
     const maxByW = vw;
-    const maxByH = vh / (1 / fmt.aspect);
+    const maxByH = vh * aspect; // height = size/aspect ≤ vh
     return Math.min(maxByW, maxByH, 500);
   }
-  // Desktop: fit between sidebars and leave room for print bar
-  const available = window.innerWidth - 200 - 330 - 64;
-  return Math.min(available, 600);
+  // Desktop : tenir entre les sidebars ET dans la hauteur dispo (barre format).
+  // Cap relevé à 760 (avant 600) → canvas plus grand sans rien rogner.
+  const availW = window.innerWidth - 200 - 330 - 64;
+  const availH = window.innerHeight - 52 - 96 - 24;
+  const maxByH = availH * aspect;
+  return Math.min(availW, maxByH, 760);
 }
 
 function initCanvas() {
@@ -5278,7 +5289,7 @@ let currentAiStyle = 'streetwear';
 // elles-mêmes restent dans localStorage pour réutilisation sans regénérer.
 const TL_AI_USER_GEN_LIMIT = 3;
 const TL_AI_USER_CAT       = '__user_ai__';
-const TL_AI_USER_CAT_LABEL = '✨ Mes créations IA';
+const TL_AI_USER_CAT_LABEL = '✨ Vos créations IA';
 
 function _tlAiGenCount() {
   try { return parseInt(sessionStorage.getItem('tl_ai_gen_count') || '0', 10) || 0; }
@@ -5420,8 +5431,10 @@ async function generateAI() {
     if (!imageUrl) throw new Error('Pas d image retournée');
     addToAIGalleryImage(imageUrl);
 
-    // Persister dans "Mes créations IA" + incrémenter le compteur session
+    // Persister localement + soumettre au pool partagé "Vos créations IA"
+    // (en attente de validation admin) + incrémenter le compteur session.
     _tlAddUserAiCreation(imageUrl, prompt + (askedStyle ? ' — ' + askedStyle : ''));
+    try { apiFetch('/api/ai/creations', { method: 'POST', body: JSON.stringify({ image_base64: imageUrl, prompt: prompt + (askedStyle ? ' — ' + askedStyle : '') }) }); } catch (_) {}
     _tlIncAiGenCount();
     _tlUpdateAiQuotaUI();
     // Rafraîchir la bibliothèque pour faire apparaître la nouvelle création
@@ -7225,6 +7238,15 @@ async function loadPhotoStyles(force) {
 async function transformPhoto() {
   if (!_photoFile || _photoLoading) return;
 
+  // Quota par session — partagé avec la génération texte (anti-abus : 3/session
+  // au total, dalle + photo/styles confondus). C'était le trou : la transfo
+  // photo n'était pas comptée → générations illimitées.
+  if (_tlAiGenCount() >= TL_AI_USER_GEN_LIMIT) {
+    showToast(`✋ Limite de ${TL_AI_USER_GEN_LIMIT} générations IA atteinte pour cette session.`);
+    _tlUpdateAiQuotaUI();
+    return;
+  }
+
   _photoLoading = true;
   const btn = document.getElementById('photo-transform-btn');
   btn.style.pointerEvents = 'none';
@@ -7253,8 +7275,11 @@ async function transformPhoto() {
     const data = await res.json();
     if (data.error) throw new Error(data.error);
 
-    // Afficher le résultat
+    // Afficher le résultat + soumettre au pool partagé + compter le quota
     _addPhotoResult(data.base64, _photoStyle);
+    try { apiFetch('/api/ai/creations', { method: 'POST', body: JSON.stringify({ image_base64: data.base64, prompt: 'Photo → ' + _photoStyle }) }); } catch (_) {}
+    _tlIncAiGenCount();
+    _tlUpdateAiQuotaUI();
     showToast('✓ Transformation réussie !');
     _forceRepaint(document.getElementById('photo-results'));
 
@@ -8236,9 +8261,10 @@ async function loadLibrary() {
   const status = document.getElementById('lib-status');
   if (status) status.textContent = '…';
 
-  const [data, cats] = await Promise.all([
+  const [data, cats, aiPub] = await Promise.all([
     apiFetch('/api/library'),
     apiFetch('/api/library/categories'),
+    apiFetch('/api/ai/creations/public'), // pool "Vos créations IA" validé (partagé)
   ]);
 
   if (data) {
@@ -8253,14 +8279,22 @@ async function loadLibrary() {
   // Stockées en localStorage par generateAI(), elles sont disponibles sans
   // ré-appel API. Pseudo-items au format {url, thumb_url, category, filename}
   // pour rester compatibles avec renderLibraryGrid().
-  const userAiItems = _tlGetUserAiCreations().map((it, idx) => ({
-    id: '__user_ai_' + idx,
-    url: it.url,             // dataURL ou URL absolue → utilisée telle quelle
-    thumb_url: it.url,
-    category: TL_AI_USER_CAT,
-    filename: (it.prompt || 'IA').slice(0, 60),
-    __isUserAi: true,        // marker pour skip API_BASE dans renderLibraryGrid
-  }));
+  // "Vos créations IA" = pool PARTAGÉ validé par l'admin (visible par tous les
+  // clients du shop). Source serveur (/api/ai/creations/public) au lieu du
+  // localStorage privé d'avant. URL préfixée API_BASE si relative.
+  const sharedAi = Array.isArray(aiPub) ? aiPub : [];
+  const userAiItems = sharedAi.map((it) => {
+    const u = (typeof it.image_url === 'string' && it.image_url.startsWith('http'))
+      ? it.image_url : (API_BASE + it.image_url);
+    return {
+      id: '__user_ai_' + it.id,
+      url: u,
+      thumb_url: u,
+      category: TL_AI_USER_CAT,
+      filename: (it.prompt || 'IA').slice(0, 60),
+      __isUserAi: true,        // marker pour skip API_BASE dans renderLibraryGrid
+    };
+  });
   _libraryItems = _libraryItems.concat(userAiItems);
 
   // Construire les boutons de filtre dynamiquement

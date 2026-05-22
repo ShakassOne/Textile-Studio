@@ -247,6 +247,21 @@ function initDB() {
   `);
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_ai_styles_shop_id ON ai_styles(shop_id)"); } catch {}
 
+  // ── Table: ai_creations (galerie "Vos créations IA" partagée, modérée) ──────
+  // Chaque image générée par un client (texte ou photo) est enregistrée en
+  // 'pending'. L'admin valide → 'approved' → visible par tous dans le studio.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ai_creations (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      shop_id     INTEGER NOT NULL REFERENCES shops(id),
+      image_url   TEXT    NOT NULL,
+      prompt      TEXT    DEFAULT '',
+      status      TEXT    NOT NULL DEFAULT 'pending',
+      created_at  TEXT    DEFAULT (datetime('now'))
+    )
+  `);
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_ai_creations_shop_status ON ai_creations(shop_id, status)"); } catch {}
+
   // Seed des styles built-in pour tout shop actif qui n'en a pas encore.
   // Idempotent : INSERT OR IGNORE sur (shop_id, code).
   try {

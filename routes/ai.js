@@ -126,6 +126,46 @@ function saveStyleImageFromBase64(b64DataUrl) {
   return `/uploads/ai-styles/${filename}`;
 }
 
+// ── Galerie "Vos créations IA" : stockage des images générées par les clients ──
+const AI_CREATIONS_DIR = path.join(
+  process.env.DATA_DIR || path.join(__dirname, '..'),
+  'uploads',
+  'ai-creations'
+);
+fs.mkdirSync(AI_CREATIONS_DIR, { recursive: true });
+
+// Plafond des créations EN ATTENTE par shop (anti-saturation du volume Railway).
+// Au-delà, les plus anciennes 'pending' sont élaguées (fichier + ligne). Les
+// créations 'approved' (choisies par l'admin) ne sont jamais élaguées ici.
+const AI_PENDING_CAP = 200;
+
+function saveAiCreationFromBase64(shopId, b64DataUrl, prompt) {
+  if (!shopId || !b64DataUrl || typeof b64DataUrl !== 'string') return null;
+  const match = b64DataUrl.match(/^data:image\/(png|jpe?g|webp);base64,(.+)$/i);
+  if (!match) return null;
+  const ext = match[1].toLowerCase().replace('jpeg', 'jpg');
+  const buf = Buffer.from(match[2], 'base64');
+  if (buf.length > 8 * 1024 * 1024) return null; // garde-fou taille (8 Mo)
+  const filename = `c_${shopId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  fs.writeFileSync(path.join(AI_CREATIONS_DIR, filename), buf);
+  const url = `/uploads/ai-creations/${filename}`;
+  const db = getDB();
+  db.prepare("INSERT INTO ai_creations (shop_id, image_url, prompt, status) VALUES (?, ?, ?, 'pending')")
+    .run(shopId, url, (prompt || '').slice(0, 300));
+
+  // Élaguer les 'pending' au-delà du plafond (les plus anciennes).
+  try {
+    const olds = db.prepare(
+      "SELECT id, image_url FROM ai_creations WHERE shop_id=? AND status='pending' ORDER BY id DESC LIMIT -1 OFFSET ?"
+    ).all(shopId, AI_PENDING_CAP);
+    for (const o of olds) {
+      try { fs.unlinkSync(path.join(AI_CREATIONS_DIR, path.basename(o.image_url))); } catch {}
+      db.prepare('DELETE FROM ai_creations WHERE id=?').run(o.id);
+    }
+  } catch {}
+  return url;
+}
+
 function isValidCode(code) {
   return typeof code === 'string' && /^[a-z0-9][a-z0-9_-]{0,40}$/i.test(code);
 }
@@ -487,6 +527,82 @@ router.delete('/styles/:id', requireAuth, attachShopId, (req, res) => {
     // Nettoyer le fichier image s'il existe et nous appartient
     if (row.image_url && row.image_url.startsWith('/uploads/ai-styles/')) {
       try { fs.unlinkSync(path.join(STYLE_UPLOADS_DIR, path.basename(row.image_url))); } catch {}
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// AI CREATIONS — galerie "Vos créations IA" partagée + modération admin
+// ═══════════════════════════════════════════════════════════════════════
+
+// POST /api/ai/creations — un client soumet une création IA (storefront) → 'pending'
+router.post('/creations', requireAIContext, attachShopId, aiRateLimiter, (req, res) => {
+  try {
+    const { image_base64, prompt } = req.body || {};
+    if (!image_base64) return res.status(400).json({ error: 'image_base64 requis' });
+    const url = saveAiCreationFromBase64(req.shopId, image_base64, prompt);
+    if (!url) return res.status(400).json({ error: 'Image invalide' });
+    res.status(201).json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/ai/creations/public — créations VALIDÉES pour le studio (storefront)
+router.get('/creations/public', requireAIContext, attachShopId, (req, res) => {
+  try {
+    const rows = getDB().prepare(
+      "SELECT id, image_url, prompt FROM ai_creations WHERE shop_id=? AND status='approved' ORDER BY id DESC LIMIT 200"
+    ).all(req.shopId);
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/ai/creations — liste admin (filtre ?status=pending|approved, défaut pending)
+router.get('/creations', requireAuth, attachShopId, (req, res) => {
+  try {
+    const status = (req.query.status || 'pending').toString();
+    const st = ['pending', 'approved'].includes(status) ? status : 'pending';
+    const rows = getDB().prepare(
+      'SELECT id, image_url, prompt, status, created_at FROM ai_creations WHERE shop_id=? AND status=? ORDER BY id DESC LIMIT 500'
+    ).all(req.shopId, st);
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/ai/creations/:id/approve — valider (admin) → visible par tous
+router.post('/creations/:id/approve', requireAuth, attachShopId, (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'ID invalide' });
+    const db = getDB();
+    const row = db.prepare('SELECT id FROM ai_creations WHERE id=? AND shop_id=?').get(id, req.shopId);
+    if (!row) return res.status(404).json({ error: 'Création introuvable' });
+    db.prepare("UPDATE ai_creations SET status='approved' WHERE id=? AND shop_id=?").run(id, req.shopId);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE /api/ai/creations/:id — rejeter/supprimer (admin) : ligne + fichier
+router.delete('/creations/:id', requireAuth, attachShopId, (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'ID invalide' });
+    const db = getDB();
+    const row = db.prepare('SELECT image_url FROM ai_creations WHERE id=? AND shop_id=?').get(id, req.shopId);
+    if (!row) return res.status(404).json({ error: 'Création introuvable' });
+    db.prepare('DELETE FROM ai_creations WHERE id=? AND shop_id=?').run(id, req.shopId);
+    if (row.image_url && row.image_url.startsWith('/uploads/ai-creations/')) {
+      try { fs.unlinkSync(path.join(AI_CREATIONS_DIR, path.basename(row.image_url))); } catch {}
     }
     res.json({ ok: true });
   } catch (e) {
