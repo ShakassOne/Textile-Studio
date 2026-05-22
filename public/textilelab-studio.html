@@ -3237,8 +3237,15 @@ function resizeCanvas() {
   if (!canvas) return;
   const newSize = getCanvasSize();
   const fmt = FORMATS[STATE.format];
+  // Aspect du canvas = aspect du mockup affiché (sinon un mockup carré 1500×1500
+  // déborde des côtés d'un canvas portrait et l'export PNG est tronqué). On
+  // retombe sur l'aspect du format quand aucun mockup n'est chargé.
+  const _bgForAspect = canvas.getObjects().find(o => o.__isMockupBg);
+  const _aspect = (_bgForAspect && _bgForAspect.width && _bgForAspect.height)
+    ? (_bgForAspect.width / _bgForAspect.height)
+    : fmt.aspect;
   const w = newSize;
-  const h = Math.round(newSize / fmt.aspect);
+  const h = Math.round(newSize / _aspect);
   canvas.setWidth(w);
   canvas.setHeight(h);
   canvasSize = newSize;
@@ -4525,9 +4532,18 @@ function applyMockup(productKey, viewIdx, mockupIdx, userAction = false) {
       return;
     }
 
+    // Adapter la hauteur du canvas à l'aspect du mockup pour l'afficher en
+    // entier : un mockup carré ne doit pas déborder d'un canvas portrait, sinon
+    // l'export PNG coupe les côtés. La largeur reste pilotée par getCanvasSize()
+    // et un canvas carré est toujours PLUS COURT qu'un portrait → pas de
+    // débordement vertical à l'écran.
+    if (img.width && img.height) {
+      const _targetH = Math.round(canvas.getWidth() / (img.width / img.height));
+      if (_targetH > 0 && canvas.getHeight() !== _targetH) canvas.setHeight(_targetH);
+    }
     const cw = canvas.getWidth();
     const ch = canvas.getHeight();
-    // Cover : le mockup remplit le canvas bord à bord
+    // Cover : le mockup remplit le canvas bord à bord (aspects égaux → aucun crop)
     const scale = Math.max(cw / img.width, ch / img.height);
     const left = (cw - img.width * scale) / 2;
     const top  = (ch - img.height * scale) / 2;
