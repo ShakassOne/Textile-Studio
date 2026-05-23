@@ -3019,11 +3019,15 @@ const PALETTE = TOPTEX_COLORS.map(c => c.hex);
 let canvas, canvasSize = 600;
 
 function getCanvasSize() {
-  // Aspect EFFECTIF du canvas : celui du mockup affiché (carré pour du 1500×1500),
-  // sinon celui du format. La hauteur du canvas = size / aspect, donc on borne la
-  // largeur pour que la hauteur tienne dans l'espace dispo.
-  const fmt = FORMATS[STATE.format];
-  let aspect = fmt.aspect;
+  // getCanvasSize() renvoie la LARGEUR du canvas. La hauteur est dérivée plus
+  // tard via l'aspect du mockup (height = width / aspect), donc ici on borne la
+  // largeur pour que la hauteur résultante tienne aussi dans l'espace dispo.
+  //
+  // Aspect par défaut = 1 (carré). En prod les mockups sont carrés (1500×1500) ;
+  // si on partait de l'aspect PORTRAIT du format (A3 = 0.707) tant que le mockup
+  // n'est pas chargé, `availH * aspect` rabotait la largeur (~540px → canvas plus
+  // PETIT qu'avant). On ne lit l'aspect réel que si un mockup est déjà affiché.
+  let aspect = 1;
   if (typeof canvas !== 'undefined' && canvas) {
     const _bg = canvas.getObjects().find(o => o.__isMockupBg);
     if (_bg && _bg.width && _bg.height) aspect = _bg.width / _bg.height;
@@ -3035,22 +3039,40 @@ function getCanvasSize() {
     const vh = window.innerHeight - 52 - 40 - 64 - 20;
     const maxByW = vw;
     const maxByH = vh * aspect; // height = size/aspect ≤ vh
-    return Math.min(maxByW, maxByH, 500);
+    return Math.min(maxByW, maxByH, 560);
   }
-  // Desktop : tenir entre les sidebars ET dans la hauteur dispo (barre format).
-  // Cap relevé à 760 (avant 600) → canvas plus grand sans rien rogner.
+  // Desktop : aussi grand que possible. On tient entre les sidebars (availW) ET
+  // dans la hauteur dispo (availH * aspect, = availH pour un mockup carré). Plafond
+  // relevé à 1000 (avant 600 en prod) → sur grand écran c'est availW/availH qui
+  // borne, pas un cap arbitraire. Garantie zéro crop : le canvas suit l'aspect du
+  // mockup, donc le cover-fit ne coupe jamais les côtés à l'export PNG.
   const availW = window.innerWidth - 200 - 330 - 64;
   const availH = window.innerHeight - 52 - 96 - 24;
-  const maxByH = availH * aspect;
-  return Math.min(availW, maxByH, 760);
+  return Math.min(availW, availH * aspect, 1000);
+}
+
+// Aspect effectif du canvas = celui du mockup affiché (carré en prod), sinon
+// CARRÉ (1) par défaut. Règle unique partagée par initCanvas / resizeCanvas /
+// zoom : on ne retombe jamais sur l'aspect portrait du format tant qu'aucun
+// mockup n'est chargé, ce qui éviterait un canvas trop haut et tout décalage
+// width/height entre les fonctions.
+function getCanvasAspect() {
+  if (typeof canvas !== 'undefined' && canvas) {
+    const _bg = canvas.getObjects().find(o => o.__isMockupBg);
+    if (_bg && _bg.width && _bg.height) return _bg.width / _bg.height;
+  }
+  return 1;
 }
 
 function initCanvas() {
   canvasSize = getCanvasSize();
   const el = document.getElementById('fabricCanvas');
-  const fmt = FORMATS[STATE.format];
   const w = canvasSize;
-  const h = Math.round(canvasSize / fmt.aspect);
+  // Canvas initial CARRÉ : aucun mockup n'est encore chargé et tous les mockups
+  // prod sont carrés. Partir de l'aspect portrait du format donnerait un canvas
+  // très haut (jusqu'à ~1.4× la largeur) qui déborderait avec le plafond relevé ;
+  // la hauteur réelle est ajustée à l'aspect du mockup dès son chargement.
+  const h = Math.round(canvasSize / getCanvasAspect());
 
   canvas = new fabric.Canvas('fabricCanvas', {
     width: w,
@@ -3247,14 +3269,10 @@ function setupCustomControls() {
 function resizeCanvas() {
   if (!canvas) return;
   const newSize = getCanvasSize();
-  const fmt = FORMATS[STATE.format];
   // Aspect du canvas = aspect du mockup affiché (sinon un mockup carré 1500×1500
-  // déborde des côtés d'un canvas portrait et l'export PNG est tronqué). On
-  // retombe sur l'aspect du format quand aucun mockup n'est chargé.
-  const _bgForAspect = canvas.getObjects().find(o => o.__isMockupBg);
-  const _aspect = (_bgForAspect && _bgForAspect.width && _bgForAspect.height)
-    ? (_bgForAspect.width / _bgForAspect.height)
-    : fmt.aspect;
+  // déborde des côtés d'un canvas portrait et l'export PNG est tronqué). Règle
+  // unique via getCanvasAspect() : mockup si chargé, sinon carré.
+  const _aspect = getCanvasAspect();
   const w = newSize;
   const h = Math.round(newSize / _aspect);
   canvas.setWidth(w);
@@ -8915,7 +8933,9 @@ function zoomCanvas(delta) {
   const factor = next / 100;
   canvas.setZoom(factor);
   canvas.setWidth(canvasSize * factor);
-  canvas.setHeight(Math.round(canvasSize / FORMATS[STATE.format].aspect) * factor);
+  // Hauteur dérivée de l'aspect du MOCKUP (carré en prod), pas de l'aspect
+  // portrait du format — sinon le canvas se déforme en portrait après un zoom.
+  canvas.setHeight(Math.round(canvasSize / getCanvasAspect()) * factor);
   canvas.renderAll();
 }
 
@@ -8923,7 +8943,7 @@ function zoomReset() {
   document.querySelectorAll('#zoom-val').forEach(el => el.textContent = '100%');
   canvas.setZoom(1);
   canvas.setWidth(canvasSize);
-  canvas.setHeight(Math.round(canvasSize / FORMATS[STATE.format].aspect));
+  canvas.setHeight(Math.round(canvasSize / getCanvasAspect()));
   canvas.renderAll();
 }
 
