@@ -552,7 +552,12 @@ router.post('/creations', requireAIContext, attachShopId, aiRateLimiter, (req, r
 });
 
 // GET /api/ai/creations/public — créations VALIDÉES pour le studio (storefront)
-router.get('/creations/public', requireAIContext, attachShopId, (req, res) => {
+// Lecture PUBLIQUE de créations déjà approuvées (rien de sensible). On résout le
+// shop comme /api/library via attachShopId (qui a un fallback bootstrap), et NON
+// via requireAIContext : ce dernier exige un Bearer JWT ou un X-Shop-Domain et
+// renvoie 401 sans fallback → la galerie « Vos créations IA » restait vide en
+// front alors que la bibliothèque (attachShopId) s'affichait. Asymétrie corrigée.
+router.get('/creations/public', attachShopId, (req, res) => {
   try {
     const rows = getDB().prepare(
       "SELECT id, image_url, prompt FROM ai_creations WHERE shop_id=? AND status='approved' ORDER BY id DESC LIMIT 200"
