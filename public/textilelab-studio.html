@@ -2985,6 +2985,26 @@ function _formatToPx(fmt) {
   return { w: f.mmW * ppm, h: f.mmH * ppm };
 }
 
+// Centre un objet dans la ZONE D'IMPRESSION RÉELLE (STATE.frameCoords, en
+// coordonnées CANVAS) et le met à l'échelle pour tenir dedans avec une marge.
+// NB : on n'utilise PLUS view.zone pour positionner un visuel — ses coords sont
+// dans l'espace backoffice (440×340), pas dans l'espace canvas, ce qui plaçait
+// les visuels hors du cadre (en haut à gauche, invisibles). frameCoords est la
+// zone transposée en coords canvas par drawPrintFrameFromMockup().
+function centerObjectInPrintFrame(obj, margin = 0.9) {
+  if (!obj || !obj.width || !obj.height || !canvas) return;
+  const frame = STATE.frameCoords
+    || { x: 20, y: 20, w: canvas.getWidth() - 40, h: canvas.getHeight() - 40 };
+  const scale = Math.min(frame.w / obj.width, frame.h / obj.height) * margin;
+  obj.set({
+    scaleX: scale,
+    scaleY: scale,
+    left: frame.x + (frame.w - obj.width  * scale) / 2,
+    top:  frame.y + (frame.h - obj.height * scale) / 2,
+  });
+  obj.setCoords();
+}
+
 // Palette couleurs Toptex Bio190 IC — couleurs officielles fournisseur
 const TOPTEX_COLORS = [
   { name: 'White',          hex: '#FFFFFF' },
@@ -5526,17 +5546,8 @@ function addAIToCanvas(idx) {
   if (item && item.__dalleUrl) {
     // Image DALL-E — charger comme fabric.Image
     fabric.Image.fromURL(item.__dalleUrl, (img) => {
-      const zone  = STATE_mockup?.views?.[STATE_viewIdx]?.zone || { x: 50, y: 50, w: canvas.getWidth()-100, h: canvas.getHeight()-100 };
-      const a4px  = _formatToPx('A4');
-      const scale = Math.min(a4px.w / img.width, a4px.h / img.height);
-      img.set({
-        left:    zone.x + (zone.w - img.width  * scale) / 2,
-        top:     zone.y + (zone.h - img.height * scale) / 2,
-        scaleX:  scale,
-        scaleY:  scale,
-        __isAI:  true,
-        crossOrigin: 'anonymous',
-      });
+      img.set({ __isAI: true, crossOrigin: 'anonymous' });
+      centerObjectInPrintFrame(img);
       applyFrameClipToObject(img);
       canvas.add(img);
       canvas.setActiveObject(img);
@@ -7358,16 +7369,8 @@ function _addPhotoResult(base64, style) {
 
 function _addPhotoToCanvas(base64) {
   fabric.Image.fromURL(base64, img => {
-    const zone  = STATE_mockup?.views?.[STATE_viewIdx]?.zone || { x:50, y:50, w:300, h:300 };
-    const a4px  = _formatToPx('A4');
-    const scale = Math.min(a4px.w / img.width, a4px.h / img.height);
-    img.set({
-      left:    zone.x + (zone.w - img.width  * scale) / 2,
-      top:     zone.y + (zone.h - img.height * scale) / 2,
-      scaleX:  scale,
-      scaleY:  scale,
-      __isAI:  true,
-    });
+    img.set({ __isAI: true });
+    centerObjectInPrintFrame(img);
     canvas.add(img);
     canvas.setActiveObject(img);
     canvas.renderAll();
@@ -7529,14 +7532,8 @@ function _pmAddResult(base64, style) {
 function _pmAddToCanvas(base64) {
   closePhotoModal();
   fabric.Image.fromURL(base64, img => {
-    const zone  = STATE_mockup?.views?.[STATE_viewIdx]?.zone || { x:50, y:50, w:300, h:300 };
-    const a4px  = _formatToPx('A4');
-    const scale = Math.min(a4px.w / img.width, a4px.h / img.height);
-    img.set({
-      left: zone.x + (zone.w - img.width  * scale) / 2,
-      top:  zone.y + (zone.h - img.height * scale) / 2,
-      scaleX: scale, scaleY: scale, __isAI: true,
-    });
+    img.set({ __isAI: true });
+    centerObjectInPrintFrame(img);
     canvas.add(img);
     canvas.setActiveObject(img);
     canvas.renderAll();
@@ -8405,15 +8402,8 @@ function renderLibraryGrid(cat) {
 function addLibraryImageToCanvas(url, name) {
   fabric.Image.fromURL(url, (img) => {
     if (!img) return showToast('❌ Impossible de charger l\'image');
-    const zone = STATE_mockup?.views?.[STATE_viewIdx]?.zone || { x: 50, y: 50, w: canvas.getWidth()-100, h: canvas.getHeight()-100 };
-    const a4px = _formatToPx('A4');
-    const scale = Math.min(a4px.w / img.width, a4px.h / img.height);
-    img.set({
-      left:   zone.x + (zone.w - img.width  * scale) / 2,
-      top:    zone.y + (zone.h - img.height * scale) / 2,
-      scaleX: scale, scaleY: scale,
-      __isLibrary: true,
-    });
+    img.set({ __isLibrary: true });
+    centerObjectInPrintFrame(img);
     applyFrameClipToObject(img);
     canvas.add(img);
     canvas.setActiveObject(img);
