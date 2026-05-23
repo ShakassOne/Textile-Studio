@@ -3308,6 +3308,15 @@ function resizeCanvas() {
     const top   = (h - bgImg.height * scale) / 2;
     bgImg.set({ left, top, scaleX: scale, scaleY: scale });
     bgImg.setCoords();
+    // Ré-aligner la couche COULEUR sur le nouveau transform du fond. L'overlay
+    // est créé aux coords du fond AU MOMENT de applyColorOverlay() ; sans ce
+    // recalage au resize, le fond bouge mais l'overlay reste figé → on voit le
+    // fond (blanc) ET l'overlay coloré décalés = "ghost" d'un 2e t-shirt.
+    const overlay = canvas.getObjects().find(o => o.__isColorOverlay);
+    if (overlay) {
+      overlay.set({ left, top, scaleX: scale, scaleY: scale });
+      overlay.setCoords();
+    }
     drawPrintFrameFromMockup(view, bgImg, scale, left, top);
   } else {
     drawPrintFrame();
