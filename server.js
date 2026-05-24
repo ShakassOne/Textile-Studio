@@ -24,7 +24,18 @@ if (!process.env.OPENAI_API_KEY) {
   console.warn('⚠️  OPENAI_API_KEY non définie dans .env — les fonctions IA seront désactivées.');
 }
 
+// ── Sécurité prod : sans SHOPIFY_API_SECRET, toutes les vérifs HMAC/JWT
+// (OAuth, App Proxy, session token, webhooks) basculent en bypass "dev".
+// On refuse donc de démarrer en production. En dev local, on laisse passer.
+if (process.env.NODE_ENV === 'production' && !process.env.SHOPIFY_API_SECRET) {
+  console.error('❌ SECURITY: SHOPIFY_API_SECRET manquant en production — arrêt immédiat (auth HMAC/JWT désactivée sinon).');
+  process.exit(1);
+}
+
 const app  = express();
+// Railway est derrière un proxy : nécessaire pour que req.ip = vraie IP client
+// (sinon tous les rate-limit par IP partagent l'IP du proxy).
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
 
 // ── CORS — Origines autorisées (configurer ALLOWED_ORIGIN dans .env) ──
@@ -83,7 +94,16 @@ app.use((req, res, next) => _isHighLimitPath(req) ? next() : _jsonGlobal(req, re
 app.use((req, res, next) => _isHighLimitPath(req) ? next() : _urlGlobal(req, res, next));
 // Log structuré des requêtes (audit N6) — ignore assets statiques & health-checks.
 app.use(logger.httpMiddleware());
-app.use('/uploads', express.static(UPLOADS_DIR));
+app.use('/uploads', express.static(UPLOADS_DIR, {
+  setHeaders: (res, filePath) => {
+    // Anti-XSS : les SVG servis depuis /uploads ne doivent jamais exécuter de script.
+    // CSP + nosniff neutralisent le SVG comme document, sans casser <img>/fabric.
+    if (filePath.toLowerCase().endsWith('.svg')) {
+      res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+    }
+  },
+}));
 // Servir les fichiers PWA et pages HTML depuis la racine du backend
 // Les fichiers HTML ne sont JAMAIS mis en cache (toujours servis frais)
 // Les assets statiques (JS, CSS, images) sont cachés 1h
@@ -245,12 +265,13 @@ try {
 
 // GET /billing/subscribe — Lance la souscription via mutation GraphQL appSubscriptionCreate
 app.get('/billing/subscribe', async (req, res) => {
-  const shop   = req.query.shop || process.env.SHOPIFY_BOOTSTRAP_SHOP;
-  const token  = process.env.SHOPIFY_ACCESS_TOKEN || process.env.SHOPIFY_BOOTSTRAP_TOKEN;
-  const appUrl = (process.env.APP_URL || '').replace(/\/$/, '');
+  const shop   = (req.query.shop || process.env.SHOPIFY_BOOTSTRAP_SHOP || '').toLowerCase().trim();
+  // Multi-tenant : token OAuth de LA boutique courante (table shops), pas un token ENV global.
+  const token  = shop ? (require('./db/database').getShop(shop)?.access_token || null) : null;
+  const appUrl = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
 
   if (!shop || !token) {
-    return res.status(400).json({ error: 'shop ou token manquant' });
+    return res.status(400).json({ error: 'Boutique non installée ou token OAuth introuvable — réinstallez l\'app' });
   }
 
   const mutation = `
@@ -302,10 +323,11 @@ app.get('/billing/subscribe', async (req, res) => {
 
 // GET /billing/callback — Shopify redirige ici après confirmation du marchand
 app.get('/billing/callback', async (req, res) => {
-  const shop     = req.query.shop || process.env.SHOPIFY_BOOTSTRAP_SHOP;
+  const shop     = (req.query.shop || process.env.SHOPIFY_BOOTSTRAP_SHOP || '').toLowerCase().trim();
   const chargeId = req.query.charge_id;
-  const token    = process.env.SHOPIFY_ACCESS_TOKEN || process.env.SHOPIFY_BOOTSTRAP_TOKEN;
-  const appUrl   = (process.env.APP_URL || '').replace(/\/$/, '');
+  // Multi-tenant : token OAuth de LA boutique courante (table shops), pas un token ENV global.
+  const token    = shop ? (require('./db/database').getShop(shop)?.access_token || null) : null;
+  const appUrl   = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
 
   if (!shop || !chargeId || !token) {
     return res.status(400).json({ error: 'Paramètres manquants : shop, charge_id ou token.' });
@@ -343,7 +365,7 @@ function checkSubscription(req, res, next) {
   try {
     const db  = require('./db/database').getDB();
     const sub = db.prepare(
-      "SELECT id FROM subscriptions WHERE shop = ? AND status IN ('active','trialing','pending') ORDER BY id DESC LIMIT 1"
+      "SELECT id FROM subscriptions WHERE shop = ? AND status IN ('active','trialing') ORDER BY id DESC LIMIT 1"
     ).get(shop);
     if (sub) return next();
 
