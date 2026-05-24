@@ -29,12 +29,12 @@ const {
   SHOPIFY_APP_URL,
 } = process.env;
 
+// Doit rester aligné sur shopify.app.toml [access_scopes] (audit B7 : moindre privilège).
+// Demander des scopes non déclarés (write_*, read_customers) = rejet review + surface
+// Protected Customer Data inutilement élargie.
 const DEFAULT_SCOPES = [
   'read_products',
-  'write_products',
   'read_orders',
-  'write_orders',
-  'read_customers',
 ].join(',');
 
 // ── Anti-CSRF nonce store (in-memory, TTL 10 min) ────────────────────────────
