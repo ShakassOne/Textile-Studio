@@ -523,7 +523,8 @@ router.put('/styles/:id', requireAuth, attachShopId, (req, res) => {
 });
 
 // DELETE /api/ai/styles/:id — Supprimer un style custom (admin)
-// Les styles built-in ne sont pas supprimables.
+// Built-in ET custom supprimables (la suppression persiste car le seed ne
+// re-crée les built-in que pour une boutique qui n'a encore AUCUN style).
 router.delete('/styles/:id', requireAuth, attachShopId, (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -531,7 +532,6 @@ router.delete('/styles/:id', requireAuth, attachShopId, (req, res) => {
     const db = getDB();
     const row = db.prepare('SELECT is_builtin, image_url FROM ai_styles WHERE id=? AND shop_id=?').get(id, req.shopId);
     if (!row) return res.status(404).json({ error: 'Style introuvable' });
-    if (row.is_builtin) return res.status(403).json({ error: 'Les styles intégrés ne peuvent pas être supprimés' });
 
     db.prepare('DELETE FROM ai_styles WHERE id=? AND shop_id=?').run(id, req.shopId);
 

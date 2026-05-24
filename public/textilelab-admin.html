@@ -2427,10 +2427,9 @@ async function loadAiStyles() {
     const badge = s.is_builtin
       ? `<span style="position:absolute;top:8px;left:8px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;padding:2px 8px;border-radius:20px;font-family:'DM Mono',monospace">BUILT-IN</span>`
       : `<span style="position:absolute;top:8px;left:8px;background:var(--amber);color:#000;font-size:10px;padding:2px 8px;border-radius:20px;font-family:'DM Mono',monospace;font-weight:700">CUSTOM</span>`;
-    // Bouton "Supprimer" direct sur la carte : visible UNIQUEMENT pour les
-    // styles custom (le backend refuse les DELETE sur les built-in).
-    // Le bouton s'arrête lui-même la propagation pour ne pas ouvrir la modale.
-    const deleteBtn = !s.is_builtin
+    // Bouton "Supprimer" direct sur la carte : affiché pour TOUS les styles
+    // (custom ET built-in). Le bouton stoppe la propagation pour ne pas ouvrir la modale.
+    const deleteBtn = true
       ? `<button type="button"
            onclick="event.stopPropagation(); deleteAiStyleDirect(${s.id}, '${escapeHtml(s.label).replace(/'/g, "\\'")}')"
            title="Supprimer ce style"
@@ -2496,7 +2495,7 @@ function openAiStyleModal(id) {
   // Le code interne d'un style built-in reste figé pour ne pas casser la compat
   document.getElementById('ai-style-code').disabled = isBuiltin === 1;
   // Bouton supprimer : visible uniquement pour les custom
-  document.getElementById('ai-style-delete-btn').style.display = (isEdit && !isBuiltin) ? 'inline-flex' : 'none';
+  document.getElementById('ai-style-delete-btn').style.display = isEdit ? 'inline-flex' : 'none';
 
   document.getElementById('ai-style-modal').classList.add('open');
 }
