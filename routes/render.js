@@ -11,6 +11,16 @@ const { attachShopId, attachShopIdSoft } = require('./_shop-context');
 const { uploadToFtpAsync, isFtpConfigured } = require('../utils/ftp-upload');
 const { uploadToShopifyFiles } = require('../utils/shopify-files');
 
+// Vérifie le secret du design (audit IMPORTANT) : interdit l'écrasement d'un
+// PNG print/preview par un tiers qui ne connaîtrait que design_id (séquentiel).
+// Designs legacy (edit_token NULL) tolérés pour ne pas casser l'existant.
+function _designTokenOk(row, req) {
+  if (!row) return false;
+  if (!row.edit_token) return true;
+  const supplied = String(req.body?.design_token || req.headers['x-design-token'] || '');
+  return supplied.length > 0 && supplied === row.edit_token;
+}
+
 // ── Rate-limit render : 200 saves/heure/shop (audit B5) ──────────────────────
 const renderRateLimiter = rateLimit({
   windowMs:        60 * 60 * 1000,
@@ -43,7 +53,7 @@ fs.mkdirSync(RENDERS_DIR, { recursive: true });
 (function _migrateRenderColumns() {
   try {
     const db = getDB();
-    const cols = ['views_preview_json TEXT', 'render_url TEXT', 'render_size_kb INTEGER', 'preview_cdn_url TEXT'];
+    const cols = ['views_preview_json TEXT', 'render_url TEXT', 'render_size_kb INTEGER', 'preview_cdn_url TEXT', 'views_print_json TEXT'];
     for (const col of cols) {
       try { db.prepare(`ALTER TABLE designs ADD COLUMN ${col}`).run(); } catch { /* colonne déjà présente */ }
     }
@@ -91,8 +101,9 @@ router.post('/save-views', attachShopId, renderRateLimiter, (req, res) => {
 
   const db = getDB();
   // Vérifier ownership avant tout traitement (sinon DoS possible : on accepte des PNG pour rien)
-  const owner = db.prepare('SELECT id FROM designs WHERE id=? AND shop_id=?').get(design_id, req.shopId);
+  const owner = db.prepare('SELECT id, edit_token FROM designs WHERE id=? AND shop_id=?').get(design_id, req.shopId);
   if (!owner) return res.status(404).json({ error: 'Design introuvable pour ce shop' });
+  if (!_designTokenOk(owner, req)) return res.status(403).json({ error: 'Token design invalide' });
   const APP_URL = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
   const result  = {};
 
@@ -144,8 +155,9 @@ router.post('/save', attachShopId, renderRateLimiter, checkBodySize('png_base64'
 
   // ── Vérification ownership avant écriture disque (anti-DoS B5) ────────
   const dbCheck = getDB();
-  const ownerCheck = dbCheck.prepare('SELECT id FROM designs WHERE id=? AND shop_id=?').get(design_id, req.shopId);
+  const ownerCheck = dbCheck.prepare('SELECT id, edit_token FROM designs WHERE id=? AND shop_id=?').get(design_id, req.shopId);
   if (!ownerCheck) return res.status(404).json({ error: 'Design introuvable pour ce shop' });
+  if (!_designTokenOk(ownerCheck, req)) return res.status(403).json({ error: 'Token design invalide' });
 
   try {
     const base64Data = png_base64.replace(/^data:image\/\w+;base64,/, '');
@@ -161,27 +173,41 @@ router.post('/save', attachShopId, renderRateLimiter, checkBodySize('png_base64'
     const db = getDB();
 
     if (kind === 'print') {
-      // PNG impression : on enregistre uniquement render_url. Le download admin
-      // tirera ce fichier (et appliquera sharp.trim côté /download/:id).
-      // Nettoyage volume (Railway ~78% le 2026-05-21) : récupérer l'ancien render
-      // de ce design AVANT l'update pour pouvoir supprimer le fichier orphelin
-      // ensuite — sinon chaque render laisse un PNG horodaté qui ne sert plus.
-      let _oldRenderUrl = null;
-      try {
-        _oldRenderUrl = db.prepare('SELECT render_url FROM designs WHERE id=? AND shop_id=?')
-          .get(design_id, req.shopId)?.render_url || null;
-      } catch { /* non bloquant */ }
+      // PNG impression DTF. Multi-face : view_idx (0=recto, 1=verso, …).
+      //   - recto (idx 0 ou absent) → render_url (compat : download admin existant)
+      //   - toutes les vues          → views_print_json {idx: url} (jeu complet DTF)
+      const _vidx    = (req.body.view_idx != null) ? Number(req.body.view_idx) : null;
+      const _isRecto = (_vidx === null || _vidx === 0);
 
-      db.prepare('UPDATE designs SET render_url=?, render_size_kb=? WHERE id=? AND shop_id=?')
-        .run(relUrl, sizeKb, design_id, req.shopId);
-      console.log(`[render][print] ${filename} (${sizeKb} Ko)`);
+      if (_isRecto) {
+        // Nettoyage volume : récupérer l'ancien render AVANT l'update pour supprimer l'orphelin.
+        let _oldRenderUrl = null;
+        try {
+          _oldRenderUrl = db.prepare('SELECT render_url FROM designs WHERE id=? AND shop_id=?')
+            .get(design_id, req.shopId)?.render_url || null;
+        } catch { /* non bloquant */ }
 
-      // Supprimer l'ancien fichier de render (remplacé) — uniquement s'il s'agit
-      // bien d'un fichier local /uploads/renders/ différent du nouveau.
-      if (_oldRenderUrl && _oldRenderUrl !== relUrl && _oldRenderUrl.startsWith('/uploads/renders/')) {
-        try { fs.unlinkSync(path.join(DATA_DIR, _oldRenderUrl)); }
-        catch { /* déjà absent ou non supprimable — non bloquant */ }
+        db.prepare('UPDATE designs SET render_url=?, render_size_kb=? WHERE id=? AND shop_id=?')
+          .run(relUrl, sizeKb, design_id, req.shopId);
+
+        if (_oldRenderUrl && _oldRenderUrl !== relUrl && _oldRenderUrl.startsWith('/uploads/renders/')) {
+          try { fs.unlinkSync(path.join(DATA_DIR, _oldRenderUrl)); }
+          catch { /* déjà absent ou non supprimable — non bloquant */ }
+        }
       }
+
+      // Jeu complet des PNG print par vue (recto + verso) pour l'impression DTF.
+      if (_vidx != null && !Number.isNaN(_vidx)) {
+        try {
+          const cur = db.prepare('SELECT views_print_json FROM designs WHERE id=? AND shop_id=?')
+            .get(design_id, req.shopId)?.views_print_json;
+          const map = cur ? JSON.parse(cur) : {};
+          map[_vidx] = relUrl;
+          db.prepare('UPDATE designs SET views_print_json=? WHERE id=? AND shop_id=?')
+            .run(JSON.stringify(map), design_id, req.shopId);
+        } catch { /* non bloquant */ }
+      }
+      console.log(`[render][print] ${filename} (${sizeKb} Ko) view=${_vidx ?? 0}`);
 
       // FTP fallback secondaire pour archive externe si configuré
       if (isFtpConfigured()) uploadToFtpAsync(filepath, filename, 3);
@@ -355,9 +381,10 @@ router.post('/cart-set/:design_id', attachShopId, renderRateLimiter,
 
     const db = getDB();
     const design = db.prepare(
-      'SELECT id, product, color FROM designs WHERE id = ? AND shop_id = ?'
+      'SELECT id, product, color, edit_token FROM designs WHERE id = ? AND shop_id = ?'
     ).get(designId, req.shopId);
     if (!design) return res.status(404).json({ error: 'Design introuvable pour ce shop' });
+    if (!_designTokenOk(design, req)) return res.status(403).json({ error: 'Token design invalide' });
 
     // Mapping product TSL → clé manifest mockup
     // Phase 1 : on ne gère que tshirt-homme blanc

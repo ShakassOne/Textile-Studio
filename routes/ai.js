@@ -68,6 +68,17 @@ const aiRateLimiter = rateLimit({
   skip:            (req) => !req.shopId,   // si shopId pas encore posé, IP prend le relais
 });
 
+// ── Rate-limit IA additionnel PAR IP — empêche un seul visiteur de consommer
+// tout le quota/h de la boutique (et donc la facture OpenAI du marchand).
+const aiIpRateLimiter = rateLimit({
+  windowMs:        60 * 60 * 1000,        // 1 heure
+  max:             12,                     // 12 générations/heure/IP
+  keyGenerator:    (req) => req.ip,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message:         { error: 'Trop de générations IA depuis cet appareil — réessayez dans une heure' },
+});
+
 // Helpers getSetting/setSetting : importés depuis db/settings.js (audit B1 + M5).
 // La clé 'openai_api_key' est automatiquement chiffrée AES-256-GCM en DB.
 
@@ -290,7 +301,7 @@ router.delete('/settings/openai', requireAuth, attachShopId, (req, res) => {
 
 // ── POST /api/ai/dalle — Génération IA depuis texte (scopé shop) ────────
 // Auth Shopify session token (App Bridge 4) + rate-limit par shop (audit B3)
-router.post('/dalle', requireAIContext, attachShopId, aiRateLimiter, async (req, res) => {
+router.post('/dalle', requireAIContext, attachShopId, aiIpRateLimiter, aiRateLimiter, async (req, res) => {
   const { prompt, size = '1024x1024', quality = 'high', transparent = true } = req.body;
   if (!prompt) return res.status(400).json({ error: 'prompt requis' });
 
@@ -325,7 +336,7 @@ router.post('/dalle', requireAIContext, attachShopId, aiRateLimiter, async (req,
 
 // ── POST /api/ai/transform — Photo → Art (scopé shop) ─────────────
 // Auth Shopify session token (App Bridge 4) + rate-limit par shop (audit B3)
-router.post('/transform', requireAIContext, attachShopId, aiRateLimiter, async (req, res) => {
+router.post('/transform', requireAIContext, attachShopId, aiIpRateLimiter, aiRateLimiter, async (req, res) => {
   const { imageBase64, style = 'cartoon' } = req.body;
   // Point 6 — comportement par défaut : la cover du style sert de référence de
   // style. Désactivable explicitement par requête (useCoverAsStyleReference:false).
@@ -539,7 +550,7 @@ router.delete('/styles/:id', requireAuth, attachShopId, (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════
 
 // POST /api/ai/creations — un client soumet une création IA (storefront) → 'pending'
-router.post('/creations', requireAIContext, attachShopId, aiRateLimiter, (req, res) => {
+router.post('/creations', requireAIContext, attachShopId, aiIpRateLimiter, aiRateLimiter, (req, res) => {
   try {
     const { image_base64, prompt } = req.body || {};
     if (!image_base64) return res.status(400).json({ error: 'image_base64 requis' });

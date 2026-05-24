@@ -3288,6 +3288,8 @@ function setupCustomControls() {
 
 function resizeCanvas() {
   if (!canvas) return;
+  // Mémoriser la zone d'impression AVANT resize, pour réancrer les calques dessus.
+  const oldFrame = STATE.frameCoords ? { ...STATE.frameCoords } : null;
   const newSize = getCanvasSize();
   // Aspect du canvas = aspect du mockup affiché (sinon un mockup carré 1500×1500
   // déborde des côtés d'un canvas portrait et l'export PNG est tronqué). Règle
@@ -3308,9 +3310,39 @@ function resizeCanvas() {
     const top   = (h - bgImg.height * scale) / 2;
     bgImg.set({ left, top, scaleX: scale, scaleY: scale });
     bgImg.setCoords();
+    // Ré-aligner la couche COULEUR sur le nouveau transform du fond. L'overlay
+    // est créé aux coords du fond AU MOMENT de applyColorOverlay() ; sans ce
+    // recalage au resize, le fond bouge mais l'overlay reste figé → on voit le
+    // fond (blanc) ET l'overlay coloré décalés = "ghost" d'un 2e t-shirt.
+    const overlay = canvas.getObjects().find(o => o.__isColorOverlay);
+    if (overlay) {
+      overlay.set({ left, top, scaleX: scale, scaleY: scale });
+      overlay.setCoords();
+    }
     drawPrintFrameFromMockup(view, bgImg, scale, left, top);
   } else {
     drawPrintFrame();
+  }
+
+  // Réancrer les calques utilisateur sur la zone d'impression : sans ça, ils
+  // gardent leurs coords px absolues alors que le cadre s'est déplacé/redimensionné
+  // au resize → le design "sort" du cadre. On applique le ratio de variation du
+  // cadre (uniforme : le format est constant pendant un resize de fenêtre).
+  const newFrame = STATE.frameCoords;
+  if (oldFrame && newFrame && oldFrame.w > 0 && oldFrame.h > 0) {
+    const r = newFrame.w / oldFrame.w;
+    if (Math.abs(r - 1) > 0.001) {
+      canvas.getObjects().forEach(o => {
+        if (o.__isFrame || o.__isMockupBg || o.__isColorOverlay || o.__isPrintMask) return;
+        o.set({
+          left:   newFrame.x + ((o.left || 0) - oldFrame.x) * r,
+          top:    newFrame.y + ((o.top  || 0) - oldFrame.y) * r,
+          scaleX: (o.scaleX || 1) * r,
+          scaleY: (o.scaleY || 1) * r,
+        });
+        o.setCoords();
+      });
+    }
   }
   canvas.renderAll();
 }
@@ -5056,12 +5088,36 @@ function syncColorFromHex(type) {
 // ============================================
 // IMAGE TOOL
 // ============================================
+// Réduit une image dataURL à maxDim px max (évite crash mémoire mobile + payloads
+// trop lourds vers le serveur). SVG laissé tel quel (vectoriel).
+function _downscaleDataURL(dataUrl, maxDim = 2000) {
+  return new Promise((resolve) => {
+    try {
+      if (typeof dataUrl !== 'string' || /^data:image\/svg\+xml/i.test(dataUrl)) return resolve(dataUrl);
+      const im = new Image();
+      im.onload = () => {
+        const w = im.naturalWidth, h = im.naturalHeight;
+        if (!w || !h || Math.max(w, h) <= maxDim) return resolve(dataUrl);
+        const scale = maxDim / Math.max(w, h);
+        const c = document.createElement('canvas');
+        c.width = Math.round(w * scale); c.height = Math.round(h * scale);
+        c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+        const isPng = /^data:image\/png/i.test(dataUrl);
+        resolve(c.toDataURL(isPng ? 'image/png' : 'image/jpeg', 0.9));
+      };
+      im.onerror = () => resolve(dataUrl);
+      im.src = dataUrl;
+    } catch (e) { resolve(dataUrl); }
+  });
+}
+
 function handleImageUpload(e) {
   const file = e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = (ev) => {
-    fabric.Image.fromURL(ev.target.result, (img) => {
+  reader.onload = async (ev) => {
+    const src = await _downscaleDataURL(ev.target.result, 2000);
+    fabric.Image.fromURL(src, (img) => {
       const maxW = canvas.getWidth() * 0.7;
       const maxH = canvas.getHeight() * 0.7;
       const scale = Math.min(maxW / img.width, maxH / img.height, 1);
@@ -6349,7 +6405,7 @@ async function _checkoutShopifyDirect() {
     if (saved?.id) {
       designId = saved.id;
       _currentDesignId = designId;
-      _generateAndSaveHDRender(designId); // fire-and-forget rendu HD
+      _currentDesignToken = saved.edit_token || null;
     }
   }
 
@@ -6381,7 +6437,7 @@ async function _checkoutShopifyDirect() {
     try {
       const r = await apiFetch('/api/render/save-views', {
         method: 'POST',
-        body: JSON.stringify({ design_id: designId, views: viewsToUpload }),
+        body: JSON.stringify({ design_id: designId, views: viewsToUpload, design_token: _currentDesignToken }),
       });
       viewsPreview = r?.views || {};
     } catch(e) {
@@ -6423,6 +6479,7 @@ async function _checkoutShopifyDirect() {
           design_id:  designId,
           png_base64: _previewBase64,
           kind:       'preview', // mockup + design → ne touche pas le PNG print
+          design_token: _currentDesignToken,
         }),
       });
       _cdnPreviewUrl = _saveRes?.previewUrl || null;
@@ -6446,12 +6503,24 @@ async function _checkoutShopifyDirect() {
       const _cartFront = _canvasToCleanDataURL({ keepMockup: false, format: 'png', multiplier: 2 });
       apiFetch('/api/render/cart-set/' + designId, {
         method: 'POST',
-        body: JSON.stringify({ design_front_b64: _cartFront }),
+        body: JSON.stringify({ design_front_b64: _cartFront, design_token: _currentDesignToken }),
       }).then(r => {
         if (r?.skipped) console.log('[TextileLab] cart-set skipped:', r.reason);
         else if (r?.urls)  console.log('[TextileLab] cart-set ok:', Object.keys(r.urls));
       }).catch(e => console.warn('[TextileLab] cart-set:', e.message));
     } catch (e) { console.warn('[TextileLab] cart-set prep:', e.message); }
+  }
+
+  // ── 4d. Rendu PNG print HD (DTF) — BLOQUANT avant l'ajout panier ──────
+  // On (re)génère toujours le fichier d'impression de chaque vue avec contenu.
+  // Si ça échoue, on n'ajoute PAS au panier (sinon commande sans fichier imprimable).
+  let _printOk = false;
+  try { _printOk = await _generateAndSaveHDRender(designId); }
+  catch (e) { console.warn('[TextileLab] print render:', e.message); _printOk = false; }
+  if (!designId || !_printOk) {
+    showToast('❌ Impossible de générer le fichier d\'impression. Vérifiez votre connexion et réessayez.');
+    allBtns.forEach(b => { if (b.tagName === 'BUTTON') { b.disabled = false; b.textContent = '🛒 Ajouter au panier'; } });
+    return;
   }
 
   // ── 5. Construire les properties Shopify ──
@@ -6610,6 +6679,7 @@ async function addToCart() {
     });
     if (saved?.id) {
       _currentDesignId = saved.id;
+      _currentDesignToken = saved.edit_token || null;
       _generateAndSaveHDRender(saved.id);
     }
   }
@@ -6936,6 +7006,7 @@ async function submitCheckoutForm(designId) {
     STATE.cart = [];
     document.getElementById('cart-badge').textContent = '0';
     _currentDesignId = null;
+    _currentDesignToken = null;
 
     // Confirmation screen
     showOrderConfirmation(order, email);
@@ -6974,6 +7045,7 @@ function showOrderConfirmation(order, email) {
     // Reset du panier et du design courant
     STATE.cart = [];
     _currentDesignId = null;
+    _currentDesignToken = null;
     const badge = document.getElementById('cart-badge');
     if (badge) badge.textContent = '0';
     // Vider le canvas pour un nouveau design
@@ -7284,12 +7356,14 @@ async function transformPhoto() {
 
   try {
     // Lire la photo en base64
-    const base64 = await new Promise((resolve, reject) => {
+    const base64raw = await new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload  = e => resolve(e.target.result);
       reader.onerror = reject;
       reader.readAsDataURL(_photoFile);
     });
+    // Downscale avant envoi (évite 413 sur la limite 10 Mo + accélère l'IA).
+    const base64 = await _downscaleDataURL(base64raw, 1600);
 
     const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
       ? 'http://localhost:3001' : '';
@@ -8007,6 +8081,7 @@ const API_BASE = (window.location.hostname === 'localhost' || window.location.ho
   : '';  // même domaine en prod
 
 let _currentDesignId = null;
+let _currentDesignToken = null; // secret renvoyé à la création, requis pour /api/render/*
 let _clipboard       = null; // Ctrl+C / Ctrl+V
 
 async function apiFetch(path, opts = {}) {
@@ -9235,43 +9310,68 @@ function updateHistoryBtns() { updateUndoRedo(); }
 
 // Génère et sauvegarde un rendu HD sans le mockup (fond transparent — prêt pour impression)
 // Utilise un canvas offscreen isolé pour ne pas perturber l'affichage principal
-async function _generateAndSaveHDRender(designId) {
-  try {
-    // Filtrer uniquement les objets de design (pas le T-shirt, overlay, masque, cadre)
-    const userObjs = canvas.getObjects().filter(
-      o => !o.__isMockupBg && !o.__isColorOverlay && !o.__isPrintMask && !o.__isFrame
-    );
-    if (!userObjs.length) return;
-
-    // Créer un canvas offscreen (non attaché au DOM) — fond transparent par défaut
-    const offEl = document.createElement('canvas');
-    const offscreen = new fabric.StaticCanvas(offEl, {
-      width:  canvas.getWidth(),
-      height: canvas.getHeight(),
-    });
-
-    // Cloner les objets dans le canvas offscreen (clone préserve toutes les propriétés)
-    await new Promise(resolve => {
-      let done = 0;
-      userObjs.forEach(obj => {
-        obj.clone(cloned => {
-          offscreen.add(cloned);
-          if (++done === userObjs.length) resolve();
-        });
+// Rend une liste de calques (sérialisés) en PNG print HD transparent (sans mockup).
+function _renderLayersToPrintPNG(layers) {
+  return new Promise((resolve) => {
+    try {
+      if (!layers || !layers.length) return resolve(null);
+      const offEl = document.createElement('canvas');
+      const offscreen = new fabric.StaticCanvas(offEl, {
+        width:  canvas.getWidth(),
+        height: canvas.getHeight(),
       });
-    });
+      fabric.util.enlivenObjects(layers, (objs) => {
+        try {
+          objs.forEach(o => { applyFrameClipToObject(o); offscreen.add(o); });
+          offscreen.renderAll();
+          const url = offscreen.toDataURL({ format: 'png', multiplier: 4 });
+          offscreen.dispose();
+          resolve(url);
+        } catch (e) { try { offscreen.dispose(); } catch (_) {} resolve(null); }
+      });
+    } catch (e) { resolve(null); }
+  });
+}
 
-    offscreen.renderAll();
-    const dataUrl = offscreen.toDataURL({ format: 'png', multiplier: 4 });
-    offscreen.dispose();
+// Génère + sauvegarde le PNG print HD de TOUTES les vues avec contenu (recto/verso).
+// Retourne true seulement si toutes les vues attendues ont été enregistrées.
+// Plus de fire-and-forget : le résultat conditionne l'ajout au panier.
+async function _generateAndSaveHDRender(designId) {
+  if (!designId) return false;
+  try { _saveCurrentViewLayers(); } catch (_) {}
 
-    await apiFetch('/api/render/save', {
-      method: 'POST',
-      body: JSON.stringify({ design_id: designId, png_base64: dataUrl, kind: 'print' }),
-    });
-  } catch(e) {
-    console.warn('HD render:', e.message);
+  const mockup = STATE_mockup;
+  const views  = mockup?.views || [{}];
+  const SER_KEYS = ['__isQR','__isAI','__isTicket','__isText','__isLibrary','__locked','__ticketNum','__ticketIndex'];
+
+  // Lister les vues ayant du contenu + leurs calques sérialisés.
+  const targets = [];
+  for (let idx = 0; idx < views.length; idx++) {
+    let layers;
+    if (idx === STATE_viewIdx) {
+      layers = canvas.getObjects()
+        .filter(o => !o.__isFrame && !o.__isMockupBg && !o.__isColorOverlay && !o.__isPrintMask)
+        .map(o => { const j = o.toJSON(SER_KEYS); delete j.clipPath; return j; });
+    } else {
+      layers = STATE.viewLayers?.[_viewKey(mockup?.id, idx)] || [];
+    }
+    if (layers && layers.length) targets.push({ idx, layers });
   }
+  if (!targets.length) return false;
+
+  let ok = 0;
+  for (const t of targets) {
+    try {
+      const dataUrl = await _renderLayersToPrintPNG(t.layers);
+      if (!dataUrl) continue;
+      const r = await apiFetch('/api/render/save', {
+        method: 'POST',
+        body: JSON.stringify({ design_id: designId, png_base64: dataUrl, kind: 'print', view_idx: t.idx, design_token: _currentDesignToken }),
+      });
+      if (r && r.url) ok++;
+    } catch (e) { console.warn('HD render view', t.idx, e.message); }
+  }
+  return ok === targets.length;
 }
 
 // ============================================
