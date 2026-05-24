@@ -278,11 +278,15 @@ function initDB() {
       { code: 'avatar',     label: 'Avatar',     image_url: '/assets/styles/style-avatar.png',     prompt: 'Transform this photo into a stylized avatar portrait, modern digital art, geometric simplification, vibrant gradient colors, transparent background, apparel print ready', sort_order: 9 },
     ];
     const allShops = db.prepare('SELECT id FROM shops WHERE is_active=1').all();
+    const countStyles = db.prepare('SELECT COUNT(*) AS n FROM ai_styles WHERE shop_id=?');
     const insertStyle = db.prepare(
       'INSERT OR IGNORE INTO ai_styles (shop_id, code, label, prompt, image_url, is_builtin, sort_order) VALUES (?, ?, ?, ?, ?, 1, ?)'
     );
     let seeded = 0;
     for (const s of allShops) {
+      // Seed UNE seule fois : si la boutique a déjà des styles, on ne réinjecte
+      // pas les built-in (sinon une suppression admin réapparaîtrait au redémarrage).
+      if (countStyles.get(s.id).n > 0) continue;
       for (const st of BUILTIN_STYLES) {
         const info = insertStyle.run(s.id, st.code, st.label, st.prompt, st.image_url, st.sort_order);
         if (info.changes) seeded++;
