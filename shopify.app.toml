@@ -6,18 +6,29 @@ application_url = "https://textile-studio-production.up.railway.app"
 embedded = true
 
 [webhooks]
-api_version = "2024-01"
+api_version = "2026-01"
 
 # Audit B8 — déclarations statiques exigées par Shopify review depuis 2024
 [[webhooks.subscriptions]]
 topics = ["app/uninstalled"]
 uri = "/shopify/webhook"
 
-# compliance_topics (GDPR) : à déclarer dans Partners Dashboard > App setup > GDPR webhooks
-# (Shopify requiert l'approbation "Protected Customer Data" avant de les accepter dans le TOML)
+# Webhooks de conformité GDPR (obligatoires App Store) — une URL par topic,
+# pointant vers les endpoints existants de routes/shopify.js (aucun changement de code).
+[[webhooks.subscriptions]]
+compliance_topics = ["customers/data_request"]
+uri = "https://textile-studio-production.up.railway.app/shopify/gdpr/customers/data_request"
 
-# orders/paid : contient des données client protégées → approbation requise avant ajout ici
-# Webhook enregistré dynamiquement au bootstrap (server.js) en attendant l'approbation
+[[webhooks.subscriptions]]
+compliance_topics = ["customers/redact"]
+uri = "https://textile-studio-production.up.railway.app/shopify/gdpr/customers/redact"
+
+[[webhooks.subscriptions]]
+compliance_topics = ["shop/redact"]
+uri = "https://textile-studio-production.up.railway.app/shopify/gdpr/shop/redact"
+
+# orders/paid : contient des données client protégées → enregistré dynamiquement au
+# bootstrap (server.js) une fois l'app installée (PCD demandé via le Dev Dashboard).
 
 [app_proxy]
 url = "https://textile-studio-production.up.railway.app/proxy"
