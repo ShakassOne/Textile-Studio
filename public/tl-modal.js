@@ -150,9 +150,10 @@
     '  display: block !important;',
     '}',
     '.tl-design-overlay > img {',
-    '  height: 160px !important;',
-    '  width: auto !important;',
-    '  max-width: 160px !important;',
+    '  width: 100% !important;',
+    '  height: 100% !important;',
+    '  max-width: 100% !important;',
+    '  max-height: 100% !important;',
     '  object-fit: contain !important;',
     '  display: block !important;',
     '  background: transparent !important;',
@@ -379,10 +380,15 @@
     // Taille fixée à 160×160 max (Alan a calé cette valeur via DevTools sur le
     // drawer Studio). object-fit contain + margin auto centre l'image dans le
     // container et préserve le ratio naturel du mockup.
+    // Responsive : remplit le container (100% w/h) avec object-fit:contain.
+    // FINI le 160px fixe qui se faisait clipper par .tl-design-overlay overflow:hidden
+    // sur les thèmes où le container fait < 160px (ex. Horizon). Le t-shirt
+    // s'adapte maintenant à la taille réelle de la cellule, quel que soit le thème.
     ovImg.style.cssText =
-      'height:160px;' +
-      'width:auto;' +
-      'max-width:160px;' +
+      'width:100%;' +
+      'height:100%;' +
+      'max-width:100%;' +
+      'max-height:100%;' +
       'object-fit:contain;' +
       'display:block;' +
       'background:transparent;' +

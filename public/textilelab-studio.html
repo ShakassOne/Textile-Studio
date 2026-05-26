@@ -6460,8 +6460,8 @@ async function _checkoutShopifyDirect() {
       // 15% sur chaque côté → survit au crop CSS du drawer panier (object-fit:
       // cover sur aspect ratio non strictement 1:1 + object-position:top).
       _previewHdBase64 = await _generatePaddedPreviewPNG({
-        padding: 0.15,
-        dim:     1200,
+        padding: 0.05,
+        maxSide: 1200,
         bg:      '#ffffff',
       });
     } catch (e) {
@@ -8889,13 +8889,15 @@ function _canvasToCleanDataURL(opts = {}) {
   return dataUrl;
 }
 
-// Génère un PNG carré "drawer-friendly" pour _preview_img Shopify.
-// On détecte la BOÎTE ENGLOBANTE du t-shirt (objet __isMockupBg) dans le canvas
-// pour cadrer au plus juste, au lieu de prendre tout le canvas. Le t-shirt
-// occupe ainsi ~83% du carré (10% de marge blanche autour de sa bbox réelle),
-// sans gaspiller d'espace en marge inutile.
+// Génère un PNG "drawer-friendly" pour _preview_img Shopify au RATIO NATUREL
+// du t-shirt (pas de carré forcé). On détecte la BBox du mockup (__isMockupBg)
+// et on sort une image rectangulaire = bbox + 5% de marge uniforme. Combiné à
+// l'overlay tl-modal.js qui pose ce ratio sur le container du line item
+// (applyAspectRatio) et affiche l'img en width/height:100% contain, le t-shirt
+// remplit le thumbnail à >90% sans crop et sans marge gâchée, quel que soit
+// le thème (Studio, Sense, Horizon…).
 async function _generatePaddedPreviewPNG(opts = {}) {
-  const { padding = 0.10, dim = 1200, bg = '#ffffff' } = opts;
+  const { padding = 0.05, maxSide = 1200, bg = '#ffffff' } = opts;
   const mult = 2; // doit matcher le multiplier de _canvasToCleanDataURL ci-dessous
   const srcDataUrl = _canvasToCleanDataURL({
     keepMockup: true,
@@ -8903,7 +8905,7 @@ async function _generatePaddedPreviewPNG(opts = {}) {
     multiplier: mult,
     bg,
   });
-  // BBox du mockup dans les coordonnées du canvas studio (fallback canvas entier).
+  // BBox du mockup en coords canvas studio (fallback canvas entier).
   let bx = 0, by = 0, bw = canvas.getWidth(), bh = canvas.getHeight();
   try {
     const mockup = canvas.getObjects().find(o => o.__isMockupBg);
@@ -8919,24 +8921,29 @@ async function _generatePaddedPreviewPNG(opts = {}) {
       const img = new Image();
       img.onload = () => {
         try {
-          // Coordonnées source (PNG multiplié).
+          // Coords source (PNG multiplié) + marge uniforme proportionnelle.
           const sx = bx * mult;
           const sy = by * mult;
           const sw = bw * mult;
           const sh = bh * mult;
-          // Crop carré centré sur le t-shirt, côté = max(sw,sh) * (1 + 2*padding).
-          const side  = Math.max(sw, sh) * (1 + 2 * padding);
-          const cx    = sx + sw / 2;
-          const cy    = sy + sh / 2;
-          const cropX = cx - side / 2;
-          const cropY = cy - side / 2;
+          const padX = sw * padding;
+          const padY = sh * padding;
+          const cropX = sx - padX;
+          const cropY = sy - padY;
+          const cropW = sw + 2 * padX;
+          const cropH = sh + 2 * padY;
+          // Output au ratio naturel : plus grand côté = maxSide.
+          const ratio = cropW / cropH;
+          let outW, outH;
+          if (cropW >= cropH) { outW = maxSide; outH = Math.round(maxSide / ratio); }
+          else                { outH = maxSide; outW = Math.round(maxSide * ratio); }
           const out = document.createElement('canvas');
-          out.width  = dim;
-          out.height = dim;
+          out.width  = outW;
+          out.height = outH;
           const ctx = out.getContext('2d');
           ctx.fillStyle = bg;
-          ctx.fillRect(0, 0, dim, dim);
-          ctx.drawImage(img, cropX, cropY, side, side, 0, 0, dim, dim);
+          ctx.fillRect(0, 0, outW, outH);
+          ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, outW, outH);
           resolve(out.toDataURL('image/png'));
         } catch (e) { resolve(srcDataUrl); }
       };
