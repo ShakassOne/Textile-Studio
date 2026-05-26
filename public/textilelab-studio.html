@@ -8889,36 +8889,54 @@ function _canvasToCleanDataURL(opts = {}) {
   return dataUrl;
 }
 
-// Génère un PNG carré "drawer-friendly" pour _preview_img Shopify :
-// le t-shirt occupe ~70% du carré (15% de padding blanc autour), centré.
-// Garantit que le drawer panier (object-fit:cover + aspect ratio non strictement 1:1
-// + parfois object-position:top du thème) affiche toujours le t-shirt entier.
+// Génère un PNG carré "drawer-friendly" pour _preview_img Shopify.
+// On détecte la BOÎTE ENGLOBANTE du t-shirt (objet __isMockupBg) dans le canvas
+// pour cadrer au plus juste, au lieu de prendre tout le canvas. Le t-shirt
+// occupe ainsi ~83% du carré (10% de marge blanche autour de sa bbox réelle),
+// sans gaspiller d'espace en marge inutile.
 async function _generatePaddedPreviewPNG(opts = {}) {
-  const { padding = 0.15, dim = 1200, bg = '#ffffff' } = opts;
+  const { padding = 0.10, dim = 1200, bg = '#ffffff' } = opts;
+  const mult = 2; // doit matcher le multiplier de _canvasToCleanDataURL ci-dessous
   const srcDataUrl = _canvasToCleanDataURL({
     keepMockup: true,
     format:     'png',
-    multiplier: 2,
+    multiplier: mult,
     bg,
   });
+  // BBox du mockup dans les coordonnées du canvas studio (fallback canvas entier).
+  let bx = 0, by = 0, bw = canvas.getWidth(), bh = canvas.getHeight();
+  try {
+    const mockup = canvas.getObjects().find(o => o.__isMockupBg);
+    if (mockup) {
+      const r = mockup.getBoundingRect(true, true);
+      if (r && r.width > 0 && r.height > 0) {
+        bx = r.left; by = r.top; bw = r.width; bh = r.height;
+      }
+    }
+  } catch (e) { /* fallback canvas entier */ }
   return new Promise((resolve) => {
     try {
       const img = new Image();
       img.onload = () => {
         try {
+          // Coordonnées source (PNG multiplié).
+          const sx = bx * mult;
+          const sy = by * mult;
+          const sw = bw * mult;
+          const sh = bh * mult;
+          // Crop carré centré sur le t-shirt, côté = max(sw,sh) * (1 + 2*padding).
+          const side  = Math.max(sw, sh) * (1 + 2 * padding);
+          const cx    = sx + sw / 2;
+          const cy    = sy + sh / 2;
+          const cropX = cx - side / 2;
+          const cropY = cy - side / 2;
           const out = document.createElement('canvas');
           out.width  = dim;
           out.height = dim;
           const ctx = out.getContext('2d');
           ctx.fillStyle = bg;
           ctx.fillRect(0, 0, dim, dim);
-          const target = dim * (1 - 2 * padding);
-          const scale  = Math.min(target / img.width, target / img.height);
-          const w = img.width  * scale;
-          const h = img.height * scale;
-          const dx = Math.round((dim - w) / 2);
-          const dy = Math.round((dim - h) / 2);
-          ctx.drawImage(img, dx, dy, w, h);
+          ctx.drawImage(img, cropX, cropY, side, side, 0, 0, dim, dim);
           resolve(out.toDataURL('image/png'));
         } catch (e) { resolve(srcDataUrl); }
       };
