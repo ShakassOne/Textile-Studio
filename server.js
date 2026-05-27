@@ -396,6 +396,7 @@ app.use((req, res, next) => {
     '/api/product-links/by-mockup',
     '/api/shopify/product-variant',
     '/api/shopify/products',
+    '/api/shop-settings/style/public',
     '/textilelab-studio.html',
     '/tl-modal.js',
     '/uploads',
@@ -435,6 +436,7 @@ app.use('/shopify',              require('./routes/shopify'));
 app.use('/oauth',               require('./routes/oauth'));
 app.use('/api/shopify-session', require('./routes/shopify-session'));
 app.use('/api/admin',          require('./routes/admin-graphql'));
+app.use('/api/shop-settings',  require('./routes/shop-settings'));
 app.use('/proxy',             require('./routes/app-proxy'));
 
 // ── Stats (admin, scopé shop — audit B1) ───────────────────────────────
