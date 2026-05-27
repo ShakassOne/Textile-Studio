@@ -16,6 +16,15 @@
   if (window.__TLModalInitialized) return;
   window.__TLModalInitialized = true;
 
+  // ── Préférence marchand : couleur de fond derrière la preview drawer ───────
+  // Configurée dans l'admin TextileLab (Paramètres → Apparence du drawer panier)
+  // et exposée par GET /api/shop-settings/style/public?shop=<myshopify_domain>.
+  // Tant que le fetch n'a pas répondu, fallback transparent (comportement actuel).
+  // Appliquée dans _tlInjectOverlay() au moment de l'injection ET sur tous les
+  // overlays déjà présents quand la réponse arrive (cas où le drawer s'ouvre
+  // avant la fin du fetch).
+  var _TL_CART_BG = '';
+
   // ── Styles injectés ─────────────────────────────────────────────────────────
   // Le bloc CART_FIX_CSS résout le bug de chevauchement image/titre dans les
   // drawers panier des thèmes Shopify modernes (Studio, Sense, etc.) où une
@@ -364,14 +373,19 @@
 
     var overlay = document.createElement('div');
     overlay.className = 'tl-design-overlay';
+    // Background : `_TL_CART_BG` (configuré par le marchand dans l'admin → API
+    // /api/shop-settings/style/public). Par défaut transparent → on voit le
+    // drawer du thème dessous. Quand le marchand pose une couleur, on l'applique
+    // en !important inline (max spécificité, surcharge le CSS injecté).
+    var bg = _TL_CART_BG || 'transparent';
     overlay.style.cssText =
       'position:absolute;' +
       'inset:0;' +
-      'background:transparent;' +
       'z-index:2;' +
       'pointer-events:none;' +
       'overflow:hidden;' +
       'display:block;';
+    overlay.style.setProperty('background', bg, _TL_CART_BG ? 'important' : '');
 
     var ovImg = document.createElement('img');
     ovImg.src = previewUrl;
@@ -754,6 +768,39 @@
     openModal(buildStudioUrl(idOrHandle));
   }
 
+  // ── Préférences marchand (apparence drawer) ────────────────────────────────
+  // Fetch sans bloquer l'init : si la réponse arrive après que des overlays sont
+  // déjà injectés, on les rattrape via _tlApplyBgToExistingOverlays().
+  function _tlLoadStyleSettings() {
+    try {
+      var shop = (window.Shopify && window.Shopify.shop)
+              || window._TL_SHOP
+              || window.location.hostname;
+      if (!shop) return;
+      var url = TSL_BACKEND_ORIGIN
+              + '/api/shop-settings/style/public?shop='
+              + encodeURIComponent(shop);
+      fetch(url, { credentials: 'omit', mode: 'cors' })
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(data) {
+          if (!data) return;
+          var bg = String(data.cart_drawer_bg_color || '').trim().toLowerCase();
+          if (!bg || bg === 'transparent') return;
+          _TL_CART_BG = bg;
+          _tlApplyBgToExistingOverlays();
+        })
+        .catch(function() {});
+    } catch (e) { /* silencieux */ }
+  }
+
+  function _tlApplyBgToExistingOverlays() {
+    if (!_TL_CART_BG) return;
+    var overlays = document.querySelectorAll('.tl-design-overlay');
+    for (var i = 0; i < overlays.length; i++) {
+      overlays[i].style.setProperty('background', _TL_CART_BG, 'important');
+    }
+  }
+
   // ── Init ────────────────────────────────────────────────────────────────────
   function init() {
     injectDOM();
@@ -761,6 +808,7 @@
     interceptLinks();
     interceptTslButtons();
     _tlInitCartSync();
+    _tlLoadStyleSettings();
   }
 
   // ── Synchronisation persistante des images du panier ───────────────────────

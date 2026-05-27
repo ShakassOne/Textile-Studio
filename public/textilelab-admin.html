@@ -627,6 +627,50 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
           <div id="services-status" style="display:flex;flex-direction:column;gap:8px;font-size:13px">Chargement…</div>
         </div>
 
+        <!-- Apparence — preview drawer panier -->
+        <div class="table-card" style="padding:20px">
+          <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px">🎨 Apparence du drawer panier</h3>
+          <p style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5">Couleur de fond derrière la preview du t-shirt personnalisé dans le panier (drawer). Utile quand le thème de la boutique est sombre et que le PNG du mockup laisse apparaître son fond. Laissez vide pour <strong style="color:var(--text2)">Transparent</strong> (par défaut : on voit le drawer du thème).</p>
+
+          <!-- Aperçu live -->
+          <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
+            <div id="drawer-style-preview" style="width:72px;height:72px;border:1px solid var(--border);border-radius:10px;background:repeating-conic-gradient(#222 0% 25%,#1a1a1a 0% 50%) 50% / 14px 14px;flex-shrink:0;position:relative">
+              <div id="drawer-style-preview-color" style="position:absolute;inset:0;border-radius:10px;background:transparent;transition:background 120ms ease"></div>
+            </div>
+            <div style="font-size:12px;color:var(--text3);line-height:1.5">
+              Aperçu de la couleur appliquée derrière la preview dans le drawer panier.<br>
+              <span id="drawer-style-current" style="font-family:'DM Mono',monospace;color:var(--text2)">Transparent</span>
+            </div>
+          </div>
+
+          <!-- Contrôles -->
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text2);cursor:pointer">
+                <input type="checkbox" id="drawer-bg-transparent" onchange="onDrawerBgTransparentToggle()" style="cursor:pointer">
+                <span>Transparent (fond du thème visible)</span>
+              </label>
+            </div>
+            <div id="drawer-bg-color-row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <input type="color" id="drawer-bg-color-picker" value="#000000"
+                oninput="onDrawerBgColorInput(this.value)"
+                style="width:48px;height:38px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);padding:2px;cursor:pointer">
+              <input type="text" id="drawer-bg-color-hex" maxlength="9" placeholder="#000000"
+                oninput="onDrawerBgHexInput(this.value)"
+                style="background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:8px 12px;color:var(--text);font-size:13px;outline:none;font-family:'DM Mono',monospace;width:140px;box-sizing:border-box">
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <button class="btn btn-sm" type="button" onclick="setDrawerBgPreset('#ffffff')">⚪ Blanc</button>
+                <button class="btn btn-sm" type="button" onclick="setDrawerBgPreset('#000000')">⚫ Noir</button>
+                <button class="btn btn-sm" type="button" onclick="setDrawerBgPreset('#f5f5f5')">▫ Gris clair</button>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+              <button class="btn btn-primary" id="drawer-style-save-btn" onclick="saveDrawerStyle()">💾 Enregistrer</button>
+              <span id="drawer-style-result" style="font-size:12px;color:var(--text3);align-self:center;min-height:16px"></span>
+            </div>
+          </div>
+        </div>
+
         <!-- Stockage / Maintenance -->
         <div class="table-card" style="padding:20px">
           <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px">🧹 Stockage — fichiers inutilisés</h3>
@@ -2252,6 +2296,7 @@ async function loadSettingsInfo() {
   if (urlEl) urlEl.textContent = API_BASE || window.location.origin;
   testAPIConnection();
   loadAIKeyStatus();
+  loadDrawerStyle();
   const [aiStatus, shopStatus] = await Promise.all([api('/api/ai/status'), api('/api/shopify/status')]);
   const svcEl = document.getElementById('services-status');
   if (svcEl) {
@@ -2261,6 +2306,85 @@ async function loadSettingsInfo() {
       badge(shopStatus?.connected, 'Shopify Storefront'),
       badge(true, 'SQLite Database'),
     ].join('');
+  }
+}
+
+// ── Drawer panier : couleur de fond preview ────────────────────────────────
+async function loadDrawerStyle() {
+  const data = await api('/api/shop-settings/style');
+  const value = (data?.cart_drawer_bg_color || '').trim().toLowerCase();
+  _applyDrawerPreview(value);
+}
+
+function _applyDrawerPreview(value) {
+  const v = (value || '').trim().toLowerCase();
+  const isTransparent = (v === '' || v === 'transparent');
+  const picker = document.getElementById('drawer-bg-color-picker');
+  const hex    = document.getElementById('drawer-bg-color-hex');
+  const tog    = document.getElementById('drawer-bg-transparent');
+  const row    = document.getElementById('drawer-bg-color-row');
+  const sw     = document.getElementById('drawer-style-preview-color');
+  const lbl    = document.getElementById('drawer-style-current');
+  if (tog) tog.checked = isTransparent;
+  if (row) row.style.opacity = isTransparent ? '0.45' : '1';
+  if (sw)  sw.style.background = isTransparent ? 'transparent' : v;
+  if (lbl) lbl.textContent = isTransparent ? 'Transparent' : v;
+  if (!isTransparent) {
+    // Garde un hex 6-char (sans alpha) pour le color picker natif
+    const hex6 = /^#([0-9a-f]{6})$/.test(v) ? v : null;
+    if (picker && hex6) picker.value = hex6;
+    if (hex)    hex.value    = v;
+  }
+}
+
+function onDrawerBgTransparentToggle() {
+  const tog    = document.getElementById('drawer-bg-transparent');
+  const picker = document.getElementById('drawer-bg-color-picker');
+  if (tog?.checked) {
+    _applyDrawerPreview('');
+  } else {
+    _applyDrawerPreview(picker?.value || '#000000');
+  }
+}
+
+function onDrawerBgColorInput(value) {
+  document.getElementById('drawer-bg-transparent').checked = false;
+  _applyDrawerPreview(value);
+}
+
+function onDrawerBgHexInput(value) {
+  const v = String(value || '').trim();
+  if (/^#?[0-9a-fA-F]{0,8}$/.test(v.replace(/^#/, '#'))) {
+    const normalized = v.startsWith('#') ? v : '#' + v;
+    document.getElementById('drawer-bg-transparent').checked = false;
+    _applyDrawerPreview(normalized);
+  }
+}
+
+function setDrawerBgPreset(hex) {
+  document.getElementById('drawer-bg-transparent').checked = false;
+  _applyDrawerPreview(hex);
+}
+
+async function saveDrawerStyle() {
+  const tog   = document.getElementById('drawer-bg-transparent');
+  const hex   = document.getElementById('drawer-bg-color-hex');
+  const out   = document.getElementById('drawer-style-result');
+  const btn   = document.getElementById('drawer-style-save-btn');
+  const value = tog?.checked ? '' : (hex?.value || '').trim().toLowerCase();
+  if (out) { out.textContent = '⏳ Sauvegarde…'; out.style.color = 'var(--text3)'; }
+  if (btn) btn.disabled = true;
+  const data = await api('/api/shop-settings/style', {
+    method: 'POST',
+    body:   JSON.stringify({ cart_drawer_bg_color: value }),
+  });
+  if (btn) btn.disabled = false;
+  if (data?.ok) {
+    _applyDrawerPreview(data.cart_drawer_bg_color || '');
+    if (out) { out.textContent = '✅ Enregistré — visible côté boutique dans ~1 min'; out.style.color = 'var(--success)'; }
+    showToast('✅ Apparence drawer mise à jour');
+  } else {
+    if (out) { out.textContent = '❌ ' + (data?.error || 'Erreur inconnue'); out.style.color = 'var(--danger)'; }
   }
 }
 
