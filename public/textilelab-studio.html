@@ -6456,13 +6456,15 @@ async function _checkoutShopifyDirect() {
   let _previewHdBase64 = null;
   if (designId) {
     try {
-      // PNG carré "drawer-friendly" : t-shirt à 70% du carré, padding blanc
-      // 15% sur chaque côté → survit au crop CSS du drawer panier (object-fit:
-      // cover sur aspect ratio non strictement 1:1 + object-position:top).
+      // PNG drawer-friendly : ratio naturel du t-shirt (pas carré forcé),
+      // FOND TRANSPARENT. La couleur derrière la preview est gérée par
+      // tl-modal.js → background de .tl-design-overlay, réglable par le
+      // marchand dans Paramètres → Apparence du drawer panier. Par défaut
+      // transparent → on voit le drawer natif du thème en dessous.
       _previewHdBase64 = await _generatePaddedPreviewPNG({
         padding: 0.05,
         maxSide: 1200,
-        bg:      '#ffffff',
+        bg:      null,
       });
     } catch (e) {
       console.warn('[TextileLab] preview HD generation :', e.message);
@@ -8897,7 +8899,12 @@ function _canvasToCleanDataURL(opts = {}) {
 // remplit le thumbnail à >90% sans crop et sans marge gâchée, quel que soit
 // le thème (Studio, Sense, Horizon…).
 async function _generatePaddedPreviewPNG(opts = {}) {
-  const { padding = 0.05, maxSide = 1200, bg = '#ffffff' } = opts;
+  // bg=null → PNG transparent (recommandé). Le fond du drawer panier est
+  // alors piloté par tl-modal.js (.tl-design-overlay { background: <couleur
+  // marchand> }), réglable par le marchand dans l'admin TextileLab.
+  // Passer bg='#ffffff' (ou tout autre couleur) garde l'ancien comportement
+  // opaque pour les besoins d'export client (download PNG).
+  const { padding = 0.05, maxSide = 1200, bg = null } = opts;
   const mult = 2; // doit matcher le multiplier de _canvasToCleanDataURL ci-dessous
   const srcDataUrl = _canvasToCleanDataURL({
     keepMockup: true,
@@ -8941,8 +8948,13 @@ async function _generatePaddedPreviewPNG(opts = {}) {
           out.width  = outW;
           out.height = outH;
           const ctx = out.getContext('2d');
-          ctx.fillStyle = bg;
-          ctx.fillRect(0, 0, outW, outH);
+          // Si bg est null/'transparent'/'' → on laisse le canvas vide
+          // (alpha=0 partout). Sinon on remplit avec la couleur demandée.
+          const _hasBg = !!bg && bg !== 'transparent';
+          if (_hasBg) {
+            ctx.fillStyle = bg;
+            ctx.fillRect(0, 0, outW, outH);
+          }
           ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, outW, outH);
           resolve(out.toDataURL('image/png'));
         } catch (e) { resolve(srcDataUrl); }
