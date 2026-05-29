@@ -9386,7 +9386,56 @@ function updateHistoryBtns() { updateUndoRedo(); }
 
 // Génère et sauvegarde un rendu HD sans le mockup (fond transparent — prêt pour impression)
 // Utilise un canvas offscreen isolé pour ne pas perturber l'affichage principal
-// Rend une liste de calques (sérialisés) en PNG print HD transparent (sans mockup).
+// Clés custom à préserver lors du clone/sérialisation des calques.
+const _PRINT_SER_KEYS = ['__isQR','__isAI','__isTicket','__isText','__isLibrary','__locked','__ticketNum','__ticketIndex','__deformType','path','pathSide','pathStartOffset'];
+
+// Variante "live" : utilise les objets fabric VIVANTS de la vue courante et les clone
+// dans un canvas offscreen. Le clone deep-copie les instances fabric (y compris
+// le fabric.Path porté par les textes déformés Arc/Wave) — fiable contrairement
+// au passage par toJSON()+enlivenObjects qui casse pour les textes-sur-path et
+// les polices Google chargées en async.
+function _renderLiveObjectsToPrintPNG(liveObjs) {
+  return new Promise((resolve) => {
+    try {
+      if (!liveObjs || !liveObjs.length) return resolve(null);
+      const offEl = document.createElement('canvas');
+      const offscreen = new fabric.StaticCanvas(offEl, {
+        width:  canvas.getWidth(),
+        height: canvas.getHeight(),
+      });
+      let pending = liveObjs.length;
+      const cloned = [];
+      const finalize = () => {
+        try {
+          cloned.forEach(o => { applyFrameClipToObject(o); offscreen.add(o); });
+          offscreen.renderAll();
+          const url = offscreen.toDataURL({ format: 'png', multiplier: 4 });
+          offscreen.dispose();
+          resolve(url);
+        } catch (e) {
+          console.warn('[TextileLab] live print render error', e.message);
+          try { offscreen.dispose(); } catch (_) {}
+          resolve(null);
+        }
+      };
+      liveObjs.forEach((obj) => {
+        try {
+          obj.clone((c) => {
+            cloned.push(c);
+            if (--pending === 0) finalize();
+          }, _PRINT_SER_KEYS);
+        } catch (e) {
+          console.warn('[TextileLab] clone layer error', e.message);
+          if (--pending === 0) finalize();
+        }
+      });
+    } catch (e) { console.warn('[TextileLab] live render init error', e.message); resolve(null); }
+  });
+}
+
+// Rend une liste de calques (sérialisés JSON, vues NON courantes) en PNG print HD transparent.
+// Utilisé uniquement pour les vues qu'on ne voit pas actuellement à l'écran : on n'a
+// pas d'objets fabric vivants, seulement leur JSON sauvegardé via _saveCurrentViewLayers().
 function _renderLayersToPrintPNG(layers) {
   return new Promise((resolve) => {
     try {
@@ -9398,14 +9447,18 @@ function _renderLayersToPrintPNG(layers) {
       });
       fabric.util.enlivenObjects(layers, (objs) => {
         try {
-          objs.forEach(o => { applyFrameClipToObject(o); offscreen.add(o); });
+          (objs || []).forEach(o => { if (o) { applyFrameClipToObject(o); offscreen.add(o); } });
           offscreen.renderAll();
           const url = offscreen.toDataURL({ format: 'png', multiplier: 4 });
           offscreen.dispose();
           resolve(url);
-        } catch (e) { try { offscreen.dispose(); } catch (_) {} resolve(null); }
+        } catch (e) {
+          console.warn('[TextileLab] enliven print render error', e.message);
+          try { offscreen.dispose(); } catch (_) {}
+          resolve(null);
+        }
       });
-    } catch (e) { resolve(null); }
+    } catch (e) { console.warn('[TextileLab] enliven init error', e.message); resolve(null); }
   });
 }
 
@@ -9418,34 +9471,37 @@ async function _generateAndSaveHDRender(designId) {
 
   const mockup = STATE_mockup;
   const views  = mockup?.views || [{}];
-  const SER_KEYS = ['__isQR','__isAI','__isTicket','__isText','__isLibrary','__locked','__ticketNum','__ticketIndex'];
 
-  // Lister les vues ayant du contenu + leurs calques sérialisés.
+  // Lister les vues ayant du contenu.
+  //  - vue courante  → objets fabric vivants (clone fiable, supporte texte-sur-path)
+  //  - autres vues   → calques sérialisés JSON (fallback enlivenObjects)
   const targets = [];
   for (let idx = 0; idx < views.length; idx++) {
-    let layers;
     if (idx === STATE_viewIdx) {
-      layers = canvas.getObjects()
-        .filter(o => !o.__isFrame && !o.__isMockupBg && !o.__isColorOverlay && !o.__isPrintMask)
-        .map(o => { const j = o.toJSON(SER_KEYS); delete j.clipPath; return j; });
+      const liveObjs = canvas.getObjects()
+        .filter(o => !o.__isFrame && !o.__isMockupBg && !o.__isColorOverlay && !o.__isPrintMask);
+      if (liveObjs.length) targets.push({ idx, liveObjs });
     } else {
-      layers = STATE.viewLayers?.[_viewKey(mockup?.id, idx)] || [];
+      const layers = STATE.viewLayers?.[_viewKey(mockup?.id, idx)] || [];
+      if (layers.length) targets.push({ idx, layers });
     }
-    if (layers && layers.length) targets.push({ idx, layers });
   }
   if (!targets.length) return false;
 
   let ok = 0;
   for (const t of targets) {
     try {
-      const dataUrl = await _renderLayersToPrintPNG(t.layers);
-      if (!dataUrl) continue;
+      const dataUrl = t.liveObjs
+        ? await _renderLiveObjectsToPrintPNG(t.liveObjs)
+        : await _renderLayersToPrintPNG(t.layers);
+      if (!dataUrl) { console.warn('[TextileLab] print PNG vide view', t.idx); continue; }
       const r = await apiFetch('/api/render/save', {
         method: 'POST',
         body: JSON.stringify({ design_id: designId, png_base64: dataUrl, kind: 'print', view_idx: t.idx, design_token: _currentDesignToken }),
       });
       if (r && r.url) ok++;
-    } catch (e) { console.warn('HD render view', t.idx, e.message); }
+      else console.warn('[TextileLab] /api/render/save sans url view', t.idx, r);
+    } catch (e) { console.warn('[TextileLab] HD render view', t.idx, e.message); }
   }
   return ok === targets.length;
 }
