@@ -432,16 +432,27 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
 
     <!-- Modal : ajouter / éditer une catégorie -->
     <div class="modal-overlay" id="modal-cat" onclick="if(event.target===this)closeCatModal()">
-      <div class="modal-box" style="max-width:400px">
+      <div class="modal-box" style="max-width:440px">
         <div class="modal-header">
           <div class="modal-title" id="modal-cat-title">Nouvelle catégorie</div>
           <button class="modal-close" onclick="closeCatModal()">✕</button>
         </div>
         <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
           <div>
-            <label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-family:'DM Mono',monospace;display:block;margin-bottom:6px">Emoji</label>
-            <input type="text" id="cat-emoji" placeholder="📦" maxlength="4"
-              style="width:60px;background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;color:var(--text);font-size:22px;text-align:center;outline:none">
+            <label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-family:'DM Mono',monospace;display:block;margin-bottom:6px">Visuel (image ou emoji)</label>
+            <div style="display:flex;align-items:center;gap:14px">
+              <div id="cat-visual-preview" style="width:72px;height:72px;border-radius:12px;background:var(--bg2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:36px;flex-shrink:0;overflow:hidden">📦</div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:8px">
+                <div style="display:flex;gap:8px;align-items:center">
+                  <input type="text" id="cat-emoji" placeholder="📦" maxlength="4"
+                    style="width:60px;background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;color:var(--text);font-size:22px;text-align:center;outline:none">
+                  <button type="button" class="btn btn-sm" onclick="document.getElementById('cat-image-input').click()">📁 Choisir image</button>
+                </div>
+                <input type="file" id="cat-image-input" accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif" style="display:none" onchange="onCatImagePick(event)">
+                <div id="cat-image-info" style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace"></div>
+                <button type="button" id="cat-image-remove" onclick="removeCatImage()" style="display:none;align-self:flex-start;font-size:11px;color:var(--red,#e66);background:transparent;border:none;cursor:pointer;padding:0;text-decoration:underline">Retirer l'image</button>
+              </div>
+            </div>
           </div>
           <div>
             <label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-family:'DM Mono',monospace;display:block;margin-bottom:6px">Nom affiché</label>
@@ -451,7 +462,7 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
           </div>
           <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
             <button class="btn" onclick="closeCatModal()">Annuler</button>
-            <button class="btn btn-primary" onclick="saveCategoryModal()">Enregistrer</button>
+            <button class="btn btn-primary" id="cat-save-btn" onclick="saveCategoryModal()">Enregistrer</button>
           </div>
         </div>
       </div>
@@ -858,8 +869,17 @@ async function loadProductCategories() {
   const cats = await api('/api/product-categories');
   if (Array.isArray(cats) && cats.length) {
     PRODUCTS_META = {};
-    cats.forEach(c => { PRODUCTS_META[c.key] = { name: c.name, emoji: c.emoji, id: c.id }; });
+    cats.forEach(c => { PRODUCTS_META[c.key] = { name: c.name, emoji: c.emoji, image_url: c.image_url || '', id: c.id }; });
   }
+}
+
+// Rend le visuel d'une catégorie (image si disponible, sinon emoji)
+function _renderCatVisual(meta, sizePx) {
+  const size = sizePx || 22;
+  if (meta?.image_url) {
+    return `<img src="${meta.image_url}" alt="" style="width:${size}px;height:${size}px;border-radius:6px;object-fit:cover;vertical-align:middle;display:inline-block">`;
+  }
+  return `<span>${meta?.emoji || '📦'}</span>`;
 }
 // Zone canvas
 let ED = { id:null, _apiId:null, name:'', product:'tshirt', views:[], file3d:null, activeViewIdx:0 };
@@ -1694,7 +1714,7 @@ function renderMockupsGrid() {
       </div>
       ${Object.entries(PRODUCTS_META).map(([k,v]) => `
         <div class="ptab" data-filter="${k}" onclick="filterByProduct('${k}')">
-          <span>${v.emoji}</span> ${v.name}
+          ${_renderCatVisual(v, 20)} ${v.name}
           <span class="ptab-count" id="count-${k}">${MOCKUPS.filter(m=>m.product===k).length}</span>
         </div>`).join('')}
     </div>
@@ -1713,7 +1733,7 @@ function renderMockupCards() {
   const grid = document.getElementById('mockup-grid');
   const list = currentProductFilter === 'all' ? MOCKUPS : MOCKUPS.filter(m => m.product === currentProductFilter);
   const cards = list.map(m => {
-    const p = PRODUCTS_META[m.product] || { name: m.product, emoji: '📦' };
+    const p = PRODUCTS_META[m.product] || { name: m.product, emoji: '📦', image_url: '' };
     const frontView = m.views[0];
     const hasImg = frontView?.imageData;
     const viewChips = m.views.map(v => `<span class="view-chip ${v.imageData?'has-img':''}">${v.name}</span>`).join('');
@@ -1723,14 +1743,17 @@ function renderMockupCards() {
       const iw = frontView.previewW||200, ih = frontView.previewH||200;
       overlay = `<div class="zone-overlay" data-label="Zone A4" style="left:${(z.x/iw*100).toFixed(1)}%;top:${(z.y/ih*100).toFixed(1)}%;width:${(z.w/iw*100).toFixed(1)}%;height:${(z.h/ih*100).toFixed(1)}%"></div>`;
     }
+    const fallbackVisual = p.image_url
+      ? `<img src="${p.image_url}" alt="" style="width:48px;height:48px;border-radius:8px;object-fit:cover">`
+      : `<span>${p.emoji}</span>`;
     return `
       <div class="mockup-card">
         <div class="mockup-card-thumb">
-          ${hasImg ? `<img src="${frontView.imageData}" alt="${m.name}">` : `<div class="no-img"><span>${p.emoji}</span>Aucun visuel</div>`}
+          ${hasImg ? `<img src="${frontView.imageData}" alt="${m.name}">` : `<div class="no-img">${fallbackVisual}Aucun visuel</div>`}
           ${overlay}
         </div>
         <div class="mockup-card-body">
-          <div class="mockup-card-name">${p.emoji} ${m.name}</div>
+          <div class="mockup-card-name">${_renderCatVisual(p, 18)} ${m.name}</div>
           <div class="mockup-card-meta">${m.views.length} vue(s)</div>
           <div class="mockup-card-views">${viewChips}</div>
           <div style="display:flex;gap:6px;margin-top:10px">
@@ -2065,14 +2088,38 @@ async function saveMockup() {
 
 async function deleteMockup(id) {
   if(!confirm('Supprimer ce mockup ?'))return;
-  const mockup=MOCKUPS.find(m=>m.id===id||m.id===Number(id));
-  const apiId=mockup?._apiId||(typeof id==='number'?id:null);
-  if(_apiAvailable&&apiId){
-    const res=await api(`/api/mockups/${apiId}`,{method:'DELETE'});
-    if(res?.deleted){await loadMockupsView();showToast('Mockup supprimé ✓');return;}
+  // L'id passé depuis le template peut être une string ; on cherche dans les 2 sens.
+  const numId = Number(id);
+  const mockup = MOCKUPS.find(m => m.id === id || m.id === numId || m._apiId === id || m._apiId === numId);
+  // Mockups venant de l'API ont leur id en number ; on prend mockup.id en priorité, puis _apiId,
+  // sinon on tente de convertir le paramètre reçu.
+  const apiId = (mockup && (mockup._fromAPI || typeof mockup.id === 'number'))
+    ? (mockup._apiId || mockup.id)
+    : (typeof id === 'number' ? id : (Number.isFinite(numId) ? numId : null));
+  if (_apiAvailable && apiId) {
+    try {
+      const res = await fetch(`${API_BASE}/api/mockups/${apiId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('tl_admin_token') || token}` }
+      });
+      if (res.ok) {
+        await loadMockupsView();
+        showToast('Mockup supprimé ✓');
+        return;
+      }
+      // Réponse non-ok → message d'erreur lisible
+      let msg = `HTTP ${res.status}`;
+      try { const j = await res.json(); if (j?.error) msg = j.error; } catch {}
+      showToast('❌ ' + msg);
+      return;
+    } catch (e) {
+      showToast('❌ Erreur réseau : ' + e.message);
+      return;
+    }
   }
-  MOCKUPS=MOCKUPS.filter(m=>m.id!==id&&m._apiId!==id);
-  try{localStorage.setItem('tl_mockups',JSON.stringify(MOCKUPS));}catch{}
+  // Fallback local (mode offline / pas d'auth)
+  MOCKUPS = MOCKUPS.filter(m => m.id !== id && m.id !== numId && m._apiId !== id && m._apiId !== numId);
+  try { localStorage.setItem('tl_mockups', JSON.stringify(MOCKUPS)); } catch {}
   renderMockupsGrid();
   showToast('Mockup supprimé');
 }
@@ -2686,6 +2733,8 @@ async function deleteAiStyle() {
 // CATEGORIES PRODUITS
 // ============================================
 let _editingCatId = null;
+let _editingCatImageUrl = '';      // image_url existante de la catégorie en édition
+let _editingCatPendingFile = null; // fichier image choisi mais pas encore uploadé
 
 async function loadCategoriesView() {
   await loadProductCategories();
@@ -2696,27 +2745,77 @@ async function loadCategoriesView() {
     list.innerHTML = '<div style="color:var(--text3);font-size:13px">Aucune catégorie</div>';
     return;
   }
-  list.innerHTML = cats.map(c => `
+  list.innerHTML = cats.map(c => {
+    const safeName  = (c.name  || '').replace(/'/g,"\\'");
+    const safeEmoji = (c.emoji || '📦').replace(/'/g,"\\'");
+    const safeImg   = (c.image_url || '').replace(/'/g,"\\'");
+    const visual = c.image_url
+      ? `<img src="${c.image_url}" alt="" style="width:44px;height:44px;border-radius:10px;object-fit:cover;border:1px solid var(--border);flex-shrink:0">`
+      : `<span style="font-size:28px;flex-shrink:0">${c.emoji}</span>`;
+    return `
     <div style="background:var(--bg3);border:1px solid var(--border);border-radius:14px;padding:16px 20px;display:flex;align-items:center;gap:14px" id="cat-row-${c.id}">
-      <span style="font-size:28px;flex-shrink:0">${c.emoji}</span>
+      ${visual}
       <div style="flex:1;min-width:0">
         <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px">${c.name}</div>
         <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text3);margin-top:2px">clé : ${c.key}</div>
       </div>
       <div style="display:flex;gap:8px;flex-shrink:0">
-        <button class="btn btn-sm btn-ghost" onclick="openEditCategoryModal(${c.id},'${c.name.replace(/'/g,"\\'")}','${c.emoji}')">✏️ Renommer</button>
-        <button class="btn btn-sm btn-danger btn-icon" onclick="deleteCategory(${c.id},'${c.name.replace(/'/g,"\\'")}')">🗑</button>
+        <button class="btn btn-sm btn-ghost" onclick="openEditCategoryModal(${c.id},'${safeName}','${safeEmoji}','${safeImg}')">✏️ Éditer</button>
+        <button class="btn btn-sm btn-danger btn-icon" onclick="deleteCategory(${c.id},'${safeName}')">🗑</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+}
+
+function _refreshCatVisualPreview() {
+  const preview = document.getElementById('cat-visual-preview');
+  if (!preview) return;
+  const removeBtn = document.getElementById('cat-image-remove');
+  if (_editingCatPendingFile) {
+    const url = URL.createObjectURL(_editingCatPendingFile);
+    preview.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover">`;
+    if (removeBtn) removeBtn.style.display = '';
+    return;
+  }
+  if (_editingCatImageUrl) {
+    preview.innerHTML = `<img src="${_editingCatImageUrl}" style="width:100%;height:100%;object-fit:cover">`;
+    if (removeBtn) removeBtn.style.display = '';
+    return;
+  }
+  const emoji = document.getElementById('cat-emoji').value.trim() || '📦';
+  preview.textContent = emoji;
+  if (removeBtn) removeBtn.style.display = 'none';
+}
+
+function onCatImagePick(ev) {
+  const f = ev.target.files?.[0];
+  if (!f) return;
+  if (f.size > 8 * 1024 * 1024) { showToast('⚠ Image trop lourde (max 8 Mo)'); ev.target.value = ''; return; }
+  _editingCatPendingFile = f;
+  document.getElementById('cat-image-info').textContent = `${f.name} (${(f.size/1024).toFixed(0)} Ko)`;
+  _refreshCatVisualPreview();
+}
+
+function removeCatImage() {
+  _editingCatPendingFile = null;
+  _editingCatImageUrl = '';
+  document.getElementById('cat-image-input').value = '';
+  document.getElementById('cat-image-info').textContent = '';
+  _refreshCatVisualPreview();
 }
 
 function openAddCategoryModal() {
   _editingCatId = null;
+  _editingCatImageUrl = '';
+  _editingCatPendingFile = null;
   document.getElementById('modal-cat-title').textContent = 'Nouvelle catégorie';
   document.getElementById('cat-emoji').value = '📦';
   document.getElementById('cat-name').value  = '';
   document.getElementById('cat-key-preview').textContent = '';
+  document.getElementById('cat-image-input').value = '';
+  document.getElementById('cat-image-info').textContent = '';
   document.getElementById('modal-cat').classList.add('open');
+  _refreshCatVisualPreview();
   // Liaison live preview de la clé
   const nameInput = document.getElementById('cat-name');
   nameInput.oninput = () => {
@@ -2725,46 +2824,84 @@ function openAddCategoryModal() {
       .replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
     document.getElementById('cat-key-preview').textContent = k ? `→ clé générée : ${k}` : '';
   };
+  document.getElementById('cat-emoji').oninput = _refreshCatVisualPreview;
   setTimeout(() => document.getElementById('cat-name').focus(), 100);
 }
 
-function openEditCategoryModal(id, name, emoji) {
+function openEditCategoryModal(id, name, emoji, imageUrl) {
   _editingCatId = id;
-  document.getElementById('modal-cat-title').textContent = 'Renommer la catégorie';
+  _editingCatImageUrl = imageUrl || '';
+  _editingCatPendingFile = null;
+  document.getElementById('modal-cat-title').textContent = 'Éditer la catégorie';
   document.getElementById('cat-emoji').value = emoji || '📦';
   document.getElementById('cat-name').value  = name || '';
   document.getElementById('cat-key-preview').textContent = '(la clé ne change pas)';
+  document.getElementById('cat-image-input').value = '';
+  document.getElementById('cat-image-info').textContent = '';
   document.getElementById('cat-name').oninput = null;
+  document.getElementById('cat-emoji').oninput = _refreshCatVisualPreview;
   document.getElementById('modal-cat').classList.add('open');
+  _refreshCatVisualPreview();
   setTimeout(() => document.getElementById('cat-name').focus(), 100);
 }
 
 function closeCatModal() {
   document.getElementById('modal-cat').classList.remove('open');
   _editingCatId = null;
+  _editingCatImageUrl = '';
+  _editingCatPendingFile = null;
 }
 
 async function saveCategoryModal() {
   const name  = document.getElementById('cat-name').value.trim();
   const emoji = document.getElementById('cat-emoji').value.trim() || '📦';
   if (!name) { showToast('⚠ Le nom est obligatoire'); return; }
+  const btn = document.getElementById('cat-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Enregistrement…'; }
 
-  let res;
-  if (_editingCatId) {
-    res = await api(`/api/product-categories/${_editingCatId}`, {
-      method: 'PUT', body: JSON.stringify({ name, emoji })
-    });
-  } else {
-    res = await api('/api/product-categories', {
-      method: 'POST', body: JSON.stringify({ name, emoji })
-    });
+  try {
+    // 1. Créer ou mettre à jour la catégorie (sans toucher à l'image_url si fichier en attente)
+    let res;
+    const payload = { name, emoji };
+    // En édition, si pas de nouveau fichier choisi, on envoie l'image_url actuelle
+    // (potentiellement vidée par "Retirer l'image" → suppression côté serveur).
+    if (_editingCatId && !_editingCatPendingFile) {
+      payload.image_url = _editingCatImageUrl;
+    }
+    if (_editingCatId) {
+      res = await api(`/api/product-categories/${_editingCatId}`, {
+        method: 'PUT', body: JSON.stringify(payload)
+      });
+    } else {
+      res = await api('/api/product-categories', {
+        method: 'POST', body: JSON.stringify(payload)
+      });
+    }
+    if (res === null || res?.error) { showToast('❌ ' + (res?.error || 'Erreur serveur — vérifiez que vous êtes bien connecté')); return; }
+
+    // 2. Upload du fichier image si nécessaire
+    if (_editingCatPendingFile) {
+      const fd = new FormData();
+      fd.append('file', _editingCatPendingFile);
+      const upRes = await fetch(`${API_BASE}/api/product-categories/${res.id}/upload-image`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('tl_admin_token') || token}` },
+        body: fd,
+      });
+      if (!upRes.ok) {
+        let msg = `HTTP ${upRes.status}`;
+        try { const j = await upRes.json(); if (j?.error) msg = j.error; } catch {}
+        showToast('⚠ Catégorie enregistrée mais upload image échoué : ' + msg);
+      }
+    }
+
+    showToast(_editingCatId ? `✅ Catégorie mise à jour` : `✅ Catégorie "${name}" créée`);
+    closeCatModal();
+    await loadProductCategories(); // Rafraîchir PRODUCTS_META
+    loadCategoriesView();
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Enregistrer'; }
   }
-
-  if (res === null || res?.error) { showToast('❌ ' + (res?.error || 'Erreur serveur — vérifiez que vous êtes bien connecté')); return; }
-  showToast(_editingCatId ? `✅ Catégorie renommée` : `✅ Catégorie "${name}" créée`);
-  closeCatModal();
-  await loadProductCategories(); // Rafraîchir PRODUCTS_META
-  loadCategoriesView();
 }
 
 async function deleteCategory(id, name) {

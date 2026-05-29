@@ -187,10 +187,13 @@ function initDB() {
       key        TEXT NOT NULL UNIQUE,
       name       TEXT NOT NULL,
       emoji      TEXT NOT NULL DEFAULT '📦',
+      image_url  TEXT NOT NULL DEFAULT '',
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now'))
     )
   `);
+  // Migration idempotente : ajouter image_url si la table existait déjà sans
+  try { db.exec("ALTER TABLE product_categories ADD COLUMN image_url TEXT NOT NULL DEFAULT ''"); } catch {}
   // Seeder pour le shop bootstrap si la table est vide (audit B1 : multi-tenant scoping).
   // Ce seed est appliqué uniquement quand le shop bootstrap existe en DB ; les autres
   // marchands déclencheront leur propre seed lors de l'installation OAuth (à implémenter
