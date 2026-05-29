@@ -208,20 +208,27 @@ function run(db) {
           key        TEXT    NOT NULL,
           name       TEXT    NOT NULL,
           emoji      TEXT    NOT NULL DEFAULT '📦',
+          image_url  TEXT    NOT NULL DEFAULT '',
           sort_order INTEGER NOT NULL DEFAULT 0,
           created_at TEXT    DEFAULT (datetime('now')),
           UNIQUE (shop_id, key)
         )
       `);
+      // image_url existe peut-être déjà sur l'ancienne table (ALTER TABLE de database.js)
+      const hadImageUrl = db.prepare("PRAGMA table_info(product_categories)").all()
+        .some(c => c.name === 'image_url');
+      const selectCols = hadImageUrl
+        ? 'id, shop_id, key, name, emoji, image_url, sort_order, created_at'
+        : "id, shop_id, key, name, emoji, '' AS image_url, sort_order, created_at";
       if (bootstrapShop?.id) {
         db.exec(`
-          INSERT INTO product_categories_new (id, shop_id, key, name, emoji, sort_order, created_at)
-          SELECT id, COALESCE(shop_id, ${bootstrapShop.id}), key, name, emoji, sort_order, created_at FROM product_categories
+          INSERT INTO product_categories_new (id, shop_id, key, name, emoji, image_url, sort_order, created_at)
+          SELECT id, COALESCE(shop_id, ${bootstrapShop.id}), key, name, emoji, ${hadImageUrl ? 'image_url' : "''"}, sort_order, created_at FROM product_categories
         `);
       } else {
         db.exec(`
-          INSERT INTO product_categories_new (id, shop_id, key, name, emoji, sort_order, created_at)
-          SELECT id, shop_id, key, name, emoji, sort_order, created_at FROM product_categories WHERE shop_id IS NOT NULL
+          INSERT INTO product_categories_new (id, shop_id, key, name, emoji, image_url, sort_order, created_at)
+          SELECT id, shop_id, key, name, emoji, ${hadImageUrl ? 'image_url' : "''"}, sort_order, created_at FROM product_categories WHERE shop_id IS NOT NULL
         `);
       }
       db.exec('DROP TABLE product_categories');
