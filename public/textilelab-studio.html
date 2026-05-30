@@ -8105,6 +8105,8 @@ async function apiFetch(path, opts = {}) {
 
 // ── Charger les catégories produit depuis l'API et mettre à jour les noms dans l'UI ──
 // Gère aussi les nouvelles catégories créées en admin (clés absentes des produits hardcodés)
+// Si une image_url est définie côté admin, elle remplace l'emoji/SVG dans la sidebar
+// desktop ET dans la grille mobile (front cohérent avec le back).
 async function loadProductCategories() {
   const cats = await apiFetch('/api/product-categories');
   if (!Array.isArray(cats) || !cats.length) return;
@@ -8113,25 +8115,54 @@ async function loadProductCategories() {
   const viewSwitch  = document.getElementById('view-switcher-desktop');
   const mobileGrid  = document.querySelector('#drawer-product .product-grid');
 
+  // Helper : convertit une image_url (relative ou absolue) en src exploitable
+  const absImg = (u) => {
+    if (!u) return '';
+    if (/^https?:\/\//i.test(u) || u.startsWith('data:')) return u;
+    return API_BASE + u;
+  };
+
   cats.forEach(c => {
     const isNew = !PRODUCTS[c.key];
+    const imgSrc = absImg(c.image_url);
 
     // Ajouter ou mettre à jour l'objet PRODUCTS
     if (isNew) {
-      PRODUCTS[c.key] = { name: c.name, emoji: c.emoji, base: 0 };
+      PRODUCTS[c.key] = { name: c.name, emoji: c.emoji, image_url: c.image_url || '', base: 0 };
     } else {
-      PRODUCTS[c.key].name  = c.name;
-      PRODUCTS[c.key].emoji = c.emoji;
+      PRODUCTS[c.key].name      = c.name;
+      PRODUCTS[c.key].emoji     = c.emoji;
+      PRODUCTS[c.key].image_url = c.image_url || '';
     }
 
-    // Mettre à jour les éléments DOM existants (renommage)
+    // Mettre à jour les éléments DOM existants (renommage + visuel)
     document.querySelectorAll(`[data-product="${c.key}"]`).forEach(el => {
       const nameEl = el.querySelector('.product-name, .card-name');
       if (nameEl) nameEl.textContent = c.name;
+
+      // Si une image est définie dans l'admin, on remplace le visuel (SVG/emoji)
+      // par l'image. Sinon on laisse le visuel d'origine (SVG hardcodé).
+      if (imgSrc) {
+        const sideEmoji = el.querySelector('.product-emoji');
+        if (sideEmoji) {
+          sideEmoji.innerHTML = `<img src="${imgSrc}" alt="" style="width:28px;height:28px;object-fit:cover;border-radius:6px;display:block">`;
+        }
+        const cardEmoji = el.querySelector('.card-emoji');
+        if (cardEmoji) {
+          cardEmoji.innerHTML = `<img src="${imgSrc}" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:8px;display:block">`;
+        }
+      }
     });
 
     // Nouvelle catégorie → créer les éléments dans la sidebar desktop et le drawer mobile
     if (isNew) {
+      const sideVisual = imgSrc
+        ? `<img src="${imgSrc}" alt="" style="width:28px;height:28px;object-fit:cover;border-radius:6px;display:block">`
+        : `<span style="font-size:20px;line-height:1">${c.emoji || '📦'}</span>`;
+      const cardVisual = imgSrc
+        ? `<img src="${imgSrc}" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:8px;display:block">`
+        : `<span style="font-size:32px;line-height:1">${c.emoji || '📦'}</span>`;
+
       // Sidebar desktop
       if (sidebar && viewSwitch) {
         const item = document.createElement('div');
@@ -8139,7 +8170,7 @@ async function loadProductCategories() {
         item.dataset.product = c.key;
         item.setAttribute('onclick', `selectProduct('${c.key}')`);
         item.innerHTML = `
-          <span class="product-emoji" style="font-size:20px;width:24px;text-align:center">${c.emoji}</span>
+          <span class="product-emoji" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center">${sideVisual}</span>
           <div class="product-info">
             <div class="product-name">${c.name}</div>
             <div class="product-price" id="price-${c.key}">—</div>
@@ -8153,7 +8184,7 @@ async function loadProductCategories() {
         card.dataset.product = c.key;
         card.setAttribute('onclick', `selectProduct('${c.key}');closeDrawer()`);
         card.innerHTML = `
-          <span class="card-emoji" style="font-size:32px;line-height:1">${c.emoji}</span>
+          <span class="card-emoji" style="display:flex;align-items:center;justify-content:center">${cardVisual}</span>
           <div class="card-name">${c.name}</div>
           <div class="card-price">—</div>`;
         mobileGrid.appendChild(card);
