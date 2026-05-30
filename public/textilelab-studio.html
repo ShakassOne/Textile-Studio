@@ -9438,11 +9438,14 @@ function _renderLiveObjectsToPrintPNG(liveObjs) {
       const cloned = [];
       const finalize = () => {
         try {
-          cloned.forEach(o => { applyFrameClipToObject(o); offscreen.add(o); });
+          // Filtrer les clones invalides (undefined, plain object sans méthodes fabric)
+          // → évite "e.isNotVisible is not a function" au render.
+          const safe = cloned.filter(o => o && typeof o.isNotVisible === 'function');
+          safe.forEach(o => { applyFrameClipToObject(o); offscreen.add(o); });
           offscreen.renderAll();
           const url = offscreen.toDataURL({ format: 'png', multiplier: 4 });
           offscreen.dispose();
-          resolve(url);
+          resolve(safe.length ? url : null);
         } catch (e) {
           console.warn('[TextileLab] live print render error', e.message);
           try { offscreen.dispose(); } catch (_) {}
@@ -9452,7 +9455,17 @@ function _renderLiveObjectsToPrintPNG(liveObjs) {
       liveObjs.forEach((obj) => {
         try {
           obj.clone((c) => {
-            cloned.push(c);
+            // Re-attacher le fabric.Path original sur les textes déformés Arc/Wave :
+            // clone() sérialise le path en plain object, ce qui casse le render
+            // (path.isNotVisible n'existe plus). Le canvas offscreen est éphémère
+            // → on peut partager la référence vivante sans risque d'effet de bord.
+            if (c && obj.path && (!c.path || typeof c.path.isNotVisible !== 'function')) {
+              c.path = obj.path;
+              if (obj.pathSide        != null) c.pathSide        = obj.pathSide;
+              if (obj.pathStartOffset != null) c.pathStartOffset = obj.pathStartOffset;
+              c.dirty = true;
+            }
+            if (c) cloned.push(c);
             if (--pending === 0) finalize();
           }, _PRINT_SER_KEYS);
         } catch (e) {
