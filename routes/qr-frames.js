@@ -6,21 +6,12 @@ const path    = require('path');
 const fs      = require('fs');
 const { getDB, getShop } = require('../db/database');
 const { requireAuth } = require('./auth');
-const { attachShopId } = require('./_shop-context');
-
-// ── Middleware storefront (x-shop-domain ou ?shop= sans auth admin) ───────────
-function requireShopContext(req, res, next) {
-  const shopDomain = (req.headers['x-shop-domain'] || req.query.shop || '').toLowerCase().trim();
-  if (!shopDomain) return res.status(400).json({ error: 'shop requis' });
-  const record = getShop(shopDomain);
-  if (!record) return res.status(403).json({ error: 'Shop non installé' });
-  req.shopDomain = shopDomain;
-  req.shopId = record.id;
-  next();
-}
+const { attachShopId, attachShopIdSoft } = require('./_shop-context');
 
 // ── GET /api/qr-frames/public — pour le studio storefront (pas d'auth admin) ──
-router.get('/public', requireShopContext, (req, res) => {
+// Utilise attachShopIdSoft : résout via x-shop-domain, ?shop=, ou bootstrap env
+router.get('/public', attachShopIdSoft, (req, res) => {
+  if (!req.shopId) return res.status(400).json({ error: 'shop non résolu', frames: [] });
   try {
     const db = getDB();
     const rows = db.prepare(
