@@ -333,6 +333,10 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
         Créations IA
       </div>
+      <div class="nav-item" onclick="showView('qr-frames')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="5" y="5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="16" y="5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="5" y="16" width="3" height="3" fill="currentColor" stroke="none"/><path d="M14 14h3v3h-3zM17 17h3v3h-3z"/></svg>
+        Frames QR
+      </div>
 
       <div class="nav-section">Système</div>
       <div class="nav-item" onclick="showView('settings')">
@@ -571,6 +575,26 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
           Aucune création pour l'instant.
         </div>
         <div id="ai-creations-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px"></div>
+      </div>
+    </div>
+
+    <!-- ══ FRAMES QR ══ -->
+    <div class="view" id="view-qr-frames">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Frames QR</div>
+          <div class="page-sub">Habillages réseaux sociaux et personnalisés affichés dans le studio</div>
+        </div>
+        <div class="page-actions">
+          <button class="btn" onclick="loadQrFrames()">↻ Actualiser</button>
+          <button class="btn btn-primary" onclick="openQrFrameModal()">+ Ajouter un frame</button>
+        </div>
+      </div>
+      <div style="padding:24px">
+        <div id="qr-frames-empty-admin" style="display:none;color:var(--text3);font-size:13px;padding:32px;text-align:center;background:var(--bg3);border:1px dashed var(--border);border-radius:14px">
+          Aucun frame configuré. Ajoutez votre premier habillage ci-dessus.
+        </div>
+        <div id="qr-frames-list-admin" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px"></div>
       </div>
     </div>
 
@@ -829,6 +853,50 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
   </div>
 </div>
 
+<!-- ══ MODAL : FRAME QR ══ -->
+<div class="modal-overlay" id="qr-frame-modal" onclick="if(event.target===this)closeModal('qr-frame-modal')">
+  <div class="modal-box" style="width:min(480px,94vw)">
+    <div class="modal-header">
+      <div class="modal-title">Ajouter un frame QR</div>
+      <button class="modal-close" onclick="closeModal('qr-frame-modal')">×</button>
+    </div>
+    <div class="modal-body" style="display:flex;flex-direction:column;gap:14px">
+      <div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:6px;font-weight:600">Nom affiché dans le studio</div>
+        <input type="text" id="qrf-name" placeholder="Ex: Instagram Pop Art"
+          style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 14px;color:var(--text);font-size:13px;outline:none;box-sizing:border-box">
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:6px;font-weight:600">Catégorie</div>
+        <select id="qrf-category" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 14px;color:var(--text);font-size:13px;outline:none;box-sizing:border-box">
+          <option value="instagram">Instagram</option>
+          <option value="facebook">Facebook</option>
+          <option value="tiktok">TikTok</option>
+          <option value="whatsapp">WhatsApp</option>
+          <option value="custom">Personnalisé</option>
+        </select>
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:6px;font-weight:600">Image PNG (fond transparent, zone centrale transparente)</div>
+        <div style="display:flex;gap:12px;align-items:center">
+          <img id="qrf-preview" src="" alt="" style="width:90px;height:90px;border-radius:10px;background:var(--bg3);border:1px solid var(--border);object-fit:contain;display:none">
+          <div style="flex:1">
+            <input type="file" id="qrf-file" accept="image/png,image/webp,image/*"
+              onchange="previewQrFrame(this)"
+              style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 14px;color:var(--text2);font-size:12px;outline:none;box-sizing:border-box">
+            <div style="font-size:10px;color:var(--text3);margin-top:4px">PNG avec fond transparent recommandé · max 5 Mo</div>
+          </div>
+        </div>
+      </div>
+      <div id="qrf-feedback" style="font-size:12px;color:var(--text3);min-height:16px"></div>
+    </div>
+    <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn" onclick="closeModal('qr-frame-modal')">Annuler</button>
+      <button class="btn btn-primary" onclick="saveQrFrame()">💾 Enregistrer</button>
+    </div>
+  </div>
+</div>
+
 <input type="file" id="global-view-file-input" accept="image/*" style="display:none" onchange="handleViewImage(event)">
 <input type="file" id="lib-upload-file-input" accept="image/*,image/svg+xml" multiple style="display:none">
 <input type="file" id="lib-upload-folder-input" accept="image/*,image/svg+xml" multiple webkitdirectory style="display:none">
@@ -987,6 +1055,7 @@ function showView(name) {
   if (name === 'pricing')   { loadProductLinks(); loadPricingEditor(); }
   if (name === 'ai-styles') loadAiStyles();
   if (name === 'ai-creations') loadAiCreations('pending');
+  if (name === 'qr-frames') loadQrFrames();
   if (name === 'settings')  loadSettingsInfo();
 }
 
@@ -3022,6 +3091,109 @@ async function saveConfigureProduct(handle, productId, titleEnc) {
     if (label) label.textContent = 'Mode sombre';
   }
 })();
+
+// ══ FRAMES QR ══════════════════════════════════════════════════════════════════
+async function loadQrFrames() {
+  const list  = document.getElementById('qr-frames-list-admin');
+  const empty = document.getElementById('qr-frames-empty-admin');
+  if (!list) return;
+  list.innerHTML = '<div style="color:var(--text3);font-size:13px">Chargement…</div>';
+  try {
+    const r = await api('/api/qr-frames?all=1');
+    const frames = r.frames || [];
+    list.innerHTML = '';
+    if (frames.length === 0) {
+      empty.style.display = '';
+    } else {
+      empty.style.display = 'none';
+      frames.forEach(f => {
+        const card = document.createElement('div');
+        card.className = 'table-card';
+        card.style.cssText = 'padding:14px;display:flex;flex-direction:column;gap:10px;align-items:center;text-align:center';
+        card.innerHTML = `
+          <img src="${f.image_url}" alt="${f.name}"
+            style="width:110px;height:110px;object-fit:contain;border-radius:10px;background:repeating-conic-gradient(#e0e0e0 0% 25%,#fff 0% 50%) 0 0/16px 16px;border:1px solid var(--border)">
+          <div style="font-size:13px;font-weight:600;color:var(--text)">${f.name}</div>
+          <div style="font-size:11px;color:var(--text3);background:var(--bg3);border-radius:5px;padding:2px 8px">${f.category}</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center">
+            <button class="btn btn-sm" onclick="toggleQrFrameActive(${f.id}, ${f.active})"
+              style="font-size:11px">${f.active ? '✓ Actif' : '○ Inactif'}</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteQrFrame(${f.id})"
+              style="font-size:11px">🗑</button>
+          </div>`;
+        list.appendChild(card);
+      });
+    }
+  } catch (e) {
+    list.innerHTML = `<div style="color:var(--text3);font-size:13px">Erreur : ${e.message}</div>`;
+  }
+}
+
+function openQrFrameModal() {
+  document.getElementById('qrf-name').value = '';
+  document.getElementById('qrf-category').value = 'instagram';
+  document.getElementById('qrf-file').value = '';
+  const prev = document.getElementById('qrf-preview');
+  prev.style.display = 'none'; prev.src = '';
+  document.getElementById('qrf-feedback').textContent = '';
+  document.getElementById('qr-frame-modal').classList.add('open');
+}
+
+function previewQrFrame(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const prev = document.getElementById('qrf-preview');
+  prev.src = URL.createObjectURL(file);
+  prev.style.display = '';
+}
+
+async function saveQrFrame() {
+  const name     = document.getElementById('qrf-name').value.trim();
+  const category = document.getElementById('qrf-category').value;
+  const file     = document.getElementById('qrf-file').files[0];
+  const feedback = document.getElementById('qrf-feedback');
+
+  if (!name) { feedback.textContent = '⚠ Nom requis'; return; }
+  if (!file) { feedback.textContent = '⚠ Image PNG requise'; return; }
+
+  feedback.textContent = 'Envoi en cours…';
+  const fd = new FormData();
+  fd.append('name', name);
+  fd.append('category', category);
+  fd.append('image', file);
+
+  try {
+    const currentToken = localStorage.getItem('tl_admin_token') || token;
+    const r = await fetch(API_BASE + '/api/qr-frames', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${currentToken}` },
+      body: fd,
+    });
+    if (!r.ok) { const e = await r.json(); throw new Error(e.error || r.status); }
+    closeModal('qr-frame-modal');
+    showToast('Frame ajouté ✓');
+    loadQrFrames();
+  } catch (e) {
+    feedback.textContent = '⚠ Erreur : ' + e.message;
+  }
+}
+
+async function toggleQrFrameActive(id, current) {
+  try {
+    await api(`/api/qr-frames/${id}`, { method: 'PATCH', body: JSON.stringify({ active: !current }) });
+    loadQrFrames();
+  } catch (e) { showToast('Erreur : ' + e.message); }
+}
+
+async function deleteQrFrame(id) {
+  if (!confirm('Supprimer ce frame ?')) return;
+  try {
+    await api(`/api/qr-frames/${id}`, { method: 'DELETE' });
+    showToast('Frame supprimé');
+    loadQrFrames();
+  } catch (e) { showToast('Erreur : ' + e.message); }
+}
+// ════════════════════════════════════════════════════════════════════════════════
 
 document.getElementById('dash-date').textContent = new Date().toLocaleDateString('fr-FR',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
 // Charger les catégories en premier, puis le dashboard

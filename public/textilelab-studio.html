@@ -978,6 +978,28 @@
   .qr-shape-btn:hover { border-color: var(--amber); color: var(--text); background: var(--bg4); }
   .qr-shape-btn.active { border-color: var(--amber); background: rgba(245,158,11,.12); color: var(--amber); }
 
+  /* ── Frames QR habillage ── */
+  .qr-frame-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 4px;
+    background: var(--bg3);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 9px;
+    color: var(--text3);
+    font-family: 'DM Sans', sans-serif;
+    transition: border-color .15s, background .15s;
+    overflow: hidden;
+  }
+  .qr-frame-btn img { width: 52px; height: 52px; object-fit: contain; border-radius: 6px; }
+  .qr-frame-btn:hover { border-color: var(--amber); background: var(--bg4); }
+  .qr-frame-btn.active { border-color: var(--amber); background: rgba(245,158,11,.10); }
+  .qr-frame-btn.active img { opacity: 1; }
+
   /* ============================================
      MOBILE LAYOUT (≤768px)
   ============================================ */
@@ -2125,7 +2147,7 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
           IA
         </button>
-        <button class="tab-btn" onclick="switchTab('photo')" data-tab="photo">
+        <button class="tab-btn" onclick="switchTab('photo')" data-tab="photo" style="display:none">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
           Photo
         </button>
@@ -2443,103 +2465,59 @@
 
       <!-- TAB: QR -->
       <div class="tab-content" id="tab-qr">
+        <!-- URL -->
         <div class="tool-section">
           <div class="tool-section-title">URL</div>
           <input type="text" class="input-field" id="qr-url" placeholder="https://example.com" oninput="updateQRPreview()">
         </div>
 
+        <!-- Couleurs + fond -->
         <div class="tool-section">
-          <div class="row" style="align-items:flex-start;gap:16px">
+          <div class="tool-section-title">Couleurs</div>
+          <div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap">
             <div>
-              <div class="tool-section-title">Couleur QR</div>
+              <div style="font-size:10px;color:var(--text3);margin-bottom:4px">QR</div>
               <input type="color" id="qr-color" value="#000000" oninput="updateQRPreview()">
             </div>
-            <div>
-              <div class="tool-section-title">Fond</div>
-              <input type="color" id="qr-bg" value="#FFFFFF" oninput="updateQRPreview()">
-              <label style="display:flex;align-items:center;gap:5px;margin-top:6px;font-size:11px;color:var(--text3);cursor:pointer">
-                <input type="checkbox" id="qr-bg-transparent" onchange="updateQRPreview()" style="accent-color:var(--amber);width:13px;height:13px">
-                Transparent
-              </label>
+            <div id="qr-color2-wrap" style="display:none">
+              <div style="font-size:10px;color:var(--text3);margin-bottom:4px">Couleur 2</div>
+              <input type="color" id="qr-color2" value="#e05c00" oninput="updateQRPreview()">
             </div>
+            <div>
+              <div style="font-size:10px;color:var(--text3);margin-bottom:4px">Fond</div>
+              <input type="color" id="qr-bg" value="#FFFFFF" oninput="updateQRPreview()">
+            </div>
+            <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text3);cursor:pointer;padding-bottom:2px">
+              <input type="checkbox" id="qr-bg-transparent" onchange="updateQRPreview()" style="accent-color:var(--amber);width:13px;height:13px">
+              Fond transparent
+            </label>
+          </div>
+          <!-- Toggle dégradé -->
+          <label style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:12px;color:var(--text2);cursor:pointer">
+            <input type="checkbox" id="qr-gradient-toggle" onchange="toggleQRGradient()" style="accent-color:var(--amber);width:14px;height:14px">
+            Dégradé
+          </label>
+          <div id="qr-gradient-dir-wrap" style="display:none;margin-top:8px">
+            <div style="font-size:10px;color:var(--text3);margin-bottom:4px">Direction</div>
+            <select id="qr-gradient-dir" onchange="updateQRPreview()" style="background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:6px 10px;color:var(--text);font-size:12px;width:100%">
+              <option value="0">→ Horizontal</option>
+              <option value="1.5708">↓ Vertical</option>
+              <option value="0.7854">↘ Diagonal</option>
+              <option value="2.3562">↙ Diagonal inv.</option>
+            </select>
           </div>
         </div>
 
-        <!-- Forme du corps -->
+        <!-- Habillages -->
         <div class="tool-section">
-          <div class="tool-section-title">Forme du corps</div>
-          <div class="qr-shape-row" id="qr-dots-row">
-            <button class="qr-shape-btn active" onclick="setQRDots('square')" data-val="square">
-              <svg viewBox="0 0 28 28" fill="currentColor"><rect x="2" y="2" width="6" height="6"/><rect x="11" y="2" width="6" height="6"/><rect x="20" y="2" width="6" height="6"/><rect x="2" y="11" width="6" height="6"/><rect x="11" y="11" width="6" height="6"/><rect x="20" y="11" width="6" height="6"/><rect x="2" y="20" width="6" height="6"/><rect x="11" y="20" width="6" height="6"/><rect x="20" y="20" width="6" height="6"/></svg>
-              <span>Carré</span>
-            </button>
-            <button class="qr-shape-btn" onclick="setQRDots('dots')" data-val="dots">
-              <svg viewBox="0 0 28 28" fill="currentColor"><circle cx="5" cy="5" r="3"/><circle cx="14" cy="5" r="3"/><circle cx="23" cy="5" r="3"/><circle cx="5" cy="14" r="3"/><circle cx="14" cy="14" r="3"/><circle cx="23" cy="14" r="3"/><circle cx="5" cy="23" r="3"/><circle cx="14" cy="23" r="3"/><circle cx="23" cy="23" r="3"/></svg>
-              <span>Rond</span>
-            </button>
-            <button class="qr-shape-btn" onclick="setQRDots('rounded')" data-val="rounded">
-              <svg viewBox="0 0 28 28" fill="currentColor"><rect x="2" y="2" width="6" height="6" rx="2"/><rect x="11" y="2" width="6" height="6" rx="2"/><rect x="20" y="2" width="6" height="6" rx="2"/><rect x="2" y="11" width="6" height="6" rx="2"/><rect x="11" y="11" width="6" height="6" rx="2"/><rect x="20" y="11" width="6" height="6" rx="2"/><rect x="2" y="20" width="6" height="6" rx="2"/><rect x="11" y="20" width="6" height="6" rx="2"/><rect x="20" y="20" width="6" height="6" rx="2"/></svg>
-              <span>Arrondi</span>
-            </button>
-            <button class="qr-shape-btn" onclick="setQRDots('extra-rounded')" data-val="extra-rounded">
-              <svg viewBox="0 0 28 28" fill="currentColor"><rect x="2" y="2" width="6" height="6" rx="3"/><rect x="11" y="2" width="6" height="6" rx="3"/><rect x="20" y="2" width="6" height="6" rx="3"/><rect x="2" y="11" width="6" height="6" rx="3"/><rect x="11" y="11" width="6" height="6" rx="3"/><rect x="20" y="11" width="6" height="6" rx="3"/><rect x="2" y="20" width="6" height="6" rx="3"/><rect x="11" y="20" width="6" height="6" rx="3"/><rect x="20" y="20" width="6" height="6" rx="3"/></svg>
-              <span>Ovale</span>
-            </button>
-            <button class="qr-shape-btn" onclick="setQRDots('classy')" data-val="classy">
-              <svg viewBox="0 0 28 28" fill="currentColor"><path d="M2 5a3 3 0 013-3h3v6H2V5z"/><path d="M11 2h6v6h-6z"/><path d="M20 2h3a3 3 0 013 3v3h-6V2z"/><path d="M2 11h6v6H2z"/><path d="M11 11h6v6h-6z"/><path d="M20 11h6v6h-6z"/><path d="M2 20h6v6H5a3 3 0 01-3-3v-3z"/><path d="M11 20h6v6h-6z"/><path d="M20 20h6v3a3 3 0 01-3 3h-3v-6z"/></svg>
-              <span>Classy</span>
-            </button>
-            <button class="qr-shape-btn" onclick="setQRDots('classy-rounded')" data-val="classy-rounded">
-              <svg viewBox="0 0 28 28" fill="currentColor"><path d="M2 5a3 3 0 013-3h3v6H2V5z" rx="1"/><rect x="11" y="2" width="6" height="6" rx="2"/><path d="M20 2h3a3 3 0 013 3v3h-6V2z"/><rect x="2" y="11" width="6" height="6" rx="2"/><rect x="11" y="11" width="6" height="6" rx="2"/><rect x="20" y="11" width="6" height="6" rx="2"/><path d="M2 20h6v6H5a3 3 0 01-3-3v-3z"/><rect x="11" y="20" width="6" height="6" rx="2"/><path d="M20 20h6v3a3 3 0 01-3 3h-3v-6z"/></svg>
-              <span>Classy+</span>
-            </button>
-          </div>
+          <div class="tool-section-title">Habillage</div>
+          <div id="qr-frames-loading" style="font-size:12px;color:var(--text3);padding:8px 0">Chargement…</div>
+          <div id="qr-frames-grid" style="display:none;grid-template-columns:repeat(3,1fr);gap:6px"></div>
+          <div id="qr-frames-empty" style="display:none;font-size:12px;color:var(--text3);padding:8px 0">Aucun habillage configuré dans le back-office.</div>
         </div>
 
-        <!-- Contour des marqueurs -->
-        <div class="tool-section">
-          <div class="tool-section-title">Contour des marqueurs</div>
-          <div class="qr-shape-row" id="qr-corners-sq-row">
-            <button class="qr-shape-btn active" onclick="setQRCornersSquare('square')" data-val="square">
-              <svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="22" height="22"/><rect x="8" y="8" width="12" height="12"/></svg>
-              <span>Carré</span>
-            </button>
-            <button class="qr-shape-btn" onclick="setQRCornersSquare('extra-rounded')" data-val="extra-rounded">
-              <svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="22" height="22" rx="6"/><rect x="8" y="8" width="12" height="12" rx="4"/></svg>
-              <span>Arrondi</span>
-            </button>
-            <button class="qr-shape-btn" onclick="setQRCornersSquare('dot')" data-val="dot">
-              <svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="14" cy="14" r="11"/><circle cx="14" cy="14" r="6"/></svg>
-              <span>Rond</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Centre des marqueurs -->
-        <div class="tool-section">
-          <div class="tool-section-title">Centre des marqueurs</div>
-          <div class="qr-shape-row" id="qr-corners-dot-row">
-            <button class="qr-shape-btn active" onclick="setQRCornersDot('square')" data-val="square">
-              <svg viewBox="0 0 28 28" fill="currentColor"><rect x="7" y="7" width="14" height="14"/></svg>
-              <span>Carré</span>
-            </button>
-            <button class="qr-shape-btn" onclick="setQRCornersDot('dot')" data-val="dot">
-              <svg viewBox="0 0 28 28" fill="currentColor"><circle cx="14" cy="14" r="7"/></svg>
-              <span>Rond</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="tool-section">
-          <div class="tool-section-title">Taille</div>
-          <div class="stepper">
-            <button onclick="adjustQRSize(-20)">−</button>
-            <span id="qr-size-val">150</span>
-            <button onclick="adjustQRSize(20)">+</button>
-          </div>
-        </div>
-
-        <div id="qr-preview-wrap"></div>
+        <!-- Prévisualisation -->
+        <div id="qr-preview-wrap" style="display:flex;justify-content:center;margin:10px 0"></div>
         <button class="btn-primary" onclick="addQRToCanvas()">+ Ajouter le QR Code</button>
       </div>
 
@@ -2575,7 +2553,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="22" height="22"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
       <span>IA</span>
     </button>
-    <button class="bnav-btn" onclick="openMobileToolDirect('photo')" id="bnav-photo">
+    <button class="bnav-btn" onclick="openMobileToolDirect('photo')" id="bnav-photo" style="display:none">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="22" height="22"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
       <span>Photo</span>
     </button>
@@ -2672,7 +2650,7 @@
         <span>IA</span>
       </button>
 
-      <button class="m-tool-card" onclick="closeDrawer();openPhotoModal()">
+      <button class="m-tool-card" onclick="closeDrawer();openPhotoModal()" style="display:none">
         <div class="m-tool-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="26" height="26"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
         </div>
@@ -5635,26 +5613,42 @@ function addAIToCanvas(idx) {
 }
 
 // ============================================
-// QR TOOL — qr-code-styling
+// QR TOOL — qr-code-styling + habillages
 // ============================================
 let qrInstance = null;
-const _qrStyle = { dotsType: 'square', cornersSquareType: 'square', cornersDotType: 'square' };
+let _qrSelectedFrame = null; // { id, name, image_url } ou null
+
+function toggleQRGradient() {
+  const on = document.getElementById('qr-gradient-toggle')?.checked;
+  const c2w = document.getElementById('qr-color2-wrap');
+  const dirw = document.getElementById('qr-gradient-dir-wrap');
+  if (c2w) c2w.style.display = on ? '' : 'none';
+  if (dirw) dirw.style.display = on ? '' : 'none';
+  updateQRPreview();
+}
 
 function _buildQROptions() {
   const url         = document.getElementById('qr-url')?.value || 'https://textilelab.fr';
   const fgColor     = document.getElementById('qr-color')?.value || '#000000';
+  const fgColor2    = document.getElementById('qr-color2')?.value || '#e05c00';
   const bgColor     = document.getElementById('qr-bg')?.value    || '#FFFFFF';
   const transparent = document.getElementById('qr-bg-transparent')?.checked;
-  const size        = STATE.qrSize || 150;
+  const useGradient = document.getElementById('qr-gradient-toggle')?.checked;
+  const rotation    = parseFloat(document.getElementById('qr-gradient-dir')?.value || '0');
+  const QR_SIZE     = 240;
+
+  const dotsColor = useGradient
+    ? { gradient: { type: 'linear', rotation, colorStops: [{ offset: 0, color: fgColor }, { offset: 1, color: fgColor2 }] } }
+    : { color: fgColor };
 
   return {
-    width:  size,
-    height: size,
+    width:  QR_SIZE,
+    height: QR_SIZE,
     type:   'canvas',
     data:   url,
-    dotsOptions:         { color: fgColor, type: _qrStyle.dotsType },
-    cornersSquareOptions:{ color: fgColor, type: _qrStyle.cornersSquareType },
-    cornersDotOptions:   { color: fgColor, type: _qrStyle.cornersDotType },
+    dotsOptions:         { ...dotsColor, type: 'rounded' },
+    cornersSquareOptions:{ color: fgColor, type: 'extra-rounded' },
+    cornersDotOptions:   { color: fgColor, type: 'dot' },
     backgroundOptions:   { color: transparent ? 'rgba(0,0,0,0)' : bgColor },
     qrOptions:           { errorCorrectionLevel: 'M' },
   };
@@ -5664,7 +5658,6 @@ function updateQRPreview() {
   const wrap = document.getElementById('qr-preview-wrap');
   if (!wrap) return;
   const opts = _buildQROptions();
-
   if (!qrInstance) {
     qrInstance = new QRCodeStyling(opts);
     qrInstance.append(wrap);
@@ -5673,44 +5666,101 @@ function updateQRPreview() {
   }
 }
 
-function adjustQRSize(delta) {
-  STATE.qrSize = Math.max(80, Math.min(400, (STATE.qrSize || 150) + delta));
-  document.getElementById('qr-size-val').textContent = STATE.qrSize;
-  updateQRPreview();
+// ── Habillages QR ─────────────────────────────────────────────────────────────
+async function loadQRFrames() {
+  const grid    = document.getElementById('qr-frames-grid');
+  const loading = document.getElementById('qr-frames-loading');
+  const empty   = document.getElementById('qr-frames-empty');
+  if (!grid) return;
+
+  const shopDomain = window._TL_SHOP || '';
+  try {
+    const r = await fetch(`${API_BASE}/api/qr-frames/public?shop=${encodeURIComponent(shopDomain)}`);
+    const data = await r.json();
+    const frames = data.frames || [];
+
+    loading.style.display = 'none';
+
+    // Bouton "Aucun"
+    grid.innerHTML = `
+      <button class="qr-frame-btn active" data-frame-id="" onclick="selectQRFrame(this,'','')">
+        <div style="width:52px;height:52px;display:flex;align-items:center;justify-content:center;border:1.5px dashed var(--border);border-radius:8px;color:var(--text3)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9l6 6M15 9l-6 6"/></svg>
+        </div>
+        <span>Aucun</span>
+      </button>`;
+
+    if (frames.length === 0) {
+      empty.style.display = '';
+    } else {
+      empty.style.display = 'none';
+      frames.forEach(f => {
+        const btn = document.createElement('button');
+        btn.className = 'qr-frame-btn';
+        btn.dataset.frameId = f.id;
+        btn.innerHTML = `<img src="${API_BASE}${f.image_url}" alt="${f.name}" loading="lazy"><span>${f.name}</span>`;
+        btn.onclick = () => selectQRFrame(btn, f.id, f.image_url);
+        grid.appendChild(btn);
+      });
+    }
+    grid.style.display = 'grid';
+  } catch (e) {
+    loading.textContent = 'Erreur chargement habillages';
+  }
 }
 
-// Helpers pour les boutons de forme
-function _setQRShapeActive(rowId, val) {
-  document.querySelectorAll(`#${rowId} .qr-shape-btn`).forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.val === val);
-  });
+function selectQRFrame(btn, id, imageUrl) {
+  document.querySelectorAll('#qr-frames-grid .qr-frame-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  _qrSelectedFrame = id ? { id, image_url: imageUrl } : null;
 }
 
-function setQRDots(type) {
-  _qrStyle.dotsType = type;
-  _setQRShapeActive('qr-dots-row', type);
-  updateQRPreview();
-}
-function setQRCornersSquare(type) {
-  _qrStyle.cornersSquareType = type;
-  _setQRShapeActive('qr-corners-sq-row', type);
-  updateQRPreview();
-}
-function setQRCornersDot(type) {
-  _qrStyle.cornersDotType = type;
-  _setQRShapeActive('qr-corners-dot-row', type);
-  updateQRPreview();
-}
-
+// ── Ajout au canvas avec composite frame si sélectionnée ─────────────────────
 function addQRToCanvas() {
-  // Récupère le canvas généré par qr-code-styling dans le wrap
   const wrap = document.getElementById('qr-preview-wrap');
   const cvs  = wrap ? wrap.querySelector('canvas') : null;
-  if (!cvs) { showToast('Générez d\'abord le QR code'); return; }
+  if (!cvs) { showToast("Renseignez d'abord l'URL"); return; }
 
-  const dataUrl = cvs.toDataURL('image/png');
+  const qrDataUrl = cvs.toDataURL('image/png');
+  const TARGET_SIZE = 200; // taille finale sur le canvas Fabric
+
+  if (!_qrSelectedFrame) {
+    // Pas de frame : ajout direct
+    _addQRImageToFabric(qrDataUrl, TARGET_SIZE);
+  } else {
+    // Composite : QR au centre + frame par-dessus
+    const frameUrl = API_BASE + _qrSelectedFrame.image_url;
+    const COMPOSITE = 400;
+    const QR_INNER  = Math.round(COMPOSITE * 0.55); // QR occupe ~55% du frame
+
+    const offscreen = document.createElement('canvas');
+    offscreen.width = offscreen.height = COMPOSITE;
+    const ctx = offscreen.getContext('2d');
+
+    const qrImg = new Image();
+    qrImg.onload = () => {
+      const offset = (COMPOSITE - QR_INNER) / 2;
+      ctx.drawImage(qrImg, offset, offset, QR_INNER, QR_INNER);
+
+      const frameImg = new Image();
+      frameImg.crossOrigin = 'anonymous';
+      frameImg.onload = () => {
+        ctx.drawImage(frameImg, 0, 0, COMPOSITE, COMPOSITE);
+        const compositeUrl = offscreen.toDataURL('image/png');
+        _addQRImageToFabric(compositeUrl, TARGET_SIZE);
+      };
+      frameImg.onerror = () => {
+        // Fallback sans frame si chargement échoue
+        _addQRImageToFabric(qrDataUrl, TARGET_SIZE);
+      };
+      frameImg.src = frameUrl;
+    };
+    qrImg.src = qrDataUrl;
+  }
+}
+
+function _addQRImageToFabric(dataUrl, size) {
   fabric.Image.fromURL(dataUrl, (img) => {
-    const size = 150;
     img.set({
       left:    canvas.getWidth()  / 2,
       top:     canvas.getHeight() / 2,
@@ -5838,7 +5888,7 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === `tab-${tab}`));
   if (tab === 'layers') updateDesktopLayerPanel();
-  if (tab === 'qr')   setTimeout(updateQRPreview, 50);
+  if (tab === 'qr')   { setTimeout(updateQRPreview, 50); loadQRFrames(); }
   if (tab === 'photo') loadPhotoStyles();
   if (tab === 'ai') { try { _tlUpdateAiQuotaUI(); } catch (_) {} }
   if (tab === 'text') {
@@ -6310,19 +6360,9 @@ let qrMobileInstance = null;
 function updateMobileQRPreview() {
   const wrap = document.getElementById('m-qr-preview-wrap');
   if (!wrap) { updateQRPreview(); return; }
-  const url         = mVal('qr-url') || 'https://textilelab.fr';
-  const fgColor     = (document.getElementById('m-qr-color') || document.getElementById('qr-color'))?.value || '#000000';
-  const bgColor     = (document.getElementById('m-qr-bg')    || document.getElementById('qr-bg'))?.value    || '#FFFFFF';
-  const transparent = (document.getElementById('m-qr-bg-transparent') || document.getElementById('qr-bg-transparent'))?.checked;
-  const size        = STATE.qrSize || 150;
-  const opts = {
-    width: size, height: size, type: 'canvas', data: url,
-    dotsOptions:          { color: fgColor, type: _qrStyle.dotsType },
-    cornersSquareOptions: { color: fgColor, type: _qrStyle.cornersSquareType },
-    cornersDotOptions:    { color: fgColor, type: _qrStyle.cornersDotType },
-    backgroundOptions:    { color: transparent ? 'rgba(0,0,0,0)' : bgColor },
-    qrOptions:            { errorCorrectionLevel: 'M' },
-  };
+  // Réutiliser _buildQROptions qui lit les champs desktop (partagés)
+  const opts = _buildQROptions();
+  opts.width = opts.height = 200;
   if (!qrMobileInstance) {
     qrMobileInstance = new QRCodeStyling(opts);
     qrMobileInstance.append(wrap);
@@ -6332,30 +6372,9 @@ function updateMobileQRPreview() {
 }
 
 function addMobileQRCode() {
-  // Utilise la prévisualisation mobile si disponible, sinon desktop
-  const mobileWrap = document.getElementById('m-qr-preview-wrap');
-  const wrap = mobileWrap || document.getElementById('qr-preview-wrap');
-  const cvs  = wrap ? wrap.querySelector('canvas') : null;
-  if (!cvs) { updateMobileQRPreview(); setTimeout(addMobileQRCode, 200); return; }
-  const dataUrl = cvs.toDataURL('image/png');
-  fabric.Image.fromURL(dataUrl, (img) => {
-    const size = 150;
-    img.set({
-      left:    canvas.getWidth()  / 2,
-      top:     canvas.getHeight() / 2,
-      originX: 'center',
-      originY: 'center',
-      scaleX:  size / img.width,
-      scaleY:  size / img.height,
-      __isQR:  true,
-    });
-    applyFrameClipToObject(img);
-    canvas.add(img);
-    canvas.setActiveObject(img);
-    canvas.renderAll();
-    showToast('QR Code ajouté ✓');
-    closeDrawer();
-  });
+  // Délègue à la même logique desktop (addQRToCanvas gère frame + composite)
+  addQRToCanvas();
+  closeDrawer();
 }
 
 function addMobileTicketBatch() {

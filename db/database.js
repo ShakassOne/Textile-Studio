@@ -265,6 +265,21 @@ function initDB() {
   `);
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_ai_creations_shop_status ON ai_creations(shop_id, status)"); } catch {}
 
+  // ── Table: qr_frames (habillages QR code — cadres réseaux sociaux, etc.) ─────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS qr_frames (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      shop_id     INTEGER NOT NULL REFERENCES shops(id),
+      name        TEXT    NOT NULL,
+      category    TEXT    NOT NULL DEFAULT 'custom',
+      image_url   TEXT    NOT NULL,
+      sort_order  INTEGER NOT NULL DEFAULT 0,
+      active      INTEGER NOT NULL DEFAULT 1,
+      created_at  TEXT    DEFAULT (datetime('now'))
+    )
+  `);
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_qr_frames_shop_id ON qr_frames(shop_id)"); } catch {}
+
   // Seed des styles built-in pour tout shop actif qui n'en a pas encore.
   // Idempotent : INSERT OR IGNORE sur (shop_id, code).
   try {
