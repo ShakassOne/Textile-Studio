@@ -5667,45 +5667,73 @@ function updateQRPreview() {
 }
 
 // ── Habillages QR ─────────────────────────────────────────────────────────────
-async function loadQRFrames() {
-  const grid    = document.getElementById('qr-frames-grid');
-  const loading = document.getElementById('qr-frames-loading');
-  const empty   = document.getElementById('qr-frames-empty');
-  if (!grid) return;
+let _qrFramesLoaded = false;
 
-  const shopDomain = window._TL_SHOP || '';
+async function loadQRFrames() {
+  const container = document.getElementById('qr-frames-grid');
+  const loading   = document.getElementById('qr-frames-loading');
+  const empty     = document.getElementById('qr-frames-empty');
+  if (!container || _qrFramesLoaded) return;
+
   try {
-    const r = await fetch(`${API_BASE}/api/qr-frames/public?shop=${encodeURIComponent(shopDomain)}`);
+    const headers = window._TL_SHOP ? { 'X-Shop-Domain': window._TL_SHOP } : {};
+    const r = await fetch(`${API_BASE}/api/qr-frames/public`, { headers });
     const data = await r.json();
     const frames = data.frames || [];
 
     loading.style.display = 'none';
 
-    // Bouton "Aucun"
-    grid.innerHTML = `
-      <button class="qr-frame-btn active" data-frame-id="" onclick="selectQRFrame(this,'','')">
-        <div style="width:52px;height:52px;display:flex;align-items:center;justify-content:center;border:1.5px dashed var(--border);border-radius:8px;color:var(--text3)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9l6 6M15 9l-6 6"/></svg>
-        </div>
-        <span>Aucun</span>
-      </button>`;
-
     if (frames.length === 0) {
       empty.style.display = '';
-    } else {
-      empty.style.display = 'none';
-      frames.forEach(f => {
+      container.style.display = 'none';
+      return;
+    }
+
+    // Grouper par catégorie
+    const cats = {};
+    frames.forEach(f => {
+      if (!cats[f.category]) cats[f.category] = [];
+      cats[f.category].push(f);
+    });
+
+    const catLabels = { instagram:'Instagram', facebook:'Facebook', tiktok:'TikTok', whatsapp:'WhatsApp', custom:'Personnalisé' };
+
+    container.innerHTML = '';
+
+    // Bouton "Aucun" en premier
+    const noneBtn = document.createElement('button');
+    noneBtn.className = 'qr-frame-btn active';
+    noneBtn.dataset.frameId = '';
+    noneBtn.innerHTML = `
+      <div style="width:52px;height:52px;display:flex;align-items:center;justify-content:center;border:1.5px dashed var(--border);border-radius:8px;color:var(--text3)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9l6 6M15 9l-6 6"/></svg>
+      </div>
+      <span>Aucun</span>`;
+    noneBtn.onclick = () => selectQRFrame(noneBtn, '', '');
+    container.appendChild(noneBtn);
+
+    // Par catégorie
+    Object.entries(cats).forEach(([cat, list]) => {
+      // Label catégorie
+      const label = document.createElement('div');
+      label.style.cssText = 'grid-column:1/-1;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;margin-top:6px';
+      label.textContent = catLabels[cat] || cat;
+      container.appendChild(label);
+
+      list.forEach(f => {
         const btn = document.createElement('button');
         btn.className = 'qr-frame-btn';
         btn.dataset.frameId = f.id;
         btn.innerHTML = `<img src="${API_BASE}${f.image_url}" alt="${f.name}" loading="lazy"><span>${f.name}</span>`;
         btn.onclick = () => selectQRFrame(btn, f.id, f.image_url);
-        grid.appendChild(btn);
+        container.appendChild(btn);
       });
-    }
-    grid.style.display = 'grid';
+    });
+
+    container.style.display = 'grid';
+    _qrFramesLoaded = true;
   } catch (e) {
-    loading.textContent = 'Erreur chargement habillages';
+    if (loading) loading.textContent = 'Erreur chargement habillages';
   }
 }
 
@@ -5715,66 +5743,52 @@ function selectQRFrame(btn, id, imageUrl) {
   _qrSelectedFrame = id ? { id, image_url: imageUrl } : null;
 }
 
-// ── Ajout au canvas avec composite frame si sélectionnée ─────────────────────
+// ── Ajout au canvas : QR + frame comme 2 objets séparés ──────────────────────
 function addQRToCanvas() {
   const wrap = document.getElementById('qr-preview-wrap');
   const cvs  = wrap ? wrap.querySelector('canvas') : null;
   if (!cvs) { showToast("Renseignez d'abord l'URL"); return; }
 
-  const qrDataUrl = cvs.toDataURL('image/png');
-  const TARGET_SIZE = 200; // taille finale sur le canvas Fabric
+  const qrDataUrl  = cvs.toDataURL('image/png');
+  const QR_SIZE    = 150; // taille QR sur le canvas
+  const cx = canvas.getWidth()  / 2;
+  const cy = canvas.getHeight() / 2;
 
-  if (!_qrSelectedFrame) {
-    // Pas de frame : ajout direct
-    _addQRImageToFabric(qrDataUrl, TARGET_SIZE);
-  } else {
-    // Composite : QR au centre + frame par-dessus
-    const frameUrl = API_BASE + _qrSelectedFrame.image_url;
-    const COMPOSITE = 400;
-    const QR_INNER  = Math.round(COMPOSITE * 0.55); // QR occupe ~55% du frame
-
-    const offscreen = document.createElement('canvas');
-    offscreen.width = offscreen.height = COMPOSITE;
-    const ctx = offscreen.getContext('2d');
-
-    const qrImg = new Image();
-    qrImg.onload = () => {
-      const offset = (COMPOSITE - QR_INNER) / 2;
-      ctx.drawImage(qrImg, offset, offset, QR_INNER, QR_INNER);
-
-      const frameImg = new Image();
-      frameImg.crossOrigin = 'anonymous';
-      frameImg.onload = () => {
-        ctx.drawImage(frameImg, 0, 0, COMPOSITE, COMPOSITE);
-        const compositeUrl = offscreen.toDataURL('image/png');
-        _addQRImageToFabric(compositeUrl, TARGET_SIZE);
-      };
-      frameImg.onerror = () => {
-        // Fallback sans frame si chargement échoue
-        _addQRImageToFabric(qrDataUrl, TARGET_SIZE);
-      };
-      frameImg.src = frameUrl;
-    };
-    qrImg.src = qrDataUrl;
-  }
-}
-
-function _addQRImageToFabric(dataUrl, size) {
-  fabric.Image.fromURL(dataUrl, (img) => {
-    img.set({
-      left:    canvas.getWidth()  / 2,
-      top:     canvas.getHeight() / 2,
-      originX: 'center',
-      originY: 'center',
-      scaleX:  size / img.width,
-      scaleY:  size / img.height,
-      __isQR:  true,
+  // Ajout du QR code
+  fabric.Image.fromURL(qrDataUrl, (qrImg) => {
+    qrImg.set({
+      left: cx, top: cy,
+      originX: 'center', originY: 'center',
+      scaleX: QR_SIZE / qrImg.width,
+      scaleY: QR_SIZE / qrImg.height,
+      __isQR: true,
     });
-    applyFrameClipToObject(img);
-    canvas.add(img);
-    canvas.setActiveObject(img);
-    canvas.renderAll();
-    showToast('QR Code ajouté ✓');
+    applyFrameClipToObject(qrImg);
+    canvas.add(qrImg);
+
+    if (_qrSelectedFrame) {
+      // Frame plus grande centrée au même endroit (QR occupe ~55% du frame)
+      const FRAME_SIZE = Math.round(QR_SIZE / 0.55);
+      const frameUrl = API_BASE + _qrSelectedFrame.image_url;
+      fabric.Image.fromURL(frameUrl, (frameImg) => {
+        frameImg.set({
+          left: cx, top: cy,
+          originX: 'center', originY: 'center',
+          scaleX: FRAME_SIZE / frameImg.width,
+          scaleY: FRAME_SIZE / frameImg.height,
+          __isQRFrame: true,
+        });
+        applyFrameClipToObject(frameImg);
+        canvas.add(frameImg);
+        canvas.setActiveObject(frameImg);
+        canvas.renderAll();
+        showToast('QR Code + habillage ajoutés ✓');
+      }, { crossOrigin: 'anonymous' });
+    } else {
+      canvas.setActiveObject(qrImg);
+      canvas.renderAll();
+      showToast('QR Code ajouté ✓');
+    }
   });
 }
 
