@@ -431,6 +431,7 @@ app.use('/api/shopify',    require('./routes/storefront'));
 // Audit M4 — override 10 Mo : /api/ai/transform (photo → style IA) et
 // /api/ai/styles (vignette base64, max 5 Mo décodé) reçoivent des images.
 app.use('/api/ai',         express.json({ limit: '10mb' }), require('./routes/ai'));
+app.use('/api/qr-frames',  require('./routes/qr-frames'));
 app.use('/api/models3d',   require('./routes/models3d'));
 app.use('/shopify',              require('./routes/shopify'));
 app.use('/oauth',               require('./routes/oauth'));
