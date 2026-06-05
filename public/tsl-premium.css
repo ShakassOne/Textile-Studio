@@ -1,0 +1,620 @@
+/* ============================================================
+   TSL PREMIUM — Surcharge légère, mode CLAIR par défaut
+   Ajouter après le <style> existant dans textilelab-studio.html
+   Ne touche pas au JS, HTML ni aux fonctionnalités.
+   ============================================================ */
+
+
+/* ============================================================
+   1. VARIABLES — Mode clair par défaut (override :root)
+   ============================================================ */
+:root {
+  /* Fonds clairs, gris froid légèrement bleuté */
+  --bg:    #f2f3f8;
+  --bg2:   #ffffff;
+  --bg3:   #eaecf3;
+  --bg4:   #e0e3ee;
+
+  /* Amber TSL plus affirmé */
+  --amber:      #F59E0B;
+  --amber2:     #FBBF24;
+  --amber-dim:  rgba(245,158,11,0.14);
+  --amber-glow: rgba(245,158,11,0.08);
+
+  /* Borders plus visibles en clair */
+  --glass:   rgba(0,0,0,0.04);
+  --glass2:  rgba(0,0,0,0.07);
+  --border:  rgba(0,0,0,0.13);
+  --border2: rgba(245,158,11,0.45);
+
+  /* Texte contrasté */
+  --text:  #111218;
+  --text1: #111218;
+  --text2: #4a4f6a;
+  --text3: #8a90aa;
+
+  --success: #10B981;
+  --danger:  #EF4444;
+
+  /* Dimensions légèrement revues */
+  --topbar-h: 54px;
+}
+
+/* ── MODE SOMBRE (opt-in) ── */
+body.dark-mode {
+  --bg:    #0a0a0c;
+  --bg2:   #111116;
+  --bg3:   #18181f;
+  --bg4:   #1e1e28;
+  --glass: rgba(255,255,255,0.04);
+  --glass2:rgba(255,255,255,0.07);
+  --border:rgba(255,255,255,0.09);
+  --border2:rgba(245,158,11,0.30);
+  --text:  #f0f0f5;
+  --text1: #f0f0f5;
+  --text2: #9090a8;
+  --text3: #5a5a72;
+}
+
+
+/* ============================================================
+   2. BASE — Typo plus grande, rendu net
+   ============================================================ */
+html, body {
+  font-size: 14.5px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.15);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(245,158,11,0.5); }
+
+
+/* ============================================================
+   3. TOPBAR — Plus nette, ombre légère
+   ============================================================ */
+#topbar {
+  background: #fff;
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+}
+
+.logo { font-size: 17px; }
+
+.stat-pill {
+  font-size: 11.5px;
+  padding: 5px 12px;
+  background: var(--bg3);
+  border-color: var(--border);
+}
+
+.btn-toggle {
+  background: var(--bg3);
+  border-color: var(--border);
+}
+.btn-toggle button {
+  padding: 6px 14px;
+  font-size: 11.5px;
+}
+.btn-toggle button.active {
+  background: var(--amber);
+  color: #000;
+  font-weight: 800;
+}
+
+.btn-cart {
+  padding: 7px 16px;
+  font-size: 13px;
+  border-radius: 22px;
+  box-shadow: 0 2px 6px rgba(245,158,11,0.25);
+}
+.btn-cart:hover {
+  background: var(--amber2);
+  box-shadow: 0 3px 10px rgba(245,158,11,0.35);
+}
+
+.topbar-action-btn {
+  padding: 6px 14px;
+  font-size: 12.5px;
+  background: var(--bg3);
+  border-color: var(--border);
+}
+.topbar-action-btn:hover {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+
+/* ============================================================
+   4. SIDEBAR GAUCHE — Labels lisibles, items plus propres
+   ============================================================ */
+#sidebar {
+  background: #fff;
+  border-right: 1px solid var(--border);
+  padding: 14px 10px;
+}
+
+.sidebar-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.6px;
+  color: var(--text3);
+  padding: 10px 10px 5px;
+}
+
+.product-item {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+}
+.product-item:hover {
+  background: var(--bg3);
+  border-color: var(--border);
+}
+.product-item.active {
+  background: var(--amber-dim);
+  border-color: var(--border2);
+}
+
+.product-name { font-size: 13.5px; font-weight: 700; }
+
+
+/* ============================================================
+   5. CANVAS CENTRAL — Plus net, cadre premium
+   ============================================================ */
+#canvas-container {
+  border-radius: 14px;
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,0.10),
+    0 8px 32px rgba(0,0,0,0.14),
+    0 2px 6px rgba(0,0,0,0.08);
+}
+
+#print-bar {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 9px 14px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+}
+
+.print-label { font-size: 10.5px; font-weight: 600; letter-spacing: 1.2px; }
+
+.format-btn {
+  padding: 6px 13px;
+  font-size: 11.5px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  font-weight: 600;
+}
+.format-btn:hover { border-color: var(--amber); color: var(--amber); }
+.format-btn.active {
+  background: var(--amber);
+  border-color: var(--amber);
+  color: #000;
+  font-weight: 800;
+  box-shadow: 0 1px 6px rgba(245,158,11,0.30);
+}
+
+.tool-btn-sm {
+  padding: 6px 11px;
+  font-size: 11.5px;
+  border-radius: 9px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+}
+.tool-btn-sm:hover { border-color: var(--danger); color: var(--danger); }
+
+/* Toolbar contextuelle */
+.ctx-btn {
+  padding: 6px 9px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text2);
+}
+.ctx-btn:hover { background: var(--bg3); color: var(--text1); }
+.ctx-btn.active { background: var(--amber-dim); color: var(--amber); }
+
+
+/* ============================================================
+   6. PANNEAU DROIT — Blocs groupés, hiérarchie renforcée
+   ============================================================ */
+#tools-panel,
+#products-panel {
+  background: #fff;
+  border-left: 1px solid var(--border);
+}
+
+.tabs-header {
+  background: #fff;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab-btn {
+  padding: 13px 4px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.9px;
+  color: var(--text3);
+}
+.tab-btn:hover { color: var(--text2); }
+.tab-btn.active {
+  color: var(--amber);
+  border-bottom-color: var(--amber);
+}
+
+.tab-content { padding: 18px; }
+
+.tool-section {
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+.tool-section:last-child { border-bottom: none; padding-bottom: 0; }
+
+.tool-section-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 1.3px;
+  color: var(--text3);
+  margin-bottom: 11px;
+}
+
+
+/* ============================================================
+   7. INPUTS — Plus lisibles, focus amber net
+   ============================================================ */
+.input-field {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 10px 13px;
+  font-size: 13.5px;
+  color: var(--text);
+}
+.input-field:focus {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 3px rgba(245,158,11,0.12);
+  outline: none;
+}
+.input-field::placeholder { color: var(--text3); }
+
+.select-field {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 10px 13px;
+  font-size: 13.5px;
+  color: var(--text);
+}
+.select-field:focus {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 3px rgba(245,158,11,0.12);
+  outline: none;
+}
+
+.hex-input {
+  border-radius: 9px;
+  padding: 8px 11px;
+  font-size: 12.5px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+}
+.hex-input:focus {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 3px rgba(245,158,11,0.12);
+  outline: none;
+}
+
+.stepper {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+.stepper button { color: var(--text2); }
+.stepper button:hover { background: var(--bg4); color: var(--amber); }
+.stepper span { font-size: 13px; font-weight: 600; color: var(--text); }
+
+input[type="color"] {
+  width: 34px; height: 34px;
+  border-radius: 8px;
+  border: 1.5px solid var(--border);
+  background: var(--bg3);
+}
+input[type="color"]:hover { border-color: var(--amber); }
+
+/* Sliders */
+input[type=range] {
+  accent-color: var(--amber);
+  cursor: pointer;
+}
+
+
+/* ============================================================
+   8. BOUTONS — Plus hauts, plus nets
+   ============================================================ */
+.btn-primary {
+  padding: 12px 16px;
+  border-radius: 11px;
+  font-size: 14px;
+  font-weight: 800;
+  background: var(--amber);
+  color: #000;
+  box-shadow: 0 2px 8px rgba(245,158,11,0.28);
+}
+.btn-primary:hover {
+  background: var(--amber2);
+  box-shadow: 0 4px 14px rgba(245,158,11,0.38);
+  transform: translateY(-1px);
+}
+.btn-primary:active { transform: translateY(0); }
+
+.btn-secondary {
+  padding: 11px 16px;
+  border-radius: 11px;
+  font-size: 13.5px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  color: var(--text2);
+}
+.btn-secondary:hover {
+  border-color: var(--text2);
+  color: var(--text);
+  background: var(--bg4);
+}
+
+.style-btn {
+  padding: 8px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  color: var(--text2);
+  font-size: 15px;
+}
+.style-btn:hover { border-color: var(--amber); color: var(--amber); }
+.style-btn.active {
+  background: var(--amber-dim);
+  border-color: var(--border2);
+  color: var(--amber);
+}
+
+.lib-cat-btn {
+  padding: 6px 13px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+}
+.lib-cat-btn:hover { border-color: var(--amber); color: var(--text); }
+.lib-cat-btn.active {
+  background: var(--amber);
+  border-color: var(--amber);
+  color: #000;
+  font-weight: 800;
+  box-shadow: 0 1px 6px rgba(245,158,11,0.30);
+}
+
+.ai-style-btn {
+  padding: 9px 6px;
+  border-radius: 10px;
+  font-size: 11.5px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+}
+.ai-style-btn:hover { border-color: var(--amber); color: var(--amber); }
+.ai-style-btn.active {
+  background: var(--amber-dim);
+  border-color: var(--border2);
+  color: var(--amber);
+}
+
+.deform-btn {
+  padding: 7px 5px;
+  font-size: 11.5px;
+  border-radius: 9px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+}
+.deform-btn:hover { border-color: var(--amber); }
+.deform-btn.active {
+  background: var(--amber-dim);
+  border-color: var(--amber);
+  color: var(--amber);
+  font-weight: 700;
+}
+
+.tool-tab {
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 12.5px;
+  font-weight: 600;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+}
+.tool-tab.active {
+  background: var(--amber);
+  border-color: var(--amber);
+  color: #000;
+  font-weight: 800;
+}
+
+.btn-cart-big {
+  padding: 14px;
+  border-radius: 13px;
+  font-size: 15px;
+  font-weight: 800;
+  box-shadow: 0 3px 12px rgba(245,158,11,0.32);
+}
+.btn-cart-big:hover { background: var(--amber2); }
+
+
+/* ============================================================
+   9. CARDS
+   ============================================================ */
+.product-card {
+  border-radius: 13px;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  transition: all 0.14s;
+}
+.product-card:hover {
+  border-color: var(--amber);
+  background: var(--bg4);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(0,0,0,0.08);
+}
+.product-card.active {
+  border-color: var(--amber);
+  background: var(--amber-dim);
+}
+.product-card .card-name { font-size: 14px; font-weight: 800; }
+
+.format-card {
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  transition: all 0.14s;
+}
+.format-card:hover { border-color: var(--amber); box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+.format-card.active { border-color: var(--amber); background: var(--amber-dim); }
+.format-card-name { font-size: 17px; font-weight: 800; }
+
+.products-panel-card {
+  border-radius: 13px;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  transition: all 0.14s;
+}
+.products-panel-card:hover {
+  border-color: var(--amber);
+  background: var(--bg4);
+  transform: translateY(-1px);
+}
+.products-panel-card.active { border-color: var(--amber); background: var(--amber-dim); }
+.products-panel-title { font-size: 18px; font-weight: 800; }
+.products-panel-name { font-size: 14.5px; font-weight: 700; }
+
+.lib-thumb {
+  border-radius: 11px;
+  border: 1.5px solid var(--border);
+  background: var(--bg3);
+}
+.lib-thumb:hover {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 3px rgba(245,158,11,0.18);
+}
+
+
+/* ============================================================
+   10. UPLOAD ZONE
+   ============================================================ */
+.upload-zone {
+  border: 2px dashed var(--border);
+  border-radius: 13px;
+  background: var(--bg3);
+  padding: 26px 20px;
+}
+.upload-zone:hover {
+  border-color: var(--amber);
+  background: var(--amber-glow);
+}
+.upload-zone-text { font-size: 12.5px; font-weight: 600; }
+
+
+/* ============================================================
+   11. TOAST & MODAL
+   ============================================================ */
+#toast {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.14);
+  color: var(--text);
+}
+
+.modal-box {
+  background: #fff;
+  border-radius: 20px 20px 0 0;
+  box-shadow: 0 -4px 30px rgba(0,0,0,0.14);
+}
+.modal-title { font-size: 18px; font-weight: 800; }
+.cart-total-val { font-size: 22px; font-weight: 800; }
+
+.drawer {
+  background: #fff;
+  border-radius: 20px 20px 0 0;
+  box-shadow: 0 -4px 24px rgba(0,0,0,0.12);
+}
+.drawer-title { font-size: 16px; font-weight: 800; }
+
+
+/* ============================================================
+   12. BOTTOM NAV MOBILE
+   ============================================================ */
+#bottom-nav {
+  background: #fff;
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -2px 10px rgba(0,0,0,0.08);
+}
+.bnav-btn { font-size: 9.5px; font-weight: 600; }
+.bnav-btn.active { color: var(--amber); }
+.bnav-btn.active .bnav-dot {
+  background: var(--amber);
+  box-shadow: 0 0 4px rgba(245,158,11,0.6);
+}
+
+
+/* ============================================================
+   13. FONT PICKER
+   ============================================================ */
+.font-picker-trigger {
+  padding: 10px 14px;
+  font-size: 14px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.font-picker-trigger:hover { border-color: var(--amber); }
+
+.font-picker-dropdown {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.14);
+}
+.font-picker-option { padding: 10px 16px; font-size: 14.5px; }
+.font-picker-option:hover,
+.font-picker-option.active { background: var(--amber-dim); color: var(--amber); }
+
+
+/* ============================================================
+   14. RESPONSIVE TABLETTE (769–1100px)
+   ============================================================ */
+@media (min-width: 769px) and (max-width: 1100px) {
+  :root { --topbar-h: 50px; }
+  .tab-btn { padding: 11px 3px; font-size: 8.5px; }
+  .tab-content { padding: 14px; }
+  .tool-section { margin-bottom: 16px; padding-bottom: 16px; }
+  .input-field, .select-field { padding: 9px 12px; font-size: 13px; }
+  .btn-primary { padding: 11px 14px; font-size: 13px; }
+}
+
+
+/* ============================================================
+   15. MOBILE — Lisibilité et touch targets
+   ============================================================ */
+@media (max-width: 768px) {
+  .ctx-btn { padding: 8px 10px !important; font-size: 12px !important; }
+  .drawer-title { font-size: 16px; }
+  .upload-zone { padding: 22px 16px; }
+  #toast { font-size: 12.5px; padding: 8px 18px; }
+}
