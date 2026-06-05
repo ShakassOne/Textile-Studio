@@ -1890,12 +1890,43 @@
   body.light-mode .lib-cat-btn:hover { border-color:var(--amber); color:#0d0f1a; }
   body.light-mode .lib-cat-btn.active { background:var(--amber); border-color:var(--amber); color:#000; font-weight:800 !important; box-shadow:0 1px 6px rgba(245,158,11,0.32); }
 
-  /* QR — frames en grille compacte scrollable */
-  #qr-frames-grid { max-height:110px !important; overflow-y:auto !important; grid-template-columns:repeat(4,1fr) !important; gap:5px !important; }
-  .qr-frame-btn img { width:44px !important; height:44px !important; }
-  .qr-frame-btn { padding:5px 3px !important; font-size:8.5px !important; border-radius:8px !important; }
-  #qr-preview-wrap { margin:8px 0 !important; }
-  #qr-preview-wrap canvas { max-width:130px !important; max-height:130px !important; border-radius:8px; }
+  /* QR — panneau flex, bouton fixe en bas */
+  #tab-qr { display:flex !important; flex-direction:column !important; padding:0 !important; overflow:hidden !important; }
+  .qr-body { flex:1; overflow-y:auto; padding:18px; }
+  .qr-add-wrap { flex-shrink:0; padding:12px 16px; border-top:1px solid var(--border); background:var(--bg2); }
+  body.light-mode .qr-add-wrap { background:#f8f9fe; border-top-color:rgba(0,0,0,0.12); }
+  .qr-add-wrap .btn-primary { margin:0 !important; }
+
+  /* QR — frames style lib-thumb */
+  .qr-frame-btn {
+    position:relative !important;
+    aspect-ratio:1 !important;
+    border-radius:10px !important;
+    border:1.5px solid var(--border) !important;
+    overflow:hidden !important;
+    cursor:pointer !important;
+    background:var(--bg3) !important;
+    padding:0 !important;
+    display:block !important;
+    transition:border-color .15s, box-shadow .15s !important;
+  }
+  .qr-frame-btn img {
+    position:absolute !important; inset:0 !important;
+    width:100% !important; height:100% !important;
+    object-fit:contain !important; padding:4px !important;
+    border-radius:0 !important;
+  }
+  .qr-frame-btn > div {
+    position:absolute !important; inset:0 !important;
+    display:flex !important; align-items:center !important; justify-content:center !important;
+    border:none !important; width:100% !important; height:100% !important; border-radius:0 !important;
+  }
+  .qr-frame-btn span { display:none !important; }
+  .qr-frame-btn:hover { border-color:var(--amber) !important; box-shadow:0 0 0 2px rgba(245,158,11,0.20) !important; }
+  .qr-frame-btn.active { border-color:var(--amber) !important; box-shadow:0 0 0 2px rgba(245,158,11,0.30) !important; }
+  body.light-mode .qr-frame-btn { background:#fff !important; border-color:rgba(0,0,0,0.14) !important; }
+  #qr-frames-grid { grid-template-columns:repeat(4,1fr) !important; gap:6px !important; }
+  #qr-preview-wrap canvas { max-width:120px !important; max-height:120px !important; }
   body.light-mode .qr-shape-btn { background:#fff; border:1.5px solid rgba(0,0,0,0.14); }
   body.light-mode .qr-shape-btn.active { border-color:var(--amber); background:rgba(245,158,11,0.12); color:var(--amber); }
 
@@ -1962,11 +1993,7 @@
   body.light-mode .qr-suggest-btn { background:#fff; border-color:rgba(0,0,0,0.14); color:#4a4f6a; }
   body.light-mode .qr-suggest-btn:hover { border-color:var(--amber); color:var(--amber); }
 
-  /* QR — Frames compactes */
-  #qr-frames-grid { max-height:116px !important; overflow-y:auto !important; grid-template-columns:repeat(4,1fr) !important; gap:5px !important; }
-  .qr-frame-btn img { width:44px !important; height:44px !important; }
-  .qr-frame-btn { padding:5px 3px !important; font-size:8.5px !important; border-radius:8px !important; }
-  #qr-preview-wrap canvas { max-width:120px !important; max-height:120px !important; }
+  /* QR — (voir section TSL Premium ci-dessus) */
 </style>
 </head>
 <body>
@@ -2621,76 +2648,85 @@
       <!-- TAB: QR -->
       <div class="tab-content" id="tab-qr">
 
-        <!-- Stepper numéroté -->
-        <div class="qr-stepper">
-          <div class="qr-step qr-step-active"><span class="qr-step-num">1</span><span class="qr-step-lbl">Lien</span></div>
-          <div class="qr-step-line"></div>
-          <div class="qr-step"><span class="qr-step-num">2</span><span class="qr-step-lbl">Couleur</span></div>
-          <div class="qr-step-line"></div>
-          <div class="qr-step"><span class="qr-step-num">3</span><span class="qr-step-lbl">Habillage</span></div>
-          <div class="qr-step-line"></div>
-          <div class="qr-step"><span class="qr-step-num">4</span><span class="qr-step-lbl">Aperçu</span></div>
-        </div>
+        <!-- Zone scrollable -->
+        <div class="qr-body">
 
-        <!-- 1. Lien -->
-        <div class="tool-section">
-          <div class="tool-section-title">Contenu du QR code</div>
-          <input type="text" class="input-field" id="qr-url" placeholder="https://example.com" oninput="updateQRPreview()">
-          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">
-            <button class="qr-suggest-btn" onclick="qrSuggest('https://')">🌐 Site web</button>
-            <button class="qr-suggest-btn" onclick="qrSuggest('https://wa.me/')">💬 WhatsApp</button>
-            <button class="qr-suggest-btn" onclick="qrSuggest('https://instagram.com/')">📸 Instagram</button>
-            <button class="qr-suggest-btn" onclick="qrSuggest('BEGIN:VCARD\nVERSION:3.0\nFN:')">📇 vCard</button>
-            <button class="qr-suggest-btn" onclick="qrSuggest('mailto:')">✉️ E-mail</button>
+          <!-- Stepper numéroté -->
+          <div class="qr-stepper">
+            <div class="qr-step qr-step-active"><span class="qr-step-num">1</span><span class="qr-step-lbl">Lien</span></div>
+            <div class="qr-step-line"></div>
+            <div class="qr-step"><span class="qr-step-num">2</span><span class="qr-step-lbl">Couleur</span></div>
+            <div class="qr-step-line"></div>
+            <div class="qr-step"><span class="qr-step-num">3</span><span class="qr-step-lbl">Habillage</span></div>
+            <div class="qr-step-line"></div>
+            <div class="qr-step"><span class="qr-step-num">4</span><span class="qr-step-lbl">Aperçu</span></div>
           </div>
-        </div>
 
-        <!-- 2. Couleur -->
-        <div class="tool-section">
-          <div class="tool-section-title">Personnalisation</div>
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-            <input type="color" id="qr-color" value="#000000" oninput="updateQRPreview()">
-            <div id="qr-color2-wrap" style="display:none">
-              <input type="color" id="qr-color2" value="#e05c00" oninput="updateQRPreview()">
+          <!-- 1. Lien -->
+          <div class="tool-section">
+            <div class="tool-section-title">Contenu du QR code</div>
+            <input type="text" class="input-field" id="qr-url" placeholder="https://example.com" oninput="updateQRPreview()">
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">
+              <button class="qr-suggest-btn" onclick="qrSuggest('https://')">🌐 Site web</button>
+              <button class="qr-suggest-btn" onclick="qrSuggest('https://wa.me/')">💬 WhatsApp</button>
+              <button class="qr-suggest-btn" onclick="qrSuggest('https://instagram.com/')">📸 Instagram</button>
+              <button class="qr-suggest-btn" onclick="qrSuggest('BEGIN:VCARD\nVERSION:3.0\nFN:')">📇 vCard</button>
+              <button class="qr-suggest-btn" onclick="qrSuggest('mailto:')">✉️ E-mail</button>
             </div>
-            <input type="color" id="qr-bg" value="#FFFFFF" oninput="updateQRPreview()">
-            <span style="font-size:11px;color:var(--text3)">QR / Fond</span>
           </div>
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-            <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text2);cursor:pointer">
-              <input type="checkbox" id="qr-bg-transparent" onchange="updateQRPreview()" style="accent-color:var(--amber);width:14px;height:14px">
-              Fond transparent
-            </label>
-            <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text2);cursor:pointer">
-              <input type="checkbox" id="qr-gradient-toggle" onchange="toggleQRGradient()" style="accent-color:var(--amber);width:14px;height:14px">
-              Dégradé
-            </label>
+
+          <!-- 2. Couleur -->
+          <div class="tool-section">
+            <div class="tool-section-title">Personnalisation</div>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+              <input type="color" id="qr-color" value="#000000" oninput="updateQRPreview()">
+              <div id="qr-color2-wrap" style="display:none">
+                <input type="color" id="qr-color2" value="#e05c00" oninput="updateQRPreview()">
+              </div>
+              <input type="color" id="qr-bg" value="#FFFFFF" oninput="updateQRPreview()">
+              <span style="font-size:11px;color:var(--text3)">QR / Fond</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text2);cursor:pointer">
+                <input type="checkbox" id="qr-bg-transparent" onchange="updateQRPreview()" style="accent-color:var(--amber);width:14px;height:14px">
+                Fond transparent
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text2);cursor:pointer">
+                <input type="checkbox" id="qr-gradient-toggle" onchange="toggleQRGradient()" style="accent-color:var(--amber);width:14px;height:14px">
+                Dégradé
+              </label>
+            </div>
+            <div id="qr-gradient-dir-wrap" style="display:none">
+              <select id="qr-gradient-dir" onchange="updateQRPreview()" class="select-field" style="font-size:12px;padding:7px 10px">
+                <option value="0">→ Horizontal</option>
+                <option value="1.5708">↓ Vertical</option>
+                <option value="0.7854">↘ Diagonal</option>
+                <option value="2.3562">↙ Diagonal inv.</option>
+              </select>
+            </div>
           </div>
-          <div id="qr-gradient-dir-wrap" style="display:none">
-            <select id="qr-gradient-dir" onchange="updateQRPreview()" class="select-field" style="font-size:12px;padding:7px 10px">
-              <option value="0">→ Horizontal</option>
-              <option value="1.5708">↓ Vertical</option>
-              <option value="0.7854">↘ Diagonal</option>
-              <option value="2.3562">↙ Diagonal inv.</option>
-            </select>
+
+          <!-- 3. Habillage (frames uploadées back-office) -->
+          <div class="tool-section">
+            <div class="tool-section-title">Habillage</div>
+            <div id="qr-frames-loading" style="font-size:12px;color:var(--text3);padding:6px 0">Chargement…</div>
+            <div id="qr-frames-grid" style="display:none;grid-template-columns:repeat(4,1fr);gap:6px"></div>
+            <div id="qr-frames-empty" style="display:none;font-size:12px;color:var(--text3);padding:6px 0">Aucun habillage configuré dans le back-office.</div>
           </div>
+
+          <!-- 4. Aperçu -->
+          <div class="tool-section" style="border-bottom:none !important;padding-bottom:8px !important">
+            <div class="tool-section-title">Aperçu</div>
+            <div id="qr-preview-wrap" style="display:flex;justify-content:center;margin:6px 0 2px"></div>
+          </div>
+
+        </div><!-- fin .qr-body -->
+
+        <!-- Bouton fixe en bas -->
+        <div class="qr-add-wrap">
+          <button class="btn-primary" onclick="addQRToCanvas()">+ Ajouter le QR Code</button>
         </div>
 
-        <!-- 3. Habillage (frames uploadées back-office) -->
-        <div class="tool-section">
-          <div class="tool-section-title">Habillage</div>
-          <div id="qr-frames-loading" style="font-size:12px;color:var(--text3);padding:6px 0">Chargement…</div>
-          <div id="qr-frames-grid" style="display:none;grid-template-columns:repeat(4,1fr);gap:5px;max-height:116px;overflow-y:auto;padding-right:2px"></div>
-          <div id="qr-frames-empty" style="display:none;font-size:12px;color:var(--text3);padding:6px 0">Aucun habillage configuré dans le back-office.</div>
-        </div>
-
-        <!-- 4. Aperçu -->
-        <div class="tool-section" style="padding-bottom:14px">
-          <div class="tool-section-title">Aperçu</div>
-          <div id="qr-preview-wrap" style="display:flex;justify-content:center;margin:6px 0 2px"></div>
-        </div>
-
-        <button class="btn-primary" onclick="addQRToCanvas()">+ Ajouter le QR Code</button>
       </div>
 
       <!-- Bouton panier sticky desktop -->
