@@ -1813,6 +1813,126 @@
     .logo-desktop-text { display: none !important; }
     .logo-mobile-img   { display: flex !important; }
   }
+
+  /* ============================================================
+     TSL PREMIUM — Surcharges visuelles (injectées directement)
+     Mode actif : body.light-mode
+  ============================================================ */
+
+  /* Rendu net macOS */
+  html, body { font-size: 15px; -webkit-font-smoothing: subpixel-antialiased; }
+
+  /* Topbar */
+  body.light-mode #topbar { background:#fff; border-bottom:1px solid rgba(0,0,0,0.14); box-shadow:0 1px 4px rgba(0,0,0,0.08); }
+  body.light-mode .stat-pill { background:#eaecf3; border-color:rgba(0,0,0,0.14); font-size:11.5px; }
+  body.light-mode .btn-toggle { background:#eaecf3; border-color:rgba(0,0,0,0.14); }
+  body.light-mode .btn-toggle button { font-size:11.5px; padding:6px 14px; }
+  body.light-mode .btn-toggle button.active { background:var(--amber); color:#000; font-weight:800; }
+  .btn-cart { padding:7px 16px !important; font-size:13px !important; box-shadow:0 2px 6px rgba(245,158,11,0.28); }
+  body.light-mode .topbar-action-btn { background:#eaecf3; border-color:rgba(0,0,0,0.14); font-size:12.5px; }
+  body.light-mode .topbar-action-btn:hover { border-color:var(--amber); color:var(--amber); }
+
+  /* Sidebar */
+  body.light-mode #sidebar { background:#f8f9fe; border-right:1px solid rgba(0,0,0,0.14); }
+  .sidebar-label { font-size:10.5px !important; font-weight:700 !important; letter-spacing:1.5px !important; color:#7a80a0 !important; }
+  .product-name { font-size:13.5px !important; font-weight:700 !important; }
+  body.light-mode .product-item:hover { background:#eaecf3; border-color:rgba(0,0,0,0.14); }
+  body.light-mode .product-item.active { background:rgba(245,158,11,0.14); border-color:rgba(245,158,11,0.5); }
+
+  /* Canvas */
+  body.light-mode #canvas-container { border-radius:14px; box-shadow:0 0 0 1px rgba(0,0,0,0.12), 0 8px 28px rgba(0,0,0,0.16); }
+  body.light-mode #print-bar { background:#fff; border:1px solid rgba(0,0,0,0.14); border-radius:12px; box-shadow:0 1px 4px rgba(0,0,0,0.07); }
+  .print-label { font-size:10.5px !important; font-weight:700 !important; color:#4a4f6a !important; }
+  body.light-mode .format-btn { background:#eaecf3; border:1px solid rgba(0,0,0,0.14); font-size:11.5px; font-weight:600; padding:6px 13px; border-radius:9px; color:#4a4f6a; }
+  body.light-mode .format-btn:hover { border-color:var(--amber); color:var(--amber); }
+  body.light-mode .format-btn.active { background:var(--amber); border-color:var(--amber); color:#000; font-weight:800; box-shadow:0 1px 6px rgba(245,158,11,0.35); }
+  body.light-mode .tool-btn-sm { background:#eaecf3; border:1px solid rgba(0,0,0,0.14); font-size:11.5px; }
+  body.light-mode .ctx-btn:hover { background:#eaecf3; color:#0d0f1a; }
+  body.light-mode .ctx-btn.active { background:rgba(245,158,11,0.14); color:var(--amber); }
+
+  /* Panneau droit */
+  body.light-mode #tools-panel, body.light-mode #products-panel { background:#f8f9fe; border-left:1px solid rgba(0,0,0,0.14); }
+  body.light-mode .tabs-header { background:#f8f9fe; border-bottom:1px solid rgba(0,0,0,0.14); }
+  .tab-btn { padding:13px 4px !important; font-size:9.5px !important; font-weight:700 !important; letter-spacing:1px !important; }
+  body.light-mode .tab-btn { color:#7a80a0; }
+  body.light-mode .tab-btn.active { color:var(--amber); border-bottom-color:var(--amber); }
+  .tab-content { padding:18px !important; }
+  .tool-section { margin-bottom:20px !important; padding-bottom:20px !important; border-bottom:1px solid rgba(0,0,0,0.10) !important; }
+  .tool-section:last-child { border-bottom:none !important; }
+  .tool-section-title { font-size:10.5px !important; font-weight:700 !important; letter-spacing:1.4px !important; margin-bottom:12px !important; }
+
+  /* Inputs */
+  body.light-mode .input-field { background:#fff; border:1px solid rgba(0,0,0,0.16); border-radius:9px; padding:10px 13px; font-size:13.5px; color:#0d0f1a; }
+  body.light-mode .input-field:focus { border-color:var(--amber); box-shadow:0 0 0 3px rgba(245,158,11,0.14); outline:none; }
+  body.light-mode .select-field { background:#fff; border:1px solid rgba(0,0,0,0.16); border-radius:9px; padding:10px 13px; font-size:13.5px; }
+  body.light-mode .select-field:focus { border-color:var(--amber); box-shadow:0 0 0 3px rgba(245,158,11,0.14); outline:none; }
+  body.light-mode .hex-input { background:#fff; border:1px solid rgba(0,0,0,0.16); border-radius:9px; }
+  body.light-mode .hex-input:focus { border-color:var(--amber); box-shadow:0 0 0 3px rgba(245,158,11,0.14); outline:none; }
+  body.light-mode .stepper { background:#fff; border:1px solid rgba(0,0,0,0.16); border-radius:9px; }
+  body.light-mode .stepper button:hover { background:#eaecf3; color:var(--amber); }
+  body.light-mode input[type="color"] { background:#fff; border:1.5px solid rgba(0,0,0,0.16); }
+
+  /* Boutons */
+  .btn-primary { padding:12px 16px !important; border-radius:11px !important; font-size:14px !important; font-weight:800 !important; box-shadow:0 2px 8px rgba(245,158,11,0.30) !important; }
+  .btn-primary:hover { box-shadow:0 4px 14px rgba(245,158,11,0.42) !important; transform:translateY(-1px) !important; }
+  .btn-secondary { padding:11px 16px !important; border-radius:11px !important; font-size:13.5px !important; font-weight:600 !important; }
+  body.light-mode .style-btn { background:#fff; border:1px solid rgba(0,0,0,0.14); color:#4a4f6a; padding:8px; border-radius:9px; font-size:15px; }
+  body.light-mode .style-btn:hover { border-color:var(--amber); color:var(--amber); }
+  body.light-mode .style-btn.active { background:rgba(245,158,11,0.14); border-color:rgba(245,158,11,0.5); color:var(--amber); }
+  body.light-mode .deform-btn { background:#fff; border:1px solid rgba(0,0,0,0.14); font-size:11.5px; }
+  body.light-mode .deform-btn.active { background:rgba(245,158,11,0.14); border-color:var(--amber); color:var(--amber); font-weight:700; }
+  body.light-mode .ai-style-btn { background:#fff; border:1px solid rgba(0,0,0,0.14); font-size:11.5px; }
+  body.light-mode .ai-style-btn.active { background:rgba(245,158,11,0.14); border-color:rgba(245,158,11,0.5); color:var(--amber); }
+
+  /* Catégories bibliothèque — plus grosses et lisibles */
+  .lib-cat-btn { padding:7px 15px !important; font-size:13px !important; font-weight:600 !important; border-radius:20px !important; }
+  body.light-mode .lib-cat-btn { background:#fff; border:1px solid rgba(0,0,0,0.14); color:#4a4f6a; }
+  body.light-mode .lib-cat-btn:hover { border-color:var(--amber); color:#0d0f1a; }
+  body.light-mode .lib-cat-btn.active { background:var(--amber); border-color:var(--amber); color:#000; font-weight:800 !important; box-shadow:0 1px 6px rgba(245,158,11,0.32); }
+
+  /* QR — frames en grille compacte scrollable */
+  #qr-frames-grid { max-height:110px !important; overflow-y:auto !important; grid-template-columns:repeat(4,1fr) !important; gap:5px !important; }
+  .qr-frame-btn img { width:44px !important; height:44px !important; }
+  .qr-frame-btn { padding:5px 3px !important; font-size:8.5px !important; border-radius:8px !important; }
+  #qr-preview-wrap { margin:8px 0 !important; }
+  #qr-preview-wrap canvas { max-width:130px !important; max-height:130px !important; border-radius:8px; }
+  body.light-mode .qr-shape-btn { background:#fff; border:1.5px solid rgba(0,0,0,0.14); }
+  body.light-mode .qr-shape-btn.active { border-color:var(--amber); background:rgba(245,158,11,0.12); color:var(--amber); }
+
+  /* Cards */
+  body.light-mode .product-card { background:#fff; border:1px solid rgba(0,0,0,0.14); border-radius:13px; }
+  body.light-mode .product-card:hover { border-color:var(--amber); box-shadow:0 3px 10px rgba(0,0,0,0.09); transform:translateY(-1px); }
+  body.light-mode .product-card.active { border-color:var(--amber); background:rgba(245,158,11,0.12); }
+  body.light-mode .products-panel-card { background:#fff; border:1px solid rgba(0,0,0,0.14); border-radius:13px; }
+  body.light-mode .products-panel-card:hover { border-color:var(--amber); transform:translateY(-1px); box-shadow:0 3px 10px rgba(0,0,0,0.09); }
+  body.light-mode .lib-thumb { background:#fff; border:1.5px solid rgba(0,0,0,0.14); border-radius:11px; }
+  body.light-mode .lib-thumb:hover { border-color:var(--amber); box-shadow:0 0 0 3px rgba(245,158,11,0.18); }
+
+  /* Upload zone */
+  body.light-mode .upload-zone { background:#fff; border:2px dashed rgba(0,0,0,0.16); border-radius:13px; }
+  body.light-mode .upload-zone:hover { border-color:var(--amber); background:rgba(245,158,11,0.06); }
+
+  /* Toast / Modal / Drawer */
+  body.light-mode #toast { background:#fff; border:1px solid rgba(0,0,0,0.14); font-size:13px; font-weight:600; box-shadow:0 4px 14px rgba(0,0,0,0.12); }
+  body.light-mode .modal-box { background:#fff; box-shadow:0 -4px 24px rgba(0,0,0,0.12); border-radius:20px 20px 0 0; }
+  body.light-mode .drawer { background:#fff; box-shadow:0 -4px 20px rgba(0,0,0,0.10); border-radius:20px 20px 0 0; }
+
+  /* Bottom nav */
+  body.light-mode #bottom-nav { background:#fff; border-top:1px solid rgba(0,0,0,0.14); box-shadow:0 -2px 8px rgba(0,0,0,0.07); }
+  .bnav-btn { font-size:9.5px !important; font-weight:600 !important; }
+
+  /* Font picker */
+  body.light-mode .font-picker-trigger { background:#fff; border:1px solid rgba(0,0,0,0.16); border-radius:10px; padding:10px 14px; font-size:14px; }
+  body.light-mode .font-picker-dropdown { background:#fff; border:1px solid rgba(0,0,0,0.14); border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,0.14); }
+  .font-picker-option { padding:10px 16px !important; font-size:14.5px !important; }
+
+  /* Scrollbar claire */
+  ::-webkit-scrollbar-thumb { background:rgba(0,0,0,0.14); }
+  ::-webkit-scrollbar-thumb:hover { background:rgba(245,158,11,0.55); }
+
+  @media (max-width:768px) {
+    .ctx-btn { padding:8px 10px !important; font-size:12px !important; }
+  }
 </style>
 </head>
 <body>
@@ -8474,7 +8594,7 @@ async function loadLibrary() {
       // Première catégorie réelle comme défaut, "Tout" en dernier
       const firstCat = allCats[0] || 'all';
       // Si l'utilisateur n'a pas encore choisi, on garde sa sélection précédente
-      if (!_libCat || !allCats.includes(_libCat)) _libCat = firstCat;
+      if (!_libCat) _libCat = 'all'; else if (!allCats.includes(_libCat)) _libCat = 'all';
       // Utiliser des data-cat + event delegation pour éviter les problèmes d'échappement
       container.innerHTML = allCats.map(cat => {
         const isUserAi = cat === TL_AI_USER_CAT;
