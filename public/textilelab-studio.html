@@ -5353,6 +5353,8 @@ function handleImageUpload(e) {
       canvas.setActiveObject(img);
       canvas.renderAll();
       showToast('Image ajoutée ✓');
+      // Fermer le drawer mobile si ouvert (l'image est posée sur le canvas)
+      if (window.innerWidth <= 768) closeDrawer();
     });
   };
   reader.readAsDataURL(file);
@@ -6629,9 +6631,11 @@ function syncMobileColorFromHex(type) {
 }
 
 function addMobileImage() {
-  // Déclenche l'input file du desktop (il est caché mais fonctionnel)
-  document.getElementById('image-upload')?.click();
-  closeDrawer();
+  // Déclenche l'input file — l'ID correct est 'img-upload' (cf. tab-image desktop)
+  // Ne pas fermer le drawer ici : le sélecteur de fichier s'ouvre par-dessus,
+  // le drawer se ferme tout seul via handleImageUpload une fois l'image ajoutée.
+  const inp = document.getElementById('img-upload');
+  if (inp) inp.click();
 }
 
 let qrMobileInstance = null;
