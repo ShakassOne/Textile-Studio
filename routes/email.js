@@ -246,33 +246,36 @@ function emailBase(content) {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>TextileLab Studio</title>
 </head>
-<body style="margin:0;padding:0;background:#f4f4f8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f8;padding:40px 16px">
+<body style="margin:0;padding:0;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0a;padding:32px 16px">
 <tr><td align="center">
 <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%">
 
   <!-- HEADER -->
-  <tr><td style="background:#0a0a0c;border-radius:16px 16px 0 0;padding:28px 36px;text-align:center">
-    <div style="font-family:'Arial Black',sans-serif;font-size:22px;font-weight:900;color:#fff">
+  <tr><td style="background:#0a0a0a;border-radius:16px 16px 0 0;padding:32px 36px 24px;text-align:center;border-bottom:1px solid #222">
+    <div style="font-family:'Arial Black',Arial,sans-serif;font-size:26px;font-weight:900;letter-spacing:-0.5px;color:#ffffff">
       Textile<span style="color:#F59E0B">Lab</span>
     </div>
-    <div style="color:#555;font-size:11px;font-family:'Courier New',monospace;margin-top:4px;letter-spacing:2px">
-      STUDIO
+    <div style="color:#444;font-size:10px;font-family:'Courier New',monospace;margin-top:4px;letter-spacing:3px;text-transform:uppercase">
+      Studio
+    </div>
+    <div style="color:#555;font-size:10px;font-family:'Courier New',monospace;margin-top:10px;letter-spacing:2px">
+      TON STYLE, TES CRÉATIONS, TON UNIVERS
     </div>
   </td></tr>
 
   <!-- BODY -->
-  <tr><td style="background:#ffffff;padding:36px;border-left:1px solid #e8e8f0;border-right:1px solid #e8e8f0">
+  <tr><td style="background:#111111;padding:36px;border-left:1px solid #222;border-right:1px solid #222">
     ${content}
   </td></tr>
 
   <!-- FOOTER -->
-  <tr><td style="background:#f8f8fc;border:1px solid #e8e8f0;border-top:none;border-radius:0 0 16px 16px;padding:20px 36px;text-align:center">
-    <p style="color:#aaa;font-size:11px;margin:0">
+  <tr><td style="background:#0a0a0a;border:1px solid #222;border-top:none;border-radius:0 0 16px 16px;padding:20px 36px;text-align:center">
+    <p style="color:#444;font-size:11px;margin:0">
       TextileLab Studio · Personnalisation textile premium<br>
       <a href="${STORE_URL}" style="color:#F59E0B;text-decoration:none">${STORE_URL}</a>
     </p>
-    <p style="color:#ccc;font-size:10px;margin:8px 0 0">
+    <p style="color:#333;font-size:10px;margin:8px 0 0">
       Vous recevez cet email car vous avez passé une commande sur notre boutique.
     </p>
   </td></tr>
@@ -285,27 +288,14 @@ function emailBase(content) {
 
 function buildOrderConfirmationHTML(order, design) {
   const productName = PRODUCTS[order.product] || order.product;
-  const totalFmt    = parseFloat(order.total_price).toFixed(2).replace('.', ',');
-  const unitFmt     = parseFloat(order.unit_price).toFixed(2).replace('.', ',');
-  const extraFmt    = parseFloat(order.format_price).toFixed(2).replace('.', ',');
+  const totalFmt    = parseFloat(order.total_price || 0).toFixed(2).replace('.', ',');
   const dateStr     = new Date(order.created_at).toLocaleDateString('fr-FR', { year:'numeric', month:'long', day:'numeric' });
+  const orderNum    = String(order.id).padStart(4, '0');
 
-  // Lien vers la page aperçu recto/verso (toujours disponible si design_id existe)
   const APP_URL = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
-  const previewPageUrl = design?.id ? `${APP_URL}/design-preview/${design.id}` : null;
+  const shopUrl = (process.env.SHOPIFY_APP_URL || STORE_URL || '').replace(/\/$/, '');
 
-  // Bouton "Voir votre design" — lien vers la page HTML recto/verso
-  const previewBtnBlock = previewPageUrl ? `
-    <div style="text-align:center;margin:28px 0 8px">
-      <a href="${previewPageUrl}" target="_blank"
-         style="display:inline-block;background:#F59E0B;color:#000;font-weight:700;font-size:14px;
-                padding:14px 32px;border-radius:10px;text-decoration:none;letter-spacing:0.3px">
-        👕 Voir votre design
-      </a>
-      <div style="font-size:11px;color:#aaa;margin-top:8px">Recto &amp; verso · cliquable depuis cet email</div>
-    </div>` : '';
-
-  // Images inline recto/verso (depuis views_preview_json si disponible)
+  // ── Thumbnails recto/verso depuis views_preview_json ──
   let thumbnailBlock = '';
   if (design?.views_preview_json) {
     try {
@@ -313,95 +303,124 @@ function buildOrderConfirmationHTML(order, design) {
       const entries = Object.values(vp).filter(v => v?.url);
       if (entries.length) {
         thumbnailBlock = `
-          <div style="text-align:center;margin:20px 0 0">
-            <div style="font-size:10px;color:#bbb;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px">Aperçu rapide</div>
-            <div style="display:inline-flex;gap:12px;flex-wrap:wrap;justify-content:center">
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0">
+            <tr><td style="text-align:center;padding-bottom:10px">
+              <span style="font-size:10px;color:#555;font-family:'Courier New',monospace;letter-spacing:2px;text-transform:uppercase">Aperçu de ton design</span>
+            </td></tr>
+            <tr><td style="text-align:center">
               ${entries.map(v => `
-                <div style="text-align:center">
-                  <a href="${previewPageUrl || v.url}" target="_blank" style="display:inline-block">
-                    <img src="${v.url}" alt="${v.name}" width="140" height="140"
-                         style="border-radius:10px;border:2px solid #f0f0f8;object-fit:contain;background:#f8f8f8;display:block">
-                  </a>
-                  <div style="font-size:10px;color:#aaa;margin-top:4px">${v.name}</div>
-                </div>`).join('')}
-            </div>
-          </div>`;
+                <img src="${v.url}" alt="${v.name || 'design'}" width="160" height="160"
+                     style="display:inline-block;margin:0 8px;border-radius:12px;border:2px solid #2a2a2a;object-fit:contain;background:#1a1a1a">
+              `).join('')}
+            </td></tr>
+          </table>`;
       }
-    } catch {}
+    } catch(e) {}
   }
   if (!thumbnailBlock && design?.thumbnail) {
     thumbnailBlock = `
-      <div style="text-align:center;margin:20px 0 0">
-        <a href="${previewPageUrl || design.thumbnail}" target="_blank">
-          <img src="${design.thumbnail}" alt="Votre design"
-               style="max-width:180px;max-height:180px;border-radius:12px;border:2px solid #f0f0f8;object-fit:contain">
-        </a>
-      </div>`;
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0">
+        <tr><td style="text-align:center">
+          <img src="${design.thumbnail}" alt="Votre design" width="180" height="180"
+               style="display:inline-block;border-radius:12px;border:2px solid #2a2a2a;object-fit:contain;background:#1a1a1a">
+        </td></tr>
+      </table>`;
   }
 
   const content = `
     <!-- Hero -->
-    <div style="text-align:center;margin-bottom:28px">
-      <div style="font-size:40px;margin-bottom:12px">✅</div>
-      <h1 style="font-size:22px;font-weight:700;color:#111;margin:0 0 8px">Commande confirmée !</h1>
-      <p style="color:#666;font-size:14px;margin:0">Merci pour votre commande. Nous allons la préparer avec soin.</p>
+    <div style="text-align:center;margin-bottom:32px">
+      <h1 style="font-size:26px;font-weight:900;color:#ffffff;margin:0 0 8px;letter-spacing:-0.5px">
+        MERCI POUR<br>TA COMMANDE !
+      </h1>
+      <p style="color:#666;font-size:13px;margin:0;line-height:1.6">
+        Ta création est bien enregistrée.<br>On s'occupe du reste et on te prévient dès l'expédition.
+      </p>
     </div>
 
     <!-- Order number -->
-    <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:14px 20px;margin-bottom:24px;text-align:center">
-      <span style="font-size:11px;color:#92400e;font-family:'Courier New',monospace;text-transform:uppercase;letter-spacing:1px">Numéro de commande</span>
-      <div style="font-size:24px;font-weight:700;color:#F59E0B;font-family:'Courier New',monospace">#${String(order.id).padStart(5,'0')}</div>
-    </div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px">
+      <tr><td style="background:#161616;border:1px solid #2a2a2a;border-radius:14px;padding:20px;text-align:center">
+        <div style="font-size:11px;color:#555;font-family:'Courier New',monospace;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">
+          Numéro de commande
+        </div>
+        <div style="font-size:32px;font-weight:900;color:#F59E0B;font-family:'Courier New',monospace;letter-spacing:-1px">
+          #${orderNum}
+        </div>
+        <div style="font-size:11px;color:#444;margin-top:4px">${dateStr}</div>
+      </td></tr>
+    </table>
 
-    ${previewBtnBlock}
+    <!-- CTA voir commande -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px">
+      <tr><td style="text-align:center">
+        <a href="${shopUrl}/account/orders"
+           style="display:inline-block;background:#F59E0B;color:#000000;font-weight:700;font-size:14px;
+                  padding:14px 36px;border-radius:10px;text-decoration:none;letter-spacing:0.5px">
+          VOIR MA COMMANDE →
+        </a>
+      </td></tr>
+    </table>
+
     ${thumbnailBlock}
 
-    <!-- Order details -->
-    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px">
-      <tr style="border-bottom:1px solid #f0f0f8">
+    <!-- Résumé commande -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;border-top:1px solid #222">
+      <tr><td colspan="2" style="padding:16px 0 10px">
+        <span style="font-size:10px;color:#555;font-family:'Courier New',monospace;letter-spacing:2px;text-transform:uppercase">
+          Résumé de la commande
+        </span>
+      </td></tr>
+      <tr style="border-bottom:1px solid #1e1e1e">
         <td style="padding:10px 0;color:#888;font-size:13px">Produit</td>
-        <td style="padding:10px 0;font-weight:600;font-size:13px;text-align:right">${productName}</td>
+        <td style="padding:10px 0;font-weight:600;font-size:13px;text-align:right;color:#ccc">${productName}</td>
       </tr>
-      <tr style="border-bottom:1px solid #f0f0f8">
-        <td style="padding:10px 0;color:#888;font-size:13px">Format d'impression</td>
-        <td style="padding:10px 0;font-weight:600;font-size:13px;text-align:right">${order.format}</td>
+      <tr style="border-bottom:1px solid #1e1e1e">
+        <td style="padding:10px 0;color:#888;font-size:13px">Format</td>
+        <td style="padding:10px 0;font-weight:600;font-size:13px;text-align:right;color:#ccc">${order.format || '—'}</td>
       </tr>
-      <tr style="border-bottom:1px solid #f0f0f8">
-        <td style="padding:10px 0;color:#888;font-size:13px">Couleur du textile</td>
+      <tr style="border-bottom:1px solid #1e1e1e">
+        <td style="padding:10px 0;color:#888;font-size:13px">Couleur textile</td>
         <td style="padding:10px 0;text-align:right">
-          <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600">
-            <span style="display:inline-block;width:14px;height:14px;background:${order.color||'#fff'};border:1px solid #ddd;border-radius:3px;vertical-align:middle"></span>
+          <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#ccc">
+            <span style="display:inline-block;width:14px;height:14px;background:${order.color||'#ffffff'};border:1px solid #444;border-radius:3px"></span>
             ${order.color || '—'}
           </span>
         </td>
       </tr>
-      <tr style="border-bottom:1px solid #f0f0f8">
+      <tr style="border-bottom:1px solid #1e1e1e">
         <td style="padding:10px 0;color:#888;font-size:13px">Quantité</td>
-        <td style="padding:10px 0;font-weight:600;font-size:13px;text-align:right">${order.quantity}</td>
-      </tr>
-      <tr style="border-bottom:2px solid #111">
-        <td style="padding:14px 0 10px;color:#888;font-size:13px">Produit (${unitFmt} €) + Format (${extraFmt} €)</td>
-        <td style="padding:14px 0 10px;text-align:right"></td>
+        <td style="padding:10px 0;font-weight:600;font-size:13px;text-align:right;color:#ccc">${order.quantity || 1}</td>
       </tr>
       <tr>
-        <td style="padding:12px 0;font-weight:700;font-size:16px">Total</td>
-        <td style="padding:12px 0;font-weight:700;font-size:20px;color:#F59E0B;text-align:right">${totalFmt} €</td>
+        <td style="padding:14px 0;font-weight:700;font-size:15px;color:#fff">Total</td>
+        <td style="padding:14px 0;font-weight:900;font-size:22px;color:#F59E0B;text-align:right;font-family:'Courier New',monospace">
+          ${totalFmt} €
+        </td>
       </tr>
     </table>
 
     <!-- Timeline -->
-    <div style="background:#f8f8fc;border-radius:12px;padding:20px;margin-bottom:24px">
-      <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:14px;text-transform:uppercase;letter-spacing:1px">Suivi de commande</div>
-      ${['Commande confirmée ✅','En préparation impression','Expédition','Livraison'].map((step, i) => `
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:${i<3?'10px':'0'}">
-          <div style="width:24px;height:24px;border-radius:50%;background:${i===0?'#F59E0B':'#e8e8f0'};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px;font-weight:700;color:${i===0?'#000':'#aaa'}">${i+1}</div>
-          <div style="font-size:13px;color:${i===0?'#111':'#aaa'};font-weight:${i===0?600:400}">${step}</div>
-          ${i===0?`<div style="margin-left:auto;font-size:11px;color:#aaa">${dateStr}</div>`:''}
-        </div>`).join('')}
-    </div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px">
+      <tr><td style="background:#161616;border:1px solid #222;border-radius:12px;padding:20px">
+        <div style="font-size:10px;color:#555;font-family:'Courier New',monospace;letter-spacing:2px;text-transform:uppercase;margin-bottom:16px">
+          Suivi de commande
+        </div>
+        ${['Commande confirmée ✅','En préparation impression','Expédition','Livraison'].map((step, i) => `
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:${i<3?'10px':'0'}">
+            <tr>
+              <td width="28" valign="middle">
+                <div style="width:24px;height:24px;border-radius:50%;background:${i===0?'#F59E0B':'#1e1e1e'};text-align:center;line-height:24px;font-size:11px;font-weight:700;color:${i===0?'#000':'#444'};border:1px solid ${i===0?'#F59E0B':'#2a2a2a'}">${i+1}</div>
+              </td>
+              <td style="padding-left:10px;font-size:13px;color:${i===0?'#ffffff':'#444'};font-weight:${i===0?600:400}">${step}</td>
+              ${i===0?`<td style="text-align:right;font-size:11px;color:#555;font-family:'Courier New',monospace">${dateStr}</td>`:'<td></td>'}
+            </tr>
+          </table>`).join('')}
+      </td></tr>
+    </table>
 
-    <p style="color:#666;font-size:13px;line-height:1.6;margin:0">
-      Des questions ? Répondez simplement à cet email, nous sommes là pour vous aider.
+    <p style="color:#555;font-size:12px;line-height:1.6;margin:0;text-align:center">
+      Des questions ? Réponds à cet email, on est là pour toi.
     </p>
   `;
 
