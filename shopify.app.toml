@@ -27,8 +27,10 @@ uri = "https://textile-studio-production.up.railway.app/shopify/gdpr/customers/r
 compliance_topics = ["shop/redact"]
 uri = "https://textile-studio-production.up.railway.app/shopify/gdpr/shop/redact"
 
-# orders/paid : contient des données client protégées → enregistré dynamiquement au
-# bootstrap (server.js) une fois l'app installée (PCD demandé via le Dev Dashboard).
+# orders/paid — ajouté en statique le 09/06/2026 (bootstrap désactivé en prod depuis audit M8)
+[[webhooks.subscriptions]]
+topics = ["orders/paid"]
+uri = "/shopify/webhook"
 
 [app_proxy]
 url = "https://textile-studio-production.up.railway.app/proxy"
