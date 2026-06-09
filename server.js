@@ -161,6 +161,41 @@ app.get('/', (req, res) => {
 // ── Init DB ────────────────────────────────────────────────────────────
 initDB();
 
+// ── Réenregistrement auto orders/paid pour tous les shops (chaque démarrage) ─
+// Règle le problème de perte du webhook après redéploiement Railway.
+// 201 = créé, 422 = déjà présent → les deux sont OK.
+setImmediate(async () => {
+  try {
+    const db     = require('./db/database').getDB();
+    const shops  = db.prepare('SELECT shop_domain, access_token FROM shops WHERE access_token IS NOT NULL AND access_token != ""').all();
+    const appUrl = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
+    if (!shops.length || !appUrl) {
+      console.log('🪝  reRegisterWebhooks — aucun shop en DB ou APP_URL absent');
+      return;
+    }
+    const https = require('https');
+    for (const s of shops) {
+      await new Promise((resolve) => {
+        const body = JSON.stringify({ webhook: { topic: 'orders/paid', address: `${appUrl}/shopify/webhook`, format: 'json' } });
+        const r = https.request({
+          hostname: s.shop_domain, path: '/admin/api/2024-01/webhooks.json', method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), 'X-Shopify-Access-Token': s.access_token },
+        }, (res) => {
+          let d = ''; res.on('data', c => d += c);
+          res.on('end', () => {
+            if (res.statusCode === 201) console.log(`🪝  orders/paid créé → ${s.shop_domain}`);
+            else if (res.statusCode === 422) console.log(`🪝  orders/paid déjà présent → ${s.shop_domain}`);
+            else console.warn(`⚠️  orders/paid HTTP ${res.statusCode} → ${s.shop_domain}: ${d.slice(0,120)}`);
+            resolve();
+          });
+        });
+        r.on('error', e => { console.warn(`⚠️  orders/paid réseau ${s.shop_domain}: ${e.message}`); resolve(); });
+        r.write(body); r.end();
+      });
+    }
+  } catch(e) { console.warn('⚠️  reRegisterWebhooks:', e.message); }
+});
+
 // ── M5 : Migration de chiffrement des secrets en DB (idempotente) ──────
 // Chiffre les valeurs en clair existantes pour les clés sensibles (openai_api_key…)
 // dans la table settings. Voir db/settings.js + utils/crypto.js.
@@ -385,6 +420,8 @@ app.use((req, res, next) => {
     '/api/auth',
     '/auth',
     '/webhooks',
+    '/shopify/webhook',   // ← webhooks Shopify ne doivent JAMAIS passer par billing
+    '/shopify/gdpr',      // ← idem pour les webhooks GDPR
     '/billing',
     '/oauth',
     '/health',
