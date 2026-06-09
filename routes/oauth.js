@@ -238,10 +238,15 @@ router.get('/callback', async (req, res) => {
     return res.status(500).send('Erreur de sauvegarde en base de données.');
   }
 
-  // 6. Enregistrer le webhook app/uninstalled (fire-and-forget)
+  // 6. Enregistrer les webhooks nécessaires (fire-and-forget)
   _registerWebhook(shop, access_token, 'app/uninstalled', `${SHOPIFY_APP_URL}/shopify/webhook`)
     .then(() => console.log(`🪝  Webhook app/uninstalled enregistré pour ${shop}`))
     .catch(err => console.warn(`⚠️  Webhook app/uninstalled non enregistré pour ${shop}:`, err.message));
+
+  // orders/paid — déclenche l'email de confirmation TSL + sauvegarde en DB
+  _registerWebhook(shop, access_token, 'orders/paid', `${SHOPIFY_APP_URL}/shopify/webhook`)
+    .then(() => console.log(`🪝  Webhook orders/paid enregistré pour ${shop}`))
+    .catch(err => console.warn(`⚠️  Webhook orders/paid non enregistré pour ${shop}:`, err.message));
 
   // 7. Rediriger vers l'app embedded dans l'admin Shopify après installation
   // Pattern standard Embedded App : Shopify ouvre l'App URL avec ?shop=&host=

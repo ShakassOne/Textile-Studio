@@ -440,6 +440,39 @@ app.use('/api/admin',          require('./routes/admin-graphql'));
 app.use('/api/shop-settings',  require('./routes/shop-settings'));
 app.use('/proxy',             require('./routes/app-proxy'));
 
+// ── Fix webhooks : réenregistre orders/paid sur tous les shops actifs ─────────
+// Appel unique : GET /api/internal/fix-webhooks?secret=<ADMIN_SECRET>
+app.get('/api/internal/fix-webhooks', async (req, res) => {
+  const secret = process.env.ADMIN_SECRET || process.env.SHOPIFY_API_SECRET || '';
+  if (!secret || req.query.secret !== secret) return res.status(403).json({ error: 'Forbidden' });
+
+  const db = require('./db/database').getDB();
+  const shops = db.prepare('SELECT shop_domain, access_token FROM shops WHERE access_token IS NOT NULL').all();
+  const APP_URL = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
+  const https = require('https');
+
+  const results = [];
+  for (const s of shops) {
+    await new Promise((resolve) => {
+      const body = JSON.stringify({ webhook: { topic: 'orders/paid', address: `${APP_URL}/shopify/webhook`, format: 'json' } });
+      const req2 = https.request({
+        hostname: s.shop_domain, path: '/admin/api/2024-01/webhooks.json', method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), 'X-Shopify-Access-Token': s.access_token },
+      }, (r) => {
+        let d = ''; r.on('data', c => d += c); r.on('end', () => {
+          const status = r.statusCode === 201 ? 'created' : r.statusCode === 422 ? 'already_exists' : `error_${r.statusCode}`;
+          results.push({ shop: s.shop_domain, status });
+          console.log(`🪝  fix-webhooks orders/paid → ${s.shop_domain} : ${status}`);
+          resolve();
+        });
+      });
+      req2.on('error', (e) => { results.push({ shop: s.shop_domain, status: `network_error: ${e.message}` }); resolve(); });
+      req2.write(body); req2.end();
+    });
+  }
+  res.json({ ok: true, results });
+});
+
 // ── Stats (admin, scopé shop — audit B1) ───────────────────────────────
 const { requireAuth } = require('./routes/auth');
 const { attachShopId } = require('./routes/_shop-context');
