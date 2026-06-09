@@ -88,10 +88,12 @@ app.use(cors({
 // bouton "Voir mon design" dans le drawer, et styles/photo IA cassés.
 const HIGH_LIMIT_PATHS = ['/api/render', '/api/mockups', '/api/mockup-gen', '/api/designs', '/api/ai'];
 const _isHighLimitPath = (req) => HIGH_LIMIT_PATHS.some(p => req.path === p || req.path.startsWith(p + '/'));
+// Webhooks Shopify : body doit rester raw (Buffer) pour la vérification HMAC
+const _isRawBodyPath  = (req) => req.path.startsWith('/shopify/webhook') || req.path.startsWith('/shopify/gdpr');
 const _jsonGlobal = express.json({ limit: '1mb' });
 const _urlGlobal  = express.urlencoded({ extended: true, limit: '1mb' });
-app.use((req, res, next) => _isHighLimitPath(req) ? next() : _jsonGlobal(req, res, next));
-app.use((req, res, next) => _isHighLimitPath(req) ? next() : _urlGlobal(req, res, next));
+app.use((req, res, next) => (_isHighLimitPath(req) || _isRawBodyPath(req)) ? next() : _jsonGlobal(req, res, next));
+app.use((req, res, next) => (_isHighLimitPath(req) || _isRawBodyPath(req)) ? next() : _urlGlobal(req, res, next));
 // Log structuré des requêtes (audit N6) — ignore assets statiques & health-checks.
 app.use(logger.httpMiddleware());
 app.use('/uploads', express.static(UPLOADS_DIR, {
