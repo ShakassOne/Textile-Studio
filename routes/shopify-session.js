@@ -23,7 +23,104 @@
 const express = require('express');
 const router  = express.Router();
 const crypto  = require('crypto');
-const { getShop } = require('../db/database');
+const https   = require('https');
+const { getDB, getShop } = require('../db/database');
+
+const { SHOPIFY_API_KEY, SHOPIFY_API_SECRET: SHOPIFY_SECRET_FOR_EXCHANGE } = process.env;
+
+// ── Fallback Shopify Managed Installation : token exchange ──────────────────
+/**
+ * Quand l'app est installée via le flow managé de Shopify (pas de
+ * legacy_install_flow dans shopify.app.toml), /oauth/callback n'est jamais
+ * appelé pour les nouveaux installs et la table `shops` reste vide pour ce
+ * store. On échange alors le session token (déjà vérifié) contre un access
+ * token offline via le endpoint token exchange officiel :
+ * https://shopify.dev/docs/apps/auth/get-access-tokens/token-exchange
+ */
+function _tokenExchange(shop, sessionToken) {
+  return new Promise((resolve, reject) => {
+    if (!SHOPIFY_API_KEY || !SHOPIFY_SECRET_FOR_EXCHANGE) {
+      return reject(new Error('SHOPIFY_API_KEY ou SHOPIFY_API_SECRET non défini'));
+    }
+
+    const body = JSON.stringify({
+      client_id:            SHOPIFY_API_KEY,
+      client_secret:        SHOPIFY_SECRET_FOR_EXCHANGE,
+      grant_type:           'urn:ietf:params:oauth:grant-type:token-exchange',
+      subject_token:        sessionToken,
+      subject_token_type:   'urn:ietf:params:oauth:token-type:id_token',
+      requested_token_type: 'urn:shopify:params:oauth:token-type:offline-access-token',
+    });
+
+    const options = {
+      hostname: shop,
+      path:     '/admin/oauth/access_token',
+      method:   'POST',
+      headers: {
+        'Content-Type':   'application/json',
+        'Content-Length': Buffer.byteLength(body),
+      },
+    };
+
+    const req = https.request(options, (response) => {
+      let data = '';
+      response.on('data', chunk => { data += chunk; });
+      response.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.access_token) {
+            resolve(parsed);
+          } else {
+            reject(new Error(
+              parsed.error_description || parsed.error || 'Pas d\'access_token (token exchange)'
+            ));
+          }
+        } catch {
+          reject(new Error('Réponse JSON invalide de Shopify (token exchange)'));
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+// ── Auto-provisioning : upsert shops après token exchange réussi ────────────
+function _provisionShop(shop, accessToken, scope) {
+  const db = getDB();
+  db.prepare(`
+    INSERT INTO shops (shop_domain, access_token, scope, is_active, uninstalled_at, installed_at)
+    VALUES (?, ?, ?, 1, NULL, datetime('now'))
+    ON CONFLICT(shop_domain) DO UPDATE SET
+      access_token   = excluded.access_token,
+      scope          = excluded.scope,
+      is_active      = 1,
+      uninstalled_at = NULL,
+      installed_at   = datetime('now')
+  `).run(shop, accessToken, scope || '');
+}
+
+/**
+ * Si le shop n'est pas (encore) en DB, tente l'auto-provisioning via token
+ * exchange. Retourne le record shop (nouveau ou existant) ou null en cas
+ * d'échec.
+ */
+async function _ensureShopProvisioned(shop, sessionToken) {
+  const existing = getShop(shop);
+  if (existing) return existing;
+
+  try {
+    const tokenData = await _tokenExchange(shop, sessionToken);
+    _provisionShop(shop, tokenData.access_token, tokenData.scope);
+    console.log(`🔄  Shop auto-provisionné via token exchange — shop: ${shop}`);
+    return getShop(shop);
+  } catch (err) {
+    console.warn(`⚠️  Token exchange échoué — shop: ${shop}:`, err.message);
+    return null;
+  }
+}
 
 // ── Décodage / vérification JWT HS256 (sans lib externe) ────────────────────
 function _base64UrlDecode(str) {
@@ -110,7 +207,7 @@ function setReauthHeaders(res, shopDomain) {
 }
 
 // ── POST /api/shopify-session/verify ────────────────────────────────────────
-router.post('/verify', (req, res) => {
+router.post('/verify', async (req, res) => {
   const token  = _extractBearer(req);
   const shop   = (req.body?.shop || '').toLowerCase().trim();
   const secret = process.env.SHOPIFY_API_SECRET || '';
@@ -139,8 +236,9 @@ router.post('/verify', (req, res) => {
     return res.status(403).json({ error: 'Shop ne correspond pas au token' });
   }
 
-  // Vérifier que le shop est bien installé en DB
-  const installed = getShop(shop);
+  // Vérifier que le shop est bien installé en DB — sinon, fallback
+  // Shopify Managed Installation : auto-provisioning via token exchange.
+  const installed = await _ensureShopProvisioned(shop, token);
   if (!installed) {
     return res.status(403).json({ error: 'Shop non installé ou désactivé' });
   }
@@ -158,7 +256,7 @@ router.post('/verify', (req, res) => {
  *   const { requireShopifySession } = require('./shopify-session');
  *   router.get('/ma-route', requireShopifySession, (req, res) => { ... });
  */
-function requireShopifySession(req, res, next) {
+async function requireShopifySession(req, res, next) {
   const token  = _extractBearer(req);
   const secret = process.env.SHOPIFY_API_SECRET || '';
 
@@ -185,7 +283,11 @@ function requireShopifySession(req, res, next) {
   }
 
   const shop = (payload.dest || '').replace('https://', '').toLowerCase();
-  const record = getShop(shop);
+
+  // Fallback Shopify Managed Installation : auto-provisioning via token exchange
+  // (cas où une route protégée est appelée avant /verify, ou si /verify
+  // n'a pas pu provisionner pour une autre raison).
+  const record = await _ensureShopProvisioned(shop, token);
   if (!record) {
     return res.status(403).json({ error: 'Shop non installé' });
   }
