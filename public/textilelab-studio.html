@@ -3321,6 +3321,29 @@ function initCanvas() {
     preserveObjectStacking: true,
   });
 
+  // ── FIX "image fantôme" ──────────────────────────────────────────────
+  // Si un objet encore SÉLECTIONNÉ est retiré du canvas, Fabric tente de
+  // dessiner ses contrôles alors que obj.canvas est devenu undefined →
+  // exception getRetinaScaling en plein renderCanvas → le contexte 2D reste
+  // avec une transform non restaurée → fragments fantômes du mockup et
+  // poignées résiduelles à chaque rendu suivant (reproduit : suppression
+  // d'un visuel au clavier puis changement de couleur).
+  // Patch défensif : toute suppression désélectionne d'abord l'objet actif
+  // s'il fait partie des objets retirés — couvre TOUS les chemins de
+  // suppression (clavier, poignée, panel calques, switch de vue…).
+  const _origCanvasRemove = canvas.remove.bind(canvas);
+  canvas.remove = function(...objects) {
+    const active = canvas.getActiveObject();
+    if (active && (
+      objects.includes(active) ||
+      (active.type === 'activeSelection' && active.getObjects &&
+       active.getObjects().some(o => objects.includes(o)))
+    )) {
+      canvas.discardActiveObject();
+    }
+    return _origCanvasRemove(...objects);
+  };
+
   drawPrintFrame();
   bindCanvasEvents();
   setupCustomControls();
@@ -3409,8 +3432,9 @@ function setupCustomControls() {
   function actionDelete(_e, _transform) {
     const obj = canvas.getActiveObject();
     if (obj && !obj.__isFrame && !obj.__isMockupBg) {
-      canvas.remove(obj);
+      // Désélectionner AVANT de supprimer (fix image fantôme / getRetinaScaling)
       canvas.discardActiveObject();
+      canvas.remove(obj);
       canvas.renderAll();
       historySave();
     }
@@ -8353,6 +8377,8 @@ function init() {
     }
     if (e.key === 'Escape') { canvas.discardActiveObject().renderAll(); return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && obj && !obj.__isFrame && !obj.__isMockupBg) {
+      // Désélectionner AVANT de supprimer (fix image fantôme / getRetinaScaling)
+      canvas.discardActiveObject();
       canvas.remove(obj); canvas.renderAll(); updateLayerBar(); historySave(); return;
     }
     if ((e.key === 'd' || e.key === 'D') && !ctrl && obj && !obj.__isFrame && !obj.__isMockupBg) {

@@ -302,3 +302,5 @@ module.exports = router;
 module.exports.requireShopifySession = requireShopifySession;
 module.exports.verifyJWT = verifyJWT;
 module.exports.setReauthHeaders = setReauthHeaders;
+// Exporté pour l'auth duale du back-office (routes/auth.js → requireAuth)
+module.exports.ensureShopProvisioned = _ensureShopProvisioned;

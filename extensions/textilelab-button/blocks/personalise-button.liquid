@@ -1,86 +1,93 @@
 {% comment %}
   TextileLab — Theme App Extension — Bouton "Personnaliser"
 
-  Ce block injecte automatiquement un bouton "Personnaliser" sur la page produit.
-  Il fonctionne de pair avec l'App Embed Block (tl-embed.liquid) qui charge tl-modal.js.
+  Ce block injecte un bouton "Personnaliser" toujours visible sur la page produit.
+  Il fonctionne de pair avec l'App Embed Block (tl-embed.liquid) qui charge
+  tl-modal.js : au clic, l'éditeur s'ouvre en modal plein écran. Sans tl-modal.js,
+  le href reste fonctionnel et ouvre l'éditeur en pleine page (fallback).
 
-  Mécanisme :
-    1. Si le produit a un metafield textilelab.editor_url  → lien direct vers l'éditeur
-    2. Sinon → appel /api/product-links/by-product/{handle} pour récupérer le mockup lié
-    Dans les deux cas l'attribut data-tsl-open est posé sur le lien :
-    tl-modal.js intercepte le clic et ouvre l'éditeur en modal plein écran.
+  Résolution de l'URL éditeur (du plus précis au plus générique) :
+    1. Metafield textilelab.editor_url            → URL directe
+    2. API /api/product-links/by-product/{handle} → URL avec mockup lié (enrichie en JS)
+    3. Sinon                                      → éditeur générique (produit pré-sélectionné par handle)
+
+  IMPORTANT : le bouton est TOUJOURS rendu — la liaison mockup ne fait
+  qu'enrichir l'URL. Il est ainsi visible dans l'éditeur de thème et sur
+  le storefront dès l'ajout du block, sans configuration préalable.
+  (Fix review Shopify 2.1.1 : l'ancienne version ne rendait rien sans
+  metafield ni liaison mockup → widget invisible sur un store de test.)
 
   Usage "bouton libre" (hors block) — collez n'importe où dans votre thème :
     <a data-tsl-open="{{ product.handle }}" class="button">🎨 Personnaliser</a>
-    <button data-tsl-open="{{ product.handle }}" class="button">🎨 Personnaliser</button>
-    <a data-tsl-open>🎨 Créer mon design</a>   ← ouvre le configurateur sans produit pré-sélectionné
-    <a data-tsl-open="123456789">Personnaliser</a>   ← product_id numérique
-    <a data-tsl-open data-tsl-url="https://textile-studio-production.up.railway.app/textilelab-studio.html?shop={{ shop.permanent_domain }}">
-      Personnaliser
-    </a>                                             ← URL custom si besoin
-
-  IMPORTANT : l'App Embed Block "TextileLab Script" doit être activé dans
-  Éditeur de thème → Paramètres → Apps → TextileLab Script.
-  Sans lui tl-modal.js n'est pas chargé et les boutons ouvrent une page classique.
+    <a data-tsl-open>🎨 Créer mon design</a>   ← sans produit pré-sélectionné
 {% endcomment %}
 
+{%- assign tl_app_url    = 'https://textile-studio-production.up.railway.app' -%}
 {%- assign tl_editor_url = product.metafields.textilelab.editor_url.value -%}
 
-{%- if tl_editor_url != blank -%}
+{%- if tl_editor_url == blank -%}
+  {%- capture tl_editor_url -%}
+    {{- tl_app_url -}}/textilelab-studio.html?shop={{ shop.permanent_domain | url_param_escape }}&embed=1{%- if product -%}&product={{ product.handle | url_param_escape }}{%- endif -%}
+  {%- endcapture -%}
+{%- endif -%}
 
-  {{- '' -}}
-  <div id="tl-cta-{{ product.id }}">
-    <a
-      href="{{ tl_editor_url }}"
-      data-tsl-open="{{ product.handle }}"
-      data-tl-editor="true"
-      class="button"
-      style="display:flex;width:100%;justify-content:center;align-items:center;gap:8px;margin-top:8px;text-decoration:none;"
-    >
-      <span>🎨</span>
-      <span>Personnaliser</span>
-    </a>
-  </div>
+<div id="tl-cta-{{ product.id | default: 'generic' }}" {{ block.shopify_attributes }}>
+  <a
+    href="{{ tl_editor_url | strip }}"
+    {% if product %}data-tsl-open="{{ product.handle }}"{% else %}data-tsl-open{% endif %}
+    data-tl-editor="true"
+    class="button tl-personalise-btn"
+    style="display:flex;width:100%;justify-content:center;align-items:center;gap:8px;margin-top:8px;text-decoration:none;cursor:pointer;"
+  >
+    {%- if block.settings.show_icon -%}<span aria-hidden="true">🎨</span>{%- endif -%}
+    <span>{{ block.settings.button_label | default: 'Personnaliser' }}</span>
+  </a>
+</div>
 
-{%- else -%}
-
-  <div id="tl-cta-{{ product.id }}"></div>
-  <script>
+{%- if product and product.metafields.textilelab.editor_url.value == blank -%}
+<script>
+  /* Enrichissement optionnel : si un mockup est lié à ce produit côté
+     TextileLab, on précise le mockup dans l'URL. Le bouton reste affiché
+     et fonctionnel même si cet appel échoue ou ne renvoie rien. */
   (function() {
-    var handle  = {{ product.handle | json }};
-    var shop    = {{ shop.permanent_domain | json }};
-    var appUrl  = 'https://textile-studio-production.up.railway.app';
-    var el      = document.getElementById('tl-cta-{{ product.id }}');
-    if (!el) return;
+    var handle = {{ product.handle | json }};
+    var shop   = {{ shop.permanent_domain | json }};
+    var appUrl = {{ tl_app_url | json }};
+    var link   = document.querySelector('#tl-cta-{{ product.id }} a');
+    if (!link) return;
 
     fetch(appUrl + '/api/product-links/by-product/' + encodeURIComponent(handle))
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(data) {
         if (!data || !data.mockup_id) return;
-        var editorUrl = appUrl + '/textilelab-studio.html'
+        link.href = appUrl + '/textilelab-studio.html'
           + '?shop='    + encodeURIComponent(shop)
+          + '&embed=1'
           + '&product=' + encodeURIComponent(handle)
           + '&mockup='  + encodeURIComponent(data.mockup_id);
-
-        var btn = document.createElement('a');
-        btn.href = editorUrl;
-        btn.setAttribute('data-tsl-open', handle);   /* intercepté par tl-modal.js */
-        btn.setAttribute('data-tl-editor', 'true');  /* rétrocompat interceptLinks() */
-        btn.className  = 'button';
-        btn.style.cssText = 'display:flex;width:100%;justify-content:center;align-items:center;gap:8px;margin-top:8px;text-decoration:none;';
-        btn.innerHTML  = '<span>&#127912;</span><span>Personnaliser</span>';
-        el.appendChild(btn);
       })
       .catch(function() {});
   })();
-  </script>
-
+</script>
 {%- endif -%}
 
 {% schema %}
 {
   "name": "Bouton Personnaliser",
   "target": "section",
-  "settings": []
+  "settings": [
+    {
+      "type": "text",
+      "id": "button_label",
+      "label": "Texte du bouton",
+      "default": "Personnaliser"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_icon",
+      "label": "Afficher l'icône 🎨",
+      "default": true
+    }
+  ]
 }
 {% endschema %}

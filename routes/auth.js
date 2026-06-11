@@ -239,15 +239,51 @@ router.get('/sessions', requireAuth, (req, res) => {
 });
 
 // ─── Middleware exporté ─────────────────────────────────────────────────
-function requireAuth(req, res, next) {
+// Auth duale (fix review Shopify 4.5.4) :
+//   1. Token de session TextileLab (admin global Alan — login classique)
+//   2. Session token Shopify (JWT App Bridge) — permet aux marchands ET au
+//      reviewer Shopify d'utiliser le back-office dans l'iframe admin
+//      Shopify SANS credentials TextileLab dédiés. Le shop est résolu depuis
+//      le claim `dest` du JWT (+ auto-provisioning Managed Installation),
+//      et req.shopRecord/shopId sont posés pour le scoping multi-tenant
+//      (repris en priorité 1 par attachShopId — cf. routes/_shop-context.js).
+async function requireAuth(req, res, next) {
   const token   = req.headers.authorization?.replace('Bearer ', '');
   const session = token ? activeSessions.get(token) : null;
-  if (!session || session.expires < Date.now()) {
-    if (session) activeSessions.delete(token);
-    return res.status(401).json({ error: 'Unauthorized' });
+
+  // 1. Session TextileLab classique
+  if (session && session.expires >= Date.now()) {
+    req.admin = { username: session.username };
+    return next();
   }
-  req.admin = { username: session.username };
-  next();
+  if (session) activeSessions.delete(token);
+
+  // 2. Fallback : session token Shopify (JWT = 3 segments base64)
+  if (token && token.split('.').length === 3) {
+    try {
+      // require lazy pour éviter tout cycle de dépendances au boot
+      const shopifySession = require('./shopify-session');
+      const secret = process.env.SHOPIFY_API_SECRET || '';
+      if (secret && typeof shopifySession.verifyJWT === 'function') {
+        const payload = shopifySession.verifyJWT(token, secret);
+        const shop = (payload.dest || '').replace('https://', '').toLowerCase();
+        const record = typeof shopifySession.ensureShopProvisioned === 'function'
+          ? await shopifySession.ensureShopProvisioned(shop, token)
+          : null;
+        if (record) {
+          req.admin      = { username: shop, viaShopify: true };
+          req.shopDomain = shop;
+          req.shopRecord = record;
+          req.shopId     = record.id;
+          return next();
+        }
+      }
+    } catch (e) {
+      // JWT invalide/expiré → 401 ci-dessous (App Bridge redemande un token frais)
+    }
+  }
+
+  return res.status(401).json({ error: 'Unauthorized' });
 }
 
 module.exports = router;
