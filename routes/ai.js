@@ -103,6 +103,7 @@ const STYLE_PROMPTS_FALLBACK = {
   caricature: 'Transform this photo into an exaggerated caricature, emphasize distinctive features humorously, expressive cartoon style, transparent background, DTF print ready',
   avatar:     'Transform this photo into a stylized avatar portrait, modern digital art, geometric simplification, vibrant gradient colors, transparent background, apparel print ready',
   lego:       'Transform this photo into a LEGO minifigure style character, blocky proportions, simple iconic face, plastic toy aesthetic, transparent background, DTF print ready',
+  'funny-running': 'Transform the people into a fun premium cartoon caricature mascot in a dynamic running pose, with sporty accessories (race bib, sweatband, water bottle, sweat drops), polished digital rendering, smooth shading, crisp medium outlines, bright clean colors, expressive smile, premium custom T-shirt sticker aesthetic, transparent background, DTF print ready',
 };
 
 // ── Helpers : résolution du prompt pour un style donné ──────────────────
@@ -219,9 +220,19 @@ async function loadStyleCoverInput(imageUrl) {
     }
     // Cas 2 : chemin local stocké en DB (/uploads/ai-styles/<fichier>).
     const safeName = path.basename(imageUrl);
-    const filepath = path.join(STYLE_UPLOADS_DIR, safeName);
-    if (!fs.existsSync(filepath)) return null;
-    let ext = (path.extname(safeName).slice(1) || 'png').toLowerCase().replace('jpeg', 'jpg');
+    let filepath = path.join(STYLE_UPLOADS_DIR, safeName);
+    if (!fs.existsSync(filepath)) {
+      // Cas 3 : asset statique livré avec l'app (ex: /assets/styles/style-X.png),
+      // utilisé par les styles built-in dont la cover n'est pas dans uploads/ai-styles.
+      const PUBLIC_DIR  = path.join(__dirname, '..', 'public');
+      const staticPath  = path.normalize(path.join(PUBLIC_DIR, imageUrl.replace(/^\/+/, '')));
+      if (staticPath.startsWith(PUBLIC_DIR) && fs.existsSync(staticPath)) {
+        filepath = staticPath;
+      } else {
+        return null;
+      }
+    }
+    let ext = (path.extname(filepath).slice(1) || 'png').toLowerCase().replace('jpeg', 'jpg');
     if (!MIME[ext]) return null; // SVG/GIF non exploitables comme image d'édition
     return { buffer: fs.readFileSync(filepath), filename: `style_reference.${ext}`, mime: MIME[ext] };
   } catch {

@@ -294,6 +294,7 @@ function initDB() {
       { code: 'graffiti',   label: 'Graffiti',   image_url: '/assets/styles/style-graffiti.png',   prompt: 'Transform this photo into a bold street art graffiti illustration, spray paint texture, urban colors, thick outlines, stencil art, transparent background, DTF print ready', sort_order: 7 },
       { code: 'simple',     label: 'Simple',     image_url: '/assets/styles/style-simple.png',     prompt: 'Transform this photo into a simple flat cartoon, minimal details, 4 colors max, clean bold shapes and outlines, transparent background, DTF print ready', sort_order: 8 },
       { code: 'avatar',     label: 'Avatar',     image_url: '/assets/styles/style-avatar.png',     prompt: 'Transform this photo into a stylized avatar portrait, modern digital art, geometric simplification, vibrant gradient colors, transparent background, apparel print ready', sort_order: 9 },
+      { code: 'funny-running', label: '🏃 Running', image_url: '/assets/styles/style-funny-running.png', prompt: 'Transform the people into a fun premium cartoon caricature mascot in a dynamic running pose, with sporty accessories (race bib, sweatband, water bottle, sweat drops), polished digital rendering, smooth shading, crisp medium outlines, bright clean colors, expressive smile, premium custom T-shirt sticker aesthetic, transparent background, DTF print ready', sort_order: 10 },
     ];
     const allShops = db.prepare('SELECT id FROM shops WHERE is_active=1').all();
     const countStyles = db.prepare('SELECT COUNT(*) AS n FROM ai_styles WHERE shop_id=?');
@@ -313,6 +314,32 @@ function initDB() {
     if (seeded) console.log(`🎨  ai_styles : ${seeded} style(s) built-in seedé(s)`);
   } catch (e) {
     console.warn('⚠️  Seed ai_styles built-in échoué :', e.message);
+  }
+
+  // Ajout du style built-in "funny-running" aux shops déjà existants.
+  // Le seed ci-dessus ne s'exécute que si le shop n'a ENCORE AUCUN style ;
+  // pour les shops déjà seedés, on ajoute ce nouveau style ponctuellement.
+  // Idempotent : INSERT OR IGNORE sur (shop_id, code).
+  try {
+    const insertFunnyRunning = db.prepare(
+      'INSERT OR IGNORE INTO ai_styles (shop_id, code, label, prompt, image_url, is_builtin, sort_order) VALUES (?, ?, ?, ?, ?, 1, ?)'
+    );
+    const allShops = db.prepare('SELECT id FROM shops WHERE is_active=1').all();
+    let added = 0;
+    for (const s of allShops) {
+      const info = insertFunnyRunning.run(
+        s.id,
+        'funny-running',
+        '🏃 Running',
+        'Transform the people into a fun premium cartoon caricature mascot in a dynamic running pose, with sporty accessories (race bib, sweatband, water bottle, sweat drops), polished digital rendering, smooth shading, crisp medium outlines, bright clean colors, expressive smile, premium custom T-shirt sticker aesthetic, transparent background, DTF print ready',
+        '/assets/styles/style-funny-running.png',
+        10
+      );
+      if (info.changes) added++;
+    }
+    if (added) console.log(`🎨  ai_styles : style "funny-running" ajouté pour ${added} shop(s)`);
+  } catch (e) {
+    console.warn('⚠️  Ajout style funny-running échoué :', e.message);
   }
 
   // ── Migration 001 : multi-tenant scoping (shop_id) ──────────────────────
