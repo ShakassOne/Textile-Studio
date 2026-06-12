@@ -1130,6 +1130,7 @@ async function getAuthToken() {
   if (window.__TL_EMBED && typeof window.getShopifyIdToken === 'function') {
     const idTok = await window.getShopifyIdToken();
     if (idTok) return idTok;
+    console.warn('[TL] Embed actif mais App Bridge indisponible (idToken null) — fallback token TextileLab');
   }
   return localStorage.getItem('tl_admin_token') || token;
 }
@@ -1144,8 +1145,10 @@ async function api(path, opts = {}) {
     // Session expirée → retour à la page de login (hors embed Shopify :
     // en embed, App Bridge fournira un token frais au prochain appel)
     if (res.status === 401) {
+      // Capturer la raison serveur (champ debug `reason`) pour le toast d'erreur
+      try { const j = await res.clone().json(); window.__TL_LAST_API_ERROR = 'HTTP 401' + (j?.reason ? ` : ${j.reason}` : ''); } catch { window.__TL_LAST_API_ERROR = 'HTTP 401'; }
       if (window.__TL_EMBED) {
-        showToast('⚠️ Session Shopify expirée — réessayez');
+        showToast('⚠️ Auth Shopify refusée — ' + window.__TL_LAST_API_ERROR);
         return null;
       }
       localStorage.removeItem('tl_admin_token');

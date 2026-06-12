@@ -299,6 +299,10 @@ async function requireAuth(req, res, next) {
   if (session) sessDelete(token);
 
   // 2. Fallback : session token Shopify (JWT = 3 segments base64)
+  let _why = 'token absent';
+  if (token) {
+    _why = `token non-JWT (${token.length} chars, ${token.split('.').length} segment(s))`;
+  }
   if (token && token.split('.').length === 3) {
     try {
       // require lazy pour éviter tout cycle de dépendances au boot
@@ -317,13 +321,18 @@ async function requireAuth(req, res, next) {
           req.shopId     = record.id;
           return next();
         }
+        _why = `JWT valide mais shop non provisionné (${shop})`;
+      } else {
+        _why = 'SHOPIFY_API_SECRET absent côté serveur';
       }
     } catch (e) {
       // JWT invalide/expiré → 401 ci-dessous (App Bridge redemande un token frais)
+      _why = `JWT rejeté : ${e.message}`;
     }
   }
 
-  return res.status(401).json({ error: 'Unauthorized' });
+  console.warn(`🚫 401 requireAuth ${req.method} ${req.originalUrl} — ${_why}`);
+  return res.status(401).json({ error: 'Unauthorized', reason: _why });
 }
 
 module.exports = router;
