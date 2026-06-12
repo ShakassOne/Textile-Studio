@@ -106,6 +106,25 @@ app.use('/uploads', express.static(UPLOADS_DIR, {
     }
   },
 }));
+// ── Admin embarqué : App Bridge injecté statiquement dans le <head> ────────
+// App Bridge 4 doit être chargé au plus tôt dans le <head> : l'injection
+// dynamique (setupShopifyEmbed) peut laisser window.shopify indéfini dans
+// l'iframe admin → idToken() null → fallback vieux token → 401 sur toutes
+// les routes requireAuth (suppression designs impossible en embed).
+// En contexte embed (?shop&host), on sert l'admin avec la meta api-key et
+// le script CDN directement dans le head — même pattern que shopify-embed.html
+// (qui obtient son idToken sans problème). En standalone : fichier statique.
+app.get('/textilelab-admin.html', (req, res, next) => {
+  if (!req.query.shop || !req.query.host) return next();
+  fs.readFile(path.join(__dirname, 'public', 'textilelab-admin.html'), 'utf8', (err, html) => {
+    if (err) return next(err);
+    const inject =
+      '<meta id="shopify-api-key" name="shopify-api-key" content="9f77ba5672b593f4e6a5d32d2093e460">' +
+      '<script data-shopify-app-bridge="1" src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>';
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.type('html').send(html.replace(/<head>/i, '<head>' + inject));
+  });
+});
 // Servir les fichiers PWA et pages HTML depuis la racine du backend
 // Les fichiers HTML ne sont JAMAIS mis en cache (toujours servis frais)
 // Les assets statiques (JS, CSS, images) sont cachés 1h
