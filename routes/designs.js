@@ -110,11 +110,31 @@ router.put('/:id', requireAuth, attachShopId, (req, res) => {
 });
 
 // DELETE /api/designs/:id (admin, scopé shop)
+// Fix 2026-06-12 : un design référencé par des commandes (orders.design_id)
+// ou des jobs de rendu (render_jobs.design_id) faisait échouer le DELETE en
+// "SqliteError: FOREIGN KEY constraint failed" (HTTP 500). On détache d'abord
+// les références — l'historique des commandes est CONSERVÉ, seul le lien vers
+// le design supprimé passe à NULL — puis on supprime, le tout en transaction.
 router.delete('/:id', requireAuth, attachShopId, (req, res) => {
   const db = getDB();
-  const info = db.prepare('DELETE FROM designs WHERE id = ? AND shop_id = ?').run(req.params.id, req.shopId);
-  if (info.changes === 0) return res.status(404).json({ error: 'Design not found' });
-  res.json({ deleted: true });
+  try {
+    // Vérification d'appartenance AVANT de toucher aux références (multi-tenant)
+    const design = db.prepare('SELECT id FROM designs WHERE id = ? AND shop_id = ?')
+      .get(req.params.id, req.shopId);
+    if (!design) return res.status(404).json({ error: 'Design not found' });
+
+    const tx = db.transaction((designId, shopId) => {
+      db.prepare('UPDATE orders      SET design_id = NULL WHERE design_id = ?').run(designId);
+      db.prepare('UPDATE render_jobs SET design_id = NULL WHERE design_id = ?').run(designId);
+      return db.prepare('DELETE FROM designs WHERE id = ? AND shop_id = ?').run(designId, shopId);
+    });
+    const info = tx(design.id, req.shopId);
+    if (info.changes === 0) return res.status(404).json({ error: 'Design not found' });
+    res.json({ deleted: true });
+  } catch (e) {
+    console.error(`❌ DELETE /api/designs/${req.params.id} :`, e.message);
+    res.status(500).json({ error: 'Suppression impossible : ' + e.message });
+  }
 });
 
 module.exports = router;
