@@ -45,6 +45,29 @@ function _resolveShopId(req) {
     if (id) return { shopId: id, shopDomain: headerShop };
   }
 
+  // 3bis. Session token Shopify dans Authorization (admin embed multi-marchand)
+  // → garantit que les routes SANS requireAuth (ex: GET /api/designs) résolvent
+  //   le MÊME shop que les routes AVEC requireAuth (ex: DELETE /api/designs/:id),
+  //   sinon la liste et la suppression peuvent pointer sur deux shops différents.
+  const authHeader = req.headers.authorization || '';
+  if (authHeader.startsWith('Bearer ')) {
+    const tok = authHeader.slice(7);
+    if (tok.split('.').length === 3) {
+      try {
+        const { verifyJWT } = require('./shopify-session'); // lazy : pas de cycle au boot
+        const secret = process.env.SHOPIFY_API_SECRET || '';
+        if (secret) {
+          const payload = verifyJWT(tok, secret);
+          const jwtShop = (payload.dest || '').replace('https://', '').toLowerCase().trim();
+          if (jwtShop) {
+            const id = getShopIdByDomain(jwtShop);
+            if (id) return { shopId: id, shopDomain: jwtShop };
+          }
+        }
+      } catch (_) { /* JWT invalide/expiré → on continue vers le fallback */ }
+    }
+  }
+
   // 4. Fallback bootstrap (dev, mono-shop, données legacy)
   const bootstrapId = getBootstrapShopId();
   if (bootstrapId) {

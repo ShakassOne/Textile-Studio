@@ -97,13 +97,52 @@ function usernameMatches(supplied, expected) {
   return crypto.timingSafeEqual(a, b);
 }
 
-// ─── Sessions en mémoire ────────────────────────────────────────────────
-const activeSessions = new Map();
+// ─── Sessions persistées en DB (survivent aux redéploiements Railway) ───
+// Fix suppression designs 2026-06-12 : les sessions vivaient en RAM →
+// chaque redeploy/restart Railway invalidait les tokens admin → 401
+// silencieux dans le back-office (suppressions « fantômes » : toast OK
+// mais rien de supprimé). On persiste désormais la map dans admin_settings,
+// clé = sha256(token) — jamais le token en clair en DB.
+const activeSessions = new Map(); // clé: sha256(token) → { username, expires, loginAt }
+const SESSIONS_KEY = 'admin_sessions_json';
+
+function _sessKey(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
+}
+function _persistSessions() {
+  try {
+    const obj = {};
+    for (const [k, s] of activeSessions) obj[k] = s;
+    setSetting(SESSIONS_KEY, JSON.stringify(obj));
+  } catch (e) { console.warn('⚠️  persist admin sessions failed:', e.message); }
+}
+function _restoreSessions() {
+  try {
+    const raw = getSetting(SESSIONS_KEY);
+    if (!raw) return;
+    const obj = JSON.parse(raw);
+    const now = Date.now();
+    for (const [k, s] of Object.entries(obj)) {
+      if (s && s.expires > now) activeSessions.set(k, s);
+    }
+    if (activeSessions.size) {
+      console.log(`🔑  ${activeSessions.size} session(s) admin restaurée(s) depuis la DB`);
+    }
+  } catch (e) { console.warn('⚠️  restore admin sessions failed:', e.message); }
+}
+setImmediate(_restoreSessions); // après init DB (même pattern que le bootstrap credentials)
+
+function sessGet(token)    { return token ? activeSessions.get(_sessKey(token)) : null; }
+function sessSet(token, s) { activeSessions.set(_sessKey(token), s); _persistSessions(); }
+function sessDelete(token) { if (token && activeSessions.delete(_sessKey(token))) _persistSessions(); }
+
 setInterval(() => {
   const now = Date.now();
-  for (const [tok, s] of activeSessions) {
-    if (s.expires < now) activeSessions.delete(tok);
+  let changed = false;
+  for (const [k, s] of activeSessions) {
+    if (s.expires < now) { activeSessions.delete(k); changed = true; }
   }
+  if (changed) _persistSessions();
 }, 30 * 60 * 1000);
 
 function generateToken() {
@@ -158,7 +197,7 @@ router.post('/login', loginLimiter, async (req, res) => {
 
   const token   = generateToken();
   const expires = Date.now() + 8 * 60 * 60 * 1000; // 8h
-  activeSessions.set(token, { username: expectedUser, expires, loginAt: new Date().toISOString() });
+  sessSet(token, { username: expectedUser, expires, loginAt: new Date().toISOString() });
   console.log(`🔑  Admin login: ${expectedUser} (${activeSessions.size} active sessions)`);
   res.json({ token, username: expectedUser, expires });
 });
@@ -166,16 +205,16 @@ router.post('/login', loginLimiter, async (req, res) => {
 // ─── POST /api/auth/logout ──────────────────────────────────────────────
 router.post('/logout', (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
-  if (token) activeSessions.delete(token);
+  if (token) sessDelete(token);
   res.json({ ok: true });
 });
 
 // ─── GET /api/auth/me — vérification token ──────────────────────────────
 router.get('/me', (req, res) => {
   const token   = req.headers.authorization?.replace('Bearer ', '');
-  const session = token ? activeSessions.get(token) : null;
+  const session = sessGet(token);
   if (!session || session.expires < Date.now()) {
-    if (session) activeSessions.delete(token);
+    if (session) sessDelete(token);
     return res.status(401).json({ error: 'Unauthorized' });
   }
   res.json({ username: session.username, expires: session.expires, loginAt: session.loginAt });
@@ -211,10 +250,11 @@ router.post('/change-password', requireAuth, async (req, res) => {
   }
 
   // Invalider toutes les autres sessions (sécurité)
-  const currentToken = req.headers.authorization?.replace('Bearer ', '');
-  for (const [tok] of activeSessions) {
-    if (tok !== currentToken) activeSessions.delete(tok);
+  const currentKey = _sessKey(req.headers.authorization?.replace('Bearer ', '') || '');
+  for (const [k] of activeSessions) {
+    if (k !== currentKey) activeSessions.delete(k);
   }
+  _persistSessions();
 
   const username = getAdminUsername();
   console.log(`🔑  Password changed for ${username}`);
@@ -249,14 +289,14 @@ router.get('/sessions', requireAuth, (req, res) => {
 //      (repris en priorité 1 par attachShopId — cf. routes/_shop-context.js).
 async function requireAuth(req, res, next) {
   const token   = req.headers.authorization?.replace('Bearer ', '');
-  const session = token ? activeSessions.get(token) : null;
+  const session = sessGet(token);
 
   // 1. Session TextileLab classique
   if (session && session.expires >= Date.now()) {
     req.admin = { username: session.username };
     return next();
   }
-  if (session) activeSessions.delete(token);
+  if (session) sessDelete(token);
 
   // 2. Fallback : session token Shopify (JWT = 3 segments base64)
   if (token && token.split('.').length === 3) {

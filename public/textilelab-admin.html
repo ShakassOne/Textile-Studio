@@ -1154,9 +1154,17 @@ async function api(path, opts = {}) {
       setTimeout(() => { window.location.href = 'textilelab-login.html'; }, 1500);
       return null;
     }
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      // Mémoriser le détail de l'erreur pour les toasts (ex: deleteDesign)
+      let detail = `HTTP ${res.status}`;
+      try { const j = await res.json(); if (j?.error) detail += ` : ${j.error}`; } catch {}
+      window.__TL_LAST_API_ERROR = detail;
+      throw new Error(detail);
+    }
+    window.__TL_LAST_API_ERROR = '';
     return await res.json();
   } catch(e) {
+    if (!window.__TL_LAST_API_ERROR) window.__TL_LAST_API_ERROR = e.message;
     console.warn('API error:', path, e.message);
     return null;
   }
@@ -1225,8 +1233,13 @@ async function loadDesigns() {
 
 async function deleteDesign(id) {
   if (!confirm('Supprimer ce design ?')) return;
-  await api(`/api/designs/${id}`, {method:'DELETE'});
-  showToast('🗑 Design supprimé');
+  // Ne pas afficher de faux succès : api() renvoie null sur 401/404/erreur réseau
+  const r = await api(`/api/designs/${id}`, {method:'DELETE'});
+  if (r && r.deleted) {
+    showToast('🗑 Design supprimé');
+  } else {
+    showToast('❌ Suppression échouée — ' + (window.__TL_LAST_API_ERROR || 'voir console'));
+  }
   loadDesigns();
 }
 
