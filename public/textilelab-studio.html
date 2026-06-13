@@ -3902,8 +3902,16 @@ function _ctxSetFormat(fmt) {
   const zone = STATE_mockup?.views?.[STATE_viewIdx]?.zone;
   if (!zone) { setFormat(fmt, { resize: false }); return; }
 
-  const ppm       = _getPxPerMm();
-  const targetMmL = FORMATS[fmt].mmH; // côté long du format
+  // ⚠️ Échelle ET centrage dans l'espace CANVAS (STATE.frameCoords), JAMAIS
+  // dans l'espace backoffice (view.zone = coords 440×340). Utiliser view.zone
+  // ici plaçait le visuel hors-cadre (en haut à gauche, hors du T-Shirt) et le
+  // dimensionnait dans la mauvaise échelle.
+  const frame = STATE.frameCoords;
+  if (!frame || !frame.w) { setFormat(fmt, { resize: false }); return; }
+  const ppm       = frame.w / _getPrintWidthMm(); // px canvas par mm
+  let   targetMmL = FORMATS[fmt].mmH;             // côté long du format (mm)
+  // Alan : les formats A4 / A5 / A6 sont affichés 2× plus gros.
+  if (fmt === 'A4' || fmt === 'A5' || fmt === 'A6') targetMmL *= 2;
   const targetPxL = targetMmL * ppm;
 
   const active   = canvas.getActiveObject();
@@ -3932,7 +3940,11 @@ function _ctxSetFormat(fmt) {
   const curMax = Math.max(curW, curH);
   if (!isFinite(curMax) || curMax <= 0) return;
 
-  const scale = targetPxL / curMax;
+  let scale = targetPxL / curMax;
+  // Garde-fou : le visuel ne doit jamais déborder de la zone d'impression — il
+  // reste entièrement à l'intérieur et centré (indispensable avec le ×2).
+  const maxScale = Math.min(frame.w / curW, frame.h / curH);
+  if (scale > maxScale) scale = maxScale;
   const cx = (minX + maxX) / 2;
   const cy = (minY + maxY) / 2;
 
@@ -3949,13 +3961,11 @@ function _ctxSetFormat(fmt) {
     o.setCoords();
   });
 
-  // Re-centrer la composition dans la zone d'impression
-  const newW = curW * scale;
-  const newH = curH * scale;
-  const targetCenterX = zone.x + zone.w / 2;
-  const targetCenterY = zone.y + zone.h / 2;
-  const offsetX = targetCenterX - (cx);
-  const offsetY = targetCenterY - (cy);
+  // Re-centrer la composition dans la zone d'impression RÉELLE (coords canvas)
+  const targetCenterX = frame.x + frame.w / 2;
+  const targetCenterY = frame.y + frame.h / 2;
+  const offsetX = targetCenterX - cx;
+  const offsetY = targetCenterY - cy;
   targets.forEach(o => {
     o.set({ left: o.left + offsetX, top: o.top + offsetY });
     o.setCoords();
