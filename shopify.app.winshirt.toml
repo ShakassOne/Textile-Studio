@@ -1,0 +1,58 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Config de l'app CUSTOM "TSL WinShirt Custom" (distribution personnalisée).
+# But : installer Textile Studio Lab sur WinShirt (vraie boutique) SANS attendre
+# la validation App Store de l'app publique.
+#
+# ⚠️  NE PAS confondre avec shopify.app.toml (= app publique, ne pas toucher).
+# ⚠️  Cette app DOIT tourner sur un DÉPLOIEMENT SÉPARÉ (voir le guide) — sinon
+#     l'admin embarqué affichera une page blanche (collision de clé App Bridge
+#     entre les deux apps qui partageraient la même URL).
+#
+# Avant `shopify app deploy` : remplace TOUTES les occurrences de
+#   https://CHANGE-ME-winshirt.up.railway.app
+# par le domaine réel du 2e service Railway une fois créé.
+# ─────────────────────────────────────────────────────────────────────────────
+
+client_id = "de57cadb7f27bc5e9f742ff01a2f0e42"   # app Custom TSL WinShirt
+name = "TSL WinShirt Custom"
+application_url = "https://CHANGE-ME-winshirt.up.railway.app"
+embedded = true
+
+[webhooks]
+api_version = "2026-01"
+
+[[webhooks.subscriptions]]
+topics = ["app/uninstalled"]
+uri = "/shopify/webhook"
+
+[[webhooks.subscriptions]]
+compliance_topics = ["customers/data_request"]
+uri = "https://CHANGE-ME-winshirt.up.railway.app/shopify/gdpr/customers/data_request"
+
+[[webhooks.subscriptions]]
+compliance_topics = ["customers/redact"]
+uri = "https://CHANGE-ME-winshirt.up.railway.app/shopify/gdpr/customers/redact"
+
+[[webhooks.subscriptions]]
+compliance_topics = ["shop/redact"]
+uri = "https://CHANGE-ME-winshirt.up.railway.app/shopify/gdpr/shop/redact"
+
+[[webhooks.subscriptions]]
+topics = ["orders/paid"]
+uri = "/shopify/webhook"
+
+[app_proxy]
+url = "https://CHANGE-ME-winshirt.up.railway.app/proxy"
+subpath = "textilelab"
+prefix = "apps"
+
+[access_scopes]
+scopes = "read_products,read_orders"
+
+[auth]
+redirect_urls = [
+  "https://CHANGE-ME-winshirt.up.railway.app/oauth/callback"
+]
+
+[pos]
+embedded = false

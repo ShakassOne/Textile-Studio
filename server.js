@@ -118,8 +118,12 @@ app.get('/textilelab-admin.html', (req, res, next) => {
   if (!req.query.shop || !req.query.host) return next();
   fs.readFile(path.join(__dirname, 'public', 'textilelab-admin.html'), 'utf8', (err, html) => {
     if (err) return next(err);
+    // Clé App Bridge = client_id de CETTE app, piloté par l'env (multi-déploiement :
+    // app publique vs app Custom WinShirt). Repli sur le client_id public si l'env
+    // n'est pas défini → sortie identique sur le déploiement public.
+    const apiKey = process.env.SHOPIFY_API_KEY || '9f77ba5672b593f4e6a5d32d2093e460';
     const inject =
-      '<meta id="shopify-api-key" name="shopify-api-key" content="9f77ba5672b593f4e6a5d32d2093e460">' +
+      '<meta id="shopify-api-key" name="shopify-api-key" content="' + apiKey + '">' +
       '<script data-shopify-app-bridge="1" src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>';
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.type('html').send(html.replace(/<head>/i, '<head>' + inject));
@@ -167,16 +171,22 @@ app.get('/privacy', (_req, res) => {
 // ── App Bridge 4 — Point d'entrée Shopify embed ────────────────────────────
 // URL à déclarer dans Partners Dashboard → App setup → App URL
 // Shopify ouvrira : https://your-app.railway.app/?shop=xxx&host=<base64>
-// M7 (audit) : le client_id Shopify est déjà hardcodé dans la meta tag
-// de public/shopify-embed.html (valeur publique, non-secret). L'ancien
-// fs.readFile + replace('{{SHOPIFY_API_KEY}}', …) était devenu code mort.
-app.get('/', (req, res) => {
+// Le client_id App Bridge est piloté par l'env SHOPIFY_API_KEY (multi-déploiement :
+// app publique vs app Custom WinShirt). On lit shopify-embed.html et on remplace la
+// clé publique hardcodée par celle de l'env. Repli sur la valeur publique si l'env
+// n'est pas défini → sortie identique sur le déploiement public.
+app.get('/', (req, res, next) => {
   // Si pas de paramètres Shopify → rediriger vers l'admin standalone
   if (!req.query.shop && !req.query.host) {
     return res.redirect('/textilelab-admin.html');
   }
-  res.setHeader('Cache-Control', 'no-store'); // pas de cache — host/shop dans l'URL
-  res.sendFile(path.join(__dirname, 'public', 'shopify-embed.html'));
+  fs.readFile(path.join(__dirname, 'public', 'shopify-embed.html'), 'utf8', (err, html) => {
+    if (err) return next(err);
+    const apiKey = process.env.SHOPIFY_API_KEY || '9f77ba5672b593f4e6a5d32d2093e460';
+    const out = html.replace(/9f77ba5672b593f4e6a5d32d2093e460/g, apiKey);
+    res.setHeader('Cache-Control', 'no-store'); // pas de cache — host/shop dans l'URL
+    res.type('html').send(out);
+  });
 });
 
 // ── Init DB ────────────────────────────────────────────────────────────
