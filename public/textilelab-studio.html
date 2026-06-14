@@ -7137,10 +7137,19 @@ async function checkout() {
 
   if (_tlShop && _tlHandle) {
     try {
-      // Récupérer les variantes du produit Shopify (endpoint public)
-      const _pRes = await fetch(`https://${_tlShop}/products/${_tlHandle}.json`);
-      const _pData = _pRes.ok ? await _pRes.json() : null;
-      const _variant = _pData?.product?.variants?.[0];
+      // Variante : priorité à celle déjà sélectionnée sur la fiche produit
+      // (passée en URL → ?variant_id=). Évite un fetch cross-origin et garantit
+      // le bon variant (taille choisie). Fallback : 1ère variante du produit.
+      let _variant = null;
+      if (window._TL_VARIANT_ID) {
+        _variant = { id: window._TL_VARIANT_ID };
+      } else {
+        try {
+          const _pRes = await fetch(`https://${_tlShop}/products/${_tlHandle}.json`);
+          const _pData = _pRes.ok ? await _pRes.json() : null;
+          _variant = _pData?.product?.variants?.[0] || null;
+        } catch (_) {}
+      }
       if (_variant) {
         // Construire l'URL /cart avec les propriétés design en line item properties
         const _designUid = Date.now() + '-' + Math.random().toString(36).slice(2, 7);
@@ -8222,6 +8231,7 @@ function init() {
     const _up0 = new URLSearchParams(window.location.search);
     window._TL_SHOP           = _up0.get('shop')    || '';
     window._TL_PRODUCT_HANDLE = _up0.get('product') || '';
+    window._TL_VARIANT_ID     = _up0.get('variant_id') || '';  // variante choisie (fiche produit)
     if (!window._TL_PRODUCT_HANDLE) {
       const _pid0 = _up0.get('product_id') || '';
       if (_pid0) window._TL_PRODUCT_HANDLE = 'id:' + _pid0;

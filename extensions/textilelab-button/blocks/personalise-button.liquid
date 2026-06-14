@@ -33,7 +33,7 @@
 
 {%- if tl_editor_url == blank -%}
   {%- capture tl_editor_url -%}
-    /apps/textilelab/editor?embed=1{%- if product -%}&product_id={{ product.id }}&product={{ product.handle | url_param_escape }}{%- endif -%}
+    /apps/textilelab/editor?embed=1{%- if product -%}&product_id={{ product.id }}&product={{ product.handle | url_param_escape }}&variant_id={{ product.selected_or_first_available_variant.id }}{%- endif -%}
   {%- endcapture -%}
 {%- endif -%}
 
