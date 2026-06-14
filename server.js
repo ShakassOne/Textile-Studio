@@ -460,6 +460,8 @@ app.use((req, res, next) => {
     '/manifest.json',
     '/sw.js',
     // Storefront/public paths that must never be gated by billing redirects
+    '/proxy',             // ← App Proxy storefront : un CLIENT ne souscrit pas ;
+                          //   le rediriger vers /billing/subscribe casse le customizer (404).
     '/api/product-links/public',
     '/api/product-links/by-mockup',
     '/api/shopify/product-variant',
