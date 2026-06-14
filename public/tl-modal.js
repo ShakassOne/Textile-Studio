@@ -214,6 +214,16 @@
     var overlay = document.getElementById('tl-modal-overlay');
     var iframe  = document.getElementById('tl-modal-iframe');
     if (!overlay || !iframe) return;
+    // Transmettre le domaine du storefront (parent) pour autoriser l'iframe côté
+    // backend (frame-ancestors) — indispensable sur les domaines custom (ex:
+    // winshirt.fr) où *.myshopify.com ne suffit pas. Marche pour tout marchand.
+    try {
+      var _u = new URL(editorUrl, window.location.origin);
+      if (!_u.searchParams.get('parent_domain')) {
+        _u.searchParams.set('parent_domain', window.location.hostname);
+      }
+      editorUrl = _u.href;
+    } catch (e) {}
     document.body.style.overflow = 'hidden';
     iframe.src = editorUrl;
     overlay.classList.add('tl-open');

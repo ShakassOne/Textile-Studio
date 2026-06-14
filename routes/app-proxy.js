@@ -199,9 +199,10 @@ router.get('/editor', requireProxyHMAC, (req, res) => {
     shop:       req.query.shop || '',
     product_id: req.query.product_id || '',
     product:    req.query.product || '',     // handle (présélection produit)
-    variant_id: req.query.variant_id || '',  // variante choisie sur la fiche produit
-    shop_url:   req.query.shop_url || '',     // domaine PRINCIPAL boutique (pour /cart/add)
-    embed:      '1',
+    variant_id:    req.query.variant_id || '',  // variante choisie sur la fiche produit
+    shop_url:      req.query.shop_url || '',     // domaine PRINCIPAL boutique (pour /cart/add)
+    parent_domain: req.query.parent_domain || '', // domaine storefront (frame-ancestors)
+    embed:         '1',
   });
   res.redirect(`${appUrl}/textilelab-studio.html?${params}`);
 });
@@ -228,6 +229,27 @@ router.get('/designs/:id', requireProxyHMAC, (req, res) => {
 
   // Ne pas exposer layers_json (données internes) via l'App Proxy public
   res.json(design);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /proxy/tl-modal.js — sert le script storefront depuis le BON backend
+// Chargé via <script src="/apps/textilelab/tl-modal.js"> dans l'app embed. Shopify
+// route vers le backend de l'app installée → on injecte l'origin de CE backend
+// (SHOPIFY_APP_URL) à la place de l'URL en dur → multi-déploiement (public/Custom).
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/tl-modal.js', requireProxyHMAC, (req, res) => {
+  const fs     = require('fs');
+  const appUrl = (process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
+  fs.readFile(path.join(__dirname, '..', 'public', 'tl-modal.js'), 'utf8', (err, js) => {
+    if (err) return res.status(404).type('application/javascript').send('// tl-modal.js introuvable');
+    const out = appUrl
+      ? js.replace(/https:\/\/textile-studio-production\.up\.railway\.app/g, appUrl)
+      : js;
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.send(out);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -129,6 +129,24 @@ app.get('/textilelab-admin.html', (req, res, next) => {
     res.type('html').send(html.replace(/<head>/i, '<head>' + inject));
   });
 });
+// ── Studio storefront (modal tl-modal.js) : CSP frame-ancestors dynamique ──
+// Le studio est embarqué en iframe dans le modal sur le STOREFRONT du marchand,
+// dont le domaine peut être custom (winshirt.fr, etc.). La CSP globale n'autorise
+// que *.myshopify.com → iframe bloquée sur domaine custom. On autorise en plus le
+// domaine parent transmis (?parent_domain=) — ainsi le modal marche pour TOUT
+// marchand, quel que soit son domaine. (Sans ?parent_domain → CSP globale, admin.)
+app.get('/textilelab-studio.html', (req, res, next) => {
+  const parent = (req.query.parent_domain || '').trim();
+  if (!parent) return next(); // contexte admin/standalone → CSP globale (middleware)
+  const safe = parent.replace(/[^a-zA-Z0-9.:\-]/g, ''); // hygiène (domaine only)
+  res.setHeader(
+    'Content-Security-Policy',
+    "frame-ancestors 'self' https://*.myshopify.com https://admin.shopify.com https://*.shopify.com https://" + safe
+  );
+  res.removeHeader('X-Frame-Options');
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(path.join(__dirname, 'public', 'textilelab-studio.html'));
+});
 // Servir les fichiers PWA et pages HTML depuis la racine du backend
 // Les fichiers HTML ne sont JAMAIS mis en cache (toujours servis frais)
 // Les assets statiques (JS, CSS, images) sont cachés 1h
