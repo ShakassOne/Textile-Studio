@@ -48,57 +48,12 @@ function storefrontQuery(query, variables = {}) {
 // ── GET /api/shopify/products — liste les produits Shopify ────────────
 // Priorité : Storefront API (si configurée) → Admin REST API (token OAuth en DB)
 router.get('/products', async (req, res) => {
-  // 1. Essai Storefront API
-  if (STORE_DOMAIN && STOREFRONT_TOKEN) {
-    try {
-      const data = await storefrontQuery(`
-        query {
-          products(first: 250) {
-            edges {
-              node {
-                id handle title
-                featuredImage { url altText }
-                images(first: 1) { edges { node { url altText } } }
-                priceRange { minVariantPrice { amount currencyCode } }
-                options { id name values }
-                variants(first: 50) {
-                  edges {
-                    node {
-                      id title availableForSale
-                      selectedOptions { name value }
-                      price { amount currencyCode }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      `);
-      // Normaliser pour le front : aplatir les edges, exposer image/sizes/variants
-      const normalized = data.products.edges.map(e => {
-        const p = e.node;
-        const variants = (p.variants?.edges || []).map(v => v.node);
-        const featured = p.featuredImage?.url || p.images?.edges?.[0]?.node?.url || '';
-        return {
-          id: p.id,
-          handle: p.handle,
-          title: p.title,
-          image: featured ? { url: featured, src: featured, altText: p.featuredImage?.altText || p.title } : null,
-          images: featured ? [{ src: featured, url: featured }] : [],
-          featuredImage: p.featuredImage || null,
-          priceRange: p.priceRange,
-          options: p.options || [],
-          variants,
-        };
-      });
-      return res.json(normalized);
-    } catch (err) {
-      console.warn('Storefront API failed, falling back to Admin API:', err.message);
-    }
-  }
-
-  // 2. Fallback : Admin REST API via token OAuth du shop courant (audit B1)
+  // MULTI-BOUTIQUE : on liste TOUJOURS les produits de la boutique courante via
+  // l'API Admin avec son token OAuth (résolu par shop param / header / session).
+  // On n'utilise PLUS la Storefront API en variable d'env (SHOPIFY_STORE_DOMAIN/
+  // STOREFRONT_TOKEN) : c'était single-tenant — ça renvoyait les produits d'UNE
+  // boutique fixe à tous les marchands. (Conservée uniquement pour panier/checkout,
+  // à migrer aussi — voir cart/* et /checkout.)
   try {
     const { getDB, getShopIdByDomain, getBootstrapShopId } = require('../db/database');
     const db        = getDB();
