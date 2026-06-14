@@ -3175,9 +3175,14 @@ function _getPrintWidthMm() {
 }
 
 function _getPxPerMm() {
-  const zone = STATE_mockup?.views?.[STATE_viewIdx]?.zone;
-  if (!zone || !zone.w) return 2; // fallback hors-mockup
-  return zone.w / _getPrintWidthMm();
+  // px CANVAS par mm — UNE SEULE échelle pour TOUT (classification de taille via
+  // _pxToFormat ET sizing des boutons de format via _ctxSetFormat), basée sur la
+  // zone d'impression réelle à l'écran (frameCoords). Avant : on utilisait zone.w
+  // (espace backoffice 440×340) → échelle ≠ de celle des boutons → manuel ≠ bouton,
+  // "il faut le rendre minuscule pour changer de format", et reclassement en A3.
+  const frame = STATE.frameCoords;
+  if (!frame || !frame.w) return 2; // fallback hors-mockup
+  return frame.w / _getPrintWidthMm();
 }
 
 // Convertit taille px → objet {mmW, mmH, fmt}
@@ -3908,10 +3913,12 @@ function _ctxSetFormat(fmt) {
   // dimensionnait dans la mauvaise échelle.
   const frame = STATE.frameCoords;
   if (!frame || !frame.w) { setFormat(fmt, { resize: false }); return; }
-  const ppm       = frame.w / _getPrintWidthMm(); // px canvas par mm
-  let   targetMmL = FORMATS[fmt].mmH;             // côté long du format (mm)
-  // Alan : les formats A4 / A5 / A6 sont affichés 2× plus gros.
-  if (fmt === 'A4' || fmt === 'A5' || fmt === 'A6') targetMmL *= 2;
+  const ppm       = _getPxPerMm();   // MÊME échelle que la classification _pxToFormat
+  // Côté long cible = mmW du format : c'est la dimension sur laquelle _pxToFormat
+  // classe (seuils 297/210/148 = mmW de A3/A4/A5). Ainsi "cliquer A4" produit une
+  // taille que le redimensionnement manuel reclasse en A4 → manuel == bouton, et
+  // re-cliquer le visuel ne change plus le format.
+  const targetMmL = FORMATS[fmt].mmW;
   const targetPxL = targetMmL * ppm;
 
   const active   = canvas.getActiveObject();
