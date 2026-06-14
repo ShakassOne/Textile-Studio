@@ -4,6 +4,19 @@ const router   = express.Router();
 const { requireAuth } = require('./auth');
 const { getDB } = require('../db/database');
 const { attachShopId } = require('./_shop-context');
+const { getSetting, setSetting } = require('../db/settings');
+
+// Lit les surcharges de format persistées pour un shop (clé settings 'print_surcharges').
+// Retourne {} si absent/illisible. Fusion par-dessus les défauts → multi-tenant.
+function readShopSurcharges(shopId) {
+  try {
+    if (!shopId) return {};
+    const raw = getSetting(shopId, 'print_surcharges');
+    if (!raw) return {};
+    const obj = JSON.parse(raw);
+    return (obj && typeof obj === 'object') ? obj : {};
+  } catch { return {}; }
+}
 
 // These could be moved to DB for admin-editable pricing
 let PRICING = {
@@ -60,15 +73,18 @@ router.get('/', attachShopId, (req, res) => {
     });
   } catch(e) { /* DB pas encore disponible, on renvoie l'état en mémoire */ }
 
+  // Surcharges de format scopées par boutique (override des défauts en mémoire)
+  const formats = { ...buildFormatsObj(), ...readShopSurcharges(req.shopId) };
+
   res.json({
     ...PRICING,
     products: buildProductsObj(),
-    formats:  buildFormatsObj(),
+    formats,
   });
 });
 
-// PUT /api/pricing — admin update
-router.put('/', requireAuth, (req, res) => {
+// PUT /api/pricing — admin update (persisté par boutique)
+router.put('/', requireAuth, attachShopId, (req, res) => {
   // products: { tshirt: { base: 20 }, hoodie: { base: 40 }, ... }
   if (req.body.products) {
     Object.entries(req.body.products).forEach(([key, val]) => {
@@ -88,18 +104,27 @@ router.put('/', requireAuth, (req, res) => {
     });
   }
   // formats: { A3: { extra: 8 }, ... } OR { A3: 8, ... }
+  // → persisté par boutique dans settings.print_surcharges (multi-tenant),
+  //   en plus de la maj mémoire (rétro-compat).
   if (req.body.formats) {
+    const persisted = readShopSurcharges(req.shopId);
     Object.entries(req.body.formats).forEach(([key, val]) => {
       const extra = parseFloat(typeof val === 'number' ? val : (val.extra ?? val)) || 0;
       PRICING.formats[key] = extra;
       const f = PRICING.formatList.find(f => f.key === key);
       if (f) f.extra = extra;
+      persisted[key] = extra;
     });
+    try { if (req.shopId) setSetting(req.shopId, 'print_surcharges', JSON.stringify(persisted)); }
+    catch (e) { console.warn('⚠️  persist print_surcharges:', e.message); }
   }
+
+  // Réponse : surcharges scopées par boutique
+  const formats = { ...buildFormatsObj(), ...readShopSurcharges(req.shopId) };
   res.json({
     ...PRICING,
     products: buildProductsObj(),
-    formats:  buildFormatsObj(),
+    formats,
   });
 });
 

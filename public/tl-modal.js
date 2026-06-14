@@ -634,6 +634,7 @@
           var _vid        = e.data.variantId;
           var _props      = e.data.properties || {};
           var _qty        = e.data.quantity || 1;
+          var _feeLine    = e.data.feeLine || null; // 2e ligne "Frais d'impression" (surcharge format)
           var _previewUrl = e.data.previewUrl || _props['_preview_img'] || null;
 
           // Stocker previewUrl dans les propriétés line item (masqué côté drawer via _tlFixLineItemProps)
@@ -643,12 +644,18 @@
             // Marquer la phase loading pour cacher préemptivement les images
             // natives des cart items via CSS (anti-flash variant rouge).
             document.body.classList.add('tl-cart-loading');
+            var _items = [{ id: parseInt(_vid, 10), quantity: _qty, properties: _props }];
+            if (_feeLine && _feeLine.variantId) {
+              _items.push({
+                id:         parseInt(_feeLine.variantId, 10),
+                quantity:   _feeLine.quantity || 1,
+                properties: _feeLine.properties || {},
+              });
+            }
             fetch('/cart/add.json', {
               method:  'POST',
               headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-              body: JSON.stringify({
-                items: [{ id: parseInt(_vid, 10), quantity: _qty, properties: _props }],
-              }),
+              body: JSON.stringify({ items: _items }),
             })
             .then(function(r) { return r.json(); })
             .then(function() {

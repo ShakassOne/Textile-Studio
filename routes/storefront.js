@@ -394,5 +394,100 @@ router.get('/product-variant', async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/shopify/fee-variant — variante "Frais d'impression" de la boutique
+// ─────────────────────────────────────────────────────────────────────────────
+// Le panier Shopify facture le prix de la variante : pour ajouter la surcharge
+// de format (A3/A4/...) au total réel sans Shopify Plus, on ajoute une 2e ligne
+// "Frais d'impression" (variante à 0,50 €, quantité = surcharge/0,50).
+//
+// Cet endpoint renvoie l'ID de variante de frais de la boutique courante :
+//   1. s'il est déjà configuré (settings.fee_variant_id) → on le renvoie ;
+//   2. sinon on tente de créer un produit caché (nécessite le scope write_products) ;
+//   3. si la création échoue (scope manquant) → 409 avec needs_setup:true.
+const FEE_UNIT = 0.50; // granularité (0,50 € → gère 1,50 / 2 / 3 / 4 et leurs sommes)
+
+router.get('/fee-variant', attachShopId, async (req, res) => {
+  try {
+    const { getDB } = require('../db/database');
+    const { getSetting, setSetting } = require('../db/settings');
+    const db = getDB();
+    const shopId = req.shopId;
+    if (!shopId) return res.status(400).json({ error: 'Boutique introuvable' });
+
+    // 1. Déjà configuré ?
+    const existing = getSetting(shopId, 'fee_variant_id');
+    if (existing) return res.json({ variant_id: String(existing), unit: FEE_UNIT });
+
+    // 2. Tenter la création (write_products requis)
+    const shopRecord = db.prepare(
+      'SELECT shop_domain, access_token FROM shops WHERE id = ? AND is_active = 1'
+    ).get(shopId);
+    if (!shopRecord?.access_token) {
+      return res.status(503).json({ error: 'Boutique non installée', needs_setup: true });
+    }
+
+    const payload = { product: {
+      title:      "Frais d'impression",
+      body_html:  "Frais de personnalisation (surcharge d'impression selon le format du visuel). Ajouté automatiquement par TextileLab Studio.",
+      vendor:     'TextileLab',
+      product_type: 'Service',
+      status:     'active',
+      tags:       'textilelab, frais-impression',
+      variants: [{
+        price: FEE_UNIT.toFixed(2),
+        requires_shipping: false,
+        taxable: true,
+        inventory_management: null,
+        inventory_policy: 'continue',
+        title: 'Frais',
+      }],
+    }};
+
+    const cRes = await fetch(`https://${shopRecord.shop_domain}/admin/api/2024-01/products.json`, {
+      method:  'POST',
+      headers: { 'X-Shopify-Access-Token': shopRecord.access_token, 'Content-Type': 'application/json' },
+      body:    JSON.stringify(payload),
+    });
+
+    if (!cRes.ok) {
+      const txt = await cRes.text();
+      // 403 = scope write_products manquant → setup manuel requis
+      const needs_setup = cRes.status === 401 || cRes.status === 403;
+      console.warn('fee-variant create failed:', cRes.status, txt.slice(0, 200));
+      return res.status(needs_setup ? 409 : cRes.status).json({ error: txt, needs_setup });
+    }
+
+    const { product } = await cRes.json();
+    const variantId = product?.variants?.[0]?.id;
+    if (!variantId) return res.status(500).json({ error: 'Variante de frais non créée' });
+
+    setSetting(shopId, 'fee_product_id', String(product.id));
+    setSetting(shopId, 'fee_variant_id', String(variantId));
+    return res.json({ variant_id: String(variantId), unit: FEE_UNIT, created: true });
+  } catch (err) {
+    console.error('fee-variant error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/shopify/fee-variant — configuration manuelle (admin) du variant_id
+// Body: { variant_id: "1234567890" }  (l'admin colle l'ID de la variante du
+// produit "Frais d'impression" qu'il a créé à la main, à 0,50 €).
+router.post('/fee-variant', requireAuth, attachShopId, (req, res) => {
+  try {
+    const { setSetting } = require('../db/settings');
+    const shopId = req.shopId;
+    if (!shopId) return res.status(400).json({ error: 'Boutique introuvable' });
+    const raw = String(req.body?.variant_id || '').trim();
+    const vid = raw.replace(/^gid:\/\/shopify\/ProductVariant\//, '');
+    if (!/^\d+$/.test(vid)) return res.status(400).json({ error: 'variant_id invalide (ID numérique attendu)' });
+    setSetting(shopId, 'fee_variant_id', vid);
+    return res.json({ variant_id: vid, unit: FEE_UNIT, saved: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
 module.exports.getVariantId = getVariantId;
