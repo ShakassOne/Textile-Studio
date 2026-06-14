@@ -6892,14 +6892,20 @@ async function _checkoutShopifyDirect() {
   if (_previewImgUrl) propsObj['_preview_img'] = _previewImgUrl;
 
   try {
-    const _ref = (_resolvedProductHandle || window._TL_PRODUCT_HANDLE || '');
-    const _q = _ref.startsWith('id:')
-      ? `product_id=${encodeURIComponent(_ref.slice(3))}`
-      : `handle=${encodeURIComponent(_ref)}`;
-    const pRes = await fetch(`${APP_ORIGIN}/api/shopify/product-variant?${_q}`);
-    const pData = pRes.ok ? await pRes.json() : null;
-    const variantId = pData?.variant_id;
-    if (!variantId) throw new Error(pData?.error || 'Variante Shopify introuvable pour ce produit');
+    // Variante : priorité à celle sélectionnée sur la fiche produit (ID numérique
+    // passé en URL ?variant_id=) — fiable et déjà au bon format pour /cart/add.
+    // Fallback : résolution serveur via /api/shopify/product-variant (avec ?shop=).
+    let variantId = window._TL_VARIANT_ID || '';
+    if (!variantId) {
+      const _ref = (_resolvedProductHandle || window._TL_PRODUCT_HANDLE || '');
+      const _q = _ref.startsWith('id:')
+        ? `product_id=${encodeURIComponent(_ref.slice(3))}`
+        : `handle=${encodeURIComponent(_ref)}`;
+      const pRes = await fetch(`${APP_ORIGIN}/api/shopify/product-variant?${_q}&shop=${encodeURIComponent(window._TL_SHOP || '')}`);
+      const pData = pRes.ok ? await pRes.json() : null;
+      variantId = pData?.variant_id;
+    }
+    if (!variantId) throw new Error('Variante Shopify introuvable pour ce produit');
 
     showToast('✅ Ajout au panier…');
     // Si dans un iframe → tl-modal.js appelle /cart/add.json puis ouvre le drawer
