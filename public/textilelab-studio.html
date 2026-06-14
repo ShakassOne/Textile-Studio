@@ -8214,6 +8214,19 @@ function closeTLModal() {
 }
 
 function init() {
+  // ── Contexte boutique EN TOUT PREMIER ───────────────────────────────────
+  // Les chargements (mockups, bibliothèque…) envoient X-Shop-Domain = _TL_SHOP.
+  // S'il n'est défini qu'après, les premiers fetchs partent sans boutique →
+  // résolution sur le shop bootstrap → mockups & bibliothèque VIDES en storefront.
+  {
+    const _up0 = new URLSearchParams(window.location.search);
+    window._TL_SHOP           = _up0.get('shop')    || '';
+    window._TL_PRODUCT_HANDLE = _up0.get('product') || '';
+    if (!window._TL_PRODUCT_HANDLE) {
+      const _pid0 = _up0.get('product_id') || '';
+      if (_pid0) window._TL_PRODUCT_HANDLE = 'id:' + _pid0;
+    }
+  }
   _initPhotoInput();
   setTimeout(_initDrawerCloseTap, 1000);
   setTimeout(_initPinchToScale, 1500);
