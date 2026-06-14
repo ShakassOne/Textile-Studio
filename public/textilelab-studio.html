@@ -6924,7 +6924,7 @@ async function _checkoutShopifyDirect() {
       setTimeout(() => {
         var _form = document.createElement('form');
         _form.method = 'POST';
-        _form.action = 'https://' + window._TL_SHOP + '/cart/add';
+        _form.action = (window._TL_SHOP_URL || ('https://' + window._TL_SHOP)).replace(/\/+$/, '') + '/cart/add';
         var _fid = document.createElement('input');
         _fid.type = 'hidden'; _fid.name = 'id'; _fid.value = String(variantId);
         _form.appendChild(_fid);
@@ -7177,7 +7177,7 @@ async function checkout() {
           setTimeout(() => {
             var _form = document.createElement('form');
             _form.method = 'POST';
-            _form.action = 'https://' + _tlShop + '/cart/add';
+            _form.action = (window._TL_SHOP_URL || ('https://' + _tlShop)).replace(/\/+$/, '') + '/cart/add';
             var _fid = document.createElement('input');
             _fid.type = 'hidden'; _fid.name = 'id'; _fid.value = String(_variant.id);
             _form.appendChild(_fid);
@@ -8238,6 +8238,7 @@ function init() {
     window._TL_SHOP           = _up0.get('shop')    || '';
     window._TL_PRODUCT_HANDLE = _up0.get('product') || '';
     window._TL_VARIANT_ID     = _up0.get('variant_id') || '';  // variante choisie (fiche produit)
+    window._TL_SHOP_URL       = _up0.get('shop_url')   || '';  // domaine PRINCIPAL (cart sur le bon domaine)
     if (!window._TL_PRODUCT_HANDLE) {
       const _pid0 = _up0.get('product_id') || '';
       if (_pid0) window._TL_PRODUCT_HANDLE = 'id:' + _pid0;

@@ -200,6 +200,7 @@ router.get('/editor', requireProxyHMAC, (req, res) => {
     product_id: req.query.product_id || '',
     product:    req.query.product || '',     // handle (présélection produit)
     variant_id: req.query.variant_id || '',  // variante choisie sur la fiche produit
+    shop_url:   req.query.shop_url || '',     // domaine PRINCIPAL boutique (pour /cart/add)
     embed:      '1',
   });
   res.redirect(`${appUrl}/textilelab-studio.html?${params}`);
