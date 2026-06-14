@@ -196,6 +196,7 @@ router.get('/editor', requireProxyHMAC, (req, res) => {
   const params = new URLSearchParams({
     shop:       req.query.shop || '',
     product_id: req.query.product_id || '',
+    product:    req.query.product || '',   // handle (présélection produit)
     embed:      '1',
   });
   res.redirect(`${appUrl}/textilelab-studio.html?${params}`);

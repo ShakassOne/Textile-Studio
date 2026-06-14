@@ -33,15 +33,13 @@
 
 {%- if tl_editor_url == blank -%}
   {%- capture tl_editor_url -%}
-    /apps/textilelab?embed=1{%- if product -%}&product_id={{ product.id }}&product={{ product.handle | url_param_escape }}{%- endif -%}
+    /apps/textilelab/editor?embed=1{%- if product -%}&product_id={{ product.id }}&product={{ product.handle | url_param_escape }}{%- endif -%}
   {%- endcapture -%}
 {%- endif -%}
 
 <div id="tl-cta-{{ product.id | default: 'generic' }}" {{ block.shopify_attributes }}>
   <a
     href="{{ tl_editor_url | strip }}"
-    {% if product %}data-tsl-open="{{ product.handle }}"{% else %}data-tsl-open{% endif %}
-    data-tl-editor="true"
     class="button tl-personalise-btn"
     style="display:flex;width:100%;justify-content:center;align-items:center;gap:8px;margin-top:8px;text-decoration:none;cursor:pointer;"
   >
