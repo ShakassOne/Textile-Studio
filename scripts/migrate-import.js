@@ -66,6 +66,7 @@ async function pullRelative(relUrl) {
   const data = await fetchJSON(exportUrl);
 
   const db = new Database(DB_PATH);
+  db.pragma('busy_timeout = 8000'); // le service tourne en parallèle → tolère un verrou court
   const shop = db.prepare('SELECT id, shop_domain FROM shops WHERE shop_domain = ?').get(DST_DOMAIN)
     || db.prepare("SELECT id, shop_domain FROM shops WHERE shop_domain LIKE ?").get(DST_DOMAIN.split('.')[0] + '%');
   if (!shop) {
