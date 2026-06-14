@@ -39,11 +39,13 @@ function verifyProxyHMAC(query) {
   const { signature, ...rest } = query;
   if (!signature) return false;
 
-  // Message = paramètres triés alphabétiquement, séparés par &, format key=value
+  // ⚠️ Signature App Proxy (≠ OAuth/webhooks) : paramètres triés alphabétiquement,
+  // au format key=value, CONCATÉNÉS SANS SÉPARATEUR (pas de '&'). Les valeurs
+  // multiples sont jointes par ','. Réf : shopify.dev app-proxies digital signature.
   const message = Object.keys(rest)
     .sort()
     .map(k => `${k}=${Array.isArray(rest[k]) ? rest[k].join(',') : rest[k]}`)
-    .join('&');
+    .join('');
 
   const hash = crypto
     .createHmac('sha256', secret)
