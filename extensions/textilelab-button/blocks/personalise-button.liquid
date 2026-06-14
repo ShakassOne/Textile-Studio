@@ -22,12 +22,18 @@
     <a data-tsl-open>🎨 Créer mon design</a>   ← sans produit pré-sélectionné
 {% endcomment %}
 
-{%- assign tl_app_url    = 'https://textile-studio-production.up.railway.app' -%}
+{%- comment -%}
+  MULTI-BOUTIQUE : on passe par l'App Proxy (/apps/textilelab) sur le domaine de
+  la boutique. Shopify route vers le backend de l'app INSTALLÉE sur cette boutique
+  (le bon par marchand), qui sert le studio depuis sa propre URL + le panier natif
+  du thème. AUCUNE URL backend en dur → fonctionne pour n'importe quel marchand.
+  Un metafield textilelab.editor_url peut surcharger si besoin.
+{%- endcomment -%}
 {%- assign tl_editor_url = product.metafields.textilelab.editor_url.value -%}
 
 {%- if tl_editor_url == blank -%}
   {%- capture tl_editor_url -%}
-    {{- tl_app_url -}}/textilelab-studio.html?shop={{ shop.permanent_domain | url_param_escape }}&embed=1{%- if product -%}&product={{ product.handle | url_param_escape }}{%- endif -%}
+    /apps/textilelab?embed=1{%- if product -%}&product_id={{ product.id }}&product={{ product.handle | url_param_escape }}{%- endif -%}
   {%- endcapture -%}
 {%- endif -%}
 
@@ -44,32 +50,11 @@
   </a>
 </div>
 
-{%- if product and product.metafields.textilelab.editor_url.value == blank -%}
-<script>
-  /* Enrichissement optionnel : si un mockup est lié à ce produit côté
-     TextileLab, on précise le mockup dans l'URL. Le bouton reste affiché
-     et fonctionnel même si cet appel échoue ou ne renvoie rien. */
-  (function() {
-    var handle = {{ product.handle | json }};
-    var shop   = {{ shop.permanent_domain | json }};
-    var appUrl = {{ tl_app_url | json }};
-    var link   = document.querySelector('#tl-cta-{{ product.id }} a');
-    if (!link) return;
-
-    fetch(appUrl + '/api/product-links/by-product/' + encodeURIComponent(handle))
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(data) {
-        if (!data || !data.mockup_id) return;
-        link.href = appUrl + '/textilelab-studio.html'
-          + '?shop='    + encodeURIComponent(shop)
-          + '&embed=1'
-          + '&product=' + encodeURIComponent(handle)
-          + '&mockup='  + encodeURIComponent(data.mockup_id);
-      })
-      .catch(function() {});
-  })();
-</script>
-{%- endif -%}
+{% comment %}
+  La liaison produit→mockup est résolue côté serveur (le proxy/studio a le
+  contexte boutique via la requête signée), donc plus besoin d'appel JS vers
+  une URL backend en dur ici.
+{% endcomment %}
 
 {% schema %}
 {

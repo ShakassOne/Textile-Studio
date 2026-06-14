@@ -71,9 +71,10 @@ function requireProxyHMAC(req, res, next) {
 // Shopify injecte ce contenu dans le thème de la boutique
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/', requireProxyHMAC, (req, res) => {
-  const shop      = req.query.shop || '';
-  const appUrl    = process.env.SHOPIFY_APP_URL || '';
-  const productId = req.query.product_id || '';
+  const shop          = req.query.shop || '';
+  const appUrl        = process.env.SHOPIFY_APP_URL || '';
+  const productId     = req.query.product_id || '';
+  const productHandle = req.query.product    || '';
 
   // Shopify attend du HTML ou du JSON — on renvoie du HTML avec Content-Type text/html
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -138,7 +139,7 @@ router.get('/', requireProxyHMAC, (req, res) => {
     <div class="tl-iframe-container">
       <iframe
         id="tl-editor"
-        src="${appUrl}/textilelab-studio.html?shop=${encodeURIComponent(shop)}&product_id=${encodeURIComponent(productId)}&embed=1"
+        src="${appUrl}/textilelab-studio.html?shop=${encodeURIComponent(shop)}&product_id=${encodeURIComponent(productId)}&product=${encodeURIComponent(productHandle)}&embed=1"
         title="Éditeur TextileLab Studio"
         allow="clipboard-write"
         loading="lazy"
