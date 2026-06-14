@@ -2265,6 +2265,15 @@ async function loadProductLinks() {
 }
 
 async function _fetchShopifyProducts() {
+  // Priorité : produits de la boutique INSTALLÉE via l'API Admin (token OAuth,
+  // résolu par le session token Shopify). Garantit les BONS produits en
+  // multi-boutiques — sans dépendre de SHOPIFY_STORE_DOMAIN/STOREFRONT_TOKEN
+  // (qui, copiés d'un autre déploiement, pointaient vers la mauvaise boutique).
+  try {
+    const data = await api('/api/admin/products?limit=100');
+    if (data && Array.isArray(data.products)) return { configured: true, products: data.products };
+  } catch { /* hors embed (standalone) → fallback ci-dessous */ }
+  // Fallback (mode standalone hors embed Shopify) : ancien endpoint.
   try {
     const data = await api('/api/shopify/products');
     if (Array.isArray(data)) return { configured: true, products: data };
