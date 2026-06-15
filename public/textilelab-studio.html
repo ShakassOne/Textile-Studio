@@ -37,10 +37,10 @@
     --glass2: rgba(255,255,255,0.07);
     --border: rgba(255,255,255,0.08);
     --border2: rgba(245,158,11,0.3);
-    --text: #f0f0f5;
-    --text1: #f0f0f5;
-    --text2: #9090a8;
-    --text3: #5a5a72;
+    --text: #f4f4f8;
+    --text1: #f4f4f8;
+    --text2: #c0c8d8;
+    --text3: #8a93a8;
     --success: #10B981;
     --danger: #EF4444;
     --sidebar-w: 200px;
@@ -53,18 +53,18 @@
 
   /* ── MODE CLAIR ── */
   body.light-mode {
-    --bg:    #f0f0f4;
+    --bg:    #f4f5f7;
     --bg2:   #ffffff;
-    --bg3:   #e8e8ef;
+    --bg3:   #ebebf2;
     --bg4:   #dcdce8;
-    --glass: rgba(0,0,0,0.03);
-    --glass2:rgba(0,0,0,0.06);
-    --border:rgba(0,0,0,0.10);
-    --border2:rgba(245,158,11,0.4);
-    --text:  #0a0a0c;
-    --text1: #0a0a0c;
-    --text2: #5a5a72;
-    --text3: #9090a8;
+    --glass: rgba(0,0,0,0.04);
+    --glass2:rgba(0,0,0,0.07);
+    --border:rgba(0,0,0,0.14);
+    --border2:rgba(245,158,11,0.5);
+    --text:  #111827;
+    --text1: #111827;
+    --text2: #4b5563;
+    --text3: #6b7280;
   }
   body.light-mode #topbar {
     background: rgba(255,255,255,0.92);
@@ -1401,12 +1401,12 @@
   }
   .tools-tabs::-webkit-scrollbar { display: none; }
   .tool-tab {
-    padding: 6px 14px;
-    border-radius: 20px;
+    padding: 7px 14px;
+    border-radius: 10px;
     border: 1px solid var(--border);
     background: transparent;
     color: var(--text2);
-    font-size: 12px;
+    font-size: 12.5px;
     white-space: nowrap;
     cursor: pointer;
     transition: all 0.15s;
@@ -1458,12 +1458,12 @@
      LIBRARY & DEFORM BUTTONS
   ============================================ */
   .lib-cat-btn {
-    padding: 5px 12px;
-    border-radius: 20px;
+    padding: 6px 14px;
+    border-radius: 10px;
     border: 1px solid var(--border);
     background: var(--bg3);
     color: var(--text2);
-    font-size: 11px;
+    font-size: 12px;
     white-space: nowrap;
     cursor: pointer;
     transition: all .15s;
@@ -1834,7 +1834,7 @@
 
   /* Sidebar */
   body.light-mode #sidebar { background:#f8f9fe; border-right:1px solid rgba(0,0,0,0.14); }
-  .sidebar-label { font-size:10.5px !important; font-weight:700 !important; letter-spacing:1.5px !important; color:#7a80a0 !important; }
+  .sidebar-label { font-size:10.5px !important; font-weight:700 !important; letter-spacing:1.5px !important; color:var(--text3) !important; }
   .product-name { font-size:13.5px !important; font-weight:700 !important; }
   body.light-mode .product-item:hover { background:#eaecf3; border-color:rgba(0,0,0,0.14); }
   body.light-mode .product-item.active { background:rgba(245,158,11,0.14); border-color:rgba(245,158,11,0.5); }
@@ -1853,13 +1853,13 @@
   /* Panneau droit */
   body.light-mode #tools-panel, body.light-mode #products-panel { background:#f8f9fe; border-left:1px solid rgba(0,0,0,0.14); }
   body.light-mode .tabs-header { background:#f8f9fe; border-bottom:1px solid rgba(0,0,0,0.14); }
-  .tab-btn { padding:13px 4px !important; font-size:9.5px !important; font-weight:700 !important; letter-spacing:1px !important; }
+  .tab-btn { padding:11px 6px !important; font-size:11px !important; font-weight:700 !important; letter-spacing:0.5px !important; }
   body.light-mode .tab-btn { color:#7a80a0; }
   body.light-mode .tab-btn.active { color:var(--amber); border-bottom-color:var(--amber); }
   .tab-content { padding:18px !important; }
   .tool-section { margin-bottom:20px !important; padding-bottom:20px !important; border-bottom:1px solid rgba(0,0,0,0.10) !important; }
   .tool-section:last-child { border-bottom:none !important; }
-  .tool-section-title { font-size:10.5px !important; font-weight:700 !important; letter-spacing:1.4px !important; margin-bottom:12px !important; }
+  .tool-section-title { font-size:10.5px !important; font-weight:700 !important; letter-spacing:1.4px !important; margin-bottom:12px !important; color:var(--text2) !important; }
 
   /* Inputs */
   body.light-mode .input-field { background:#fff; border:1px solid rgba(0,0,0,0.16); border-radius:9px; padding:10px 13px; font-size:13.5px; color:#0d0f1a; }
@@ -1885,7 +1885,7 @@
   body.light-mode .ai-style-btn.active { background:rgba(245,158,11,0.14); border-color:rgba(245,158,11,0.5); color:var(--amber); }
 
   /* Catégories bibliothèque — plus grosses et lisibles */
-  .lib-cat-btn { padding:7px 15px !important; font-size:13px !important; font-weight:600 !important; border-radius:20px !important; }
+  .lib-cat-btn { padding:7px 15px !important; font-size:13px !important; font-weight:600 !important; border-radius:10px !important; }
   body.light-mode .lib-cat-btn { background:#fff; border:1px solid rgba(0,0,0,0.14); color:#4a4f6a; }
   body.light-mode .lib-cat-btn:hover { border-color:var(--amber); color:#0d0f1a; }
   body.light-mode .lib-cat-btn.active { background:var(--amber); border-color:var(--amber); color:#000; font-weight:800 !important; box-shadow:0 1px 6px rgba(245,158,11,0.32); }
@@ -1942,16 +1942,16 @@
   .qr-frame-btn:hover { border-color:var(--amber) !important; box-shadow:0 0 0 2px rgba(245,158,11,0.20) !important; }
   .qr-frame-btn.active { border-color:var(--amber) !important; box-shadow:0 0 0 2px rgba(245,158,11,0.30) !important; }
   body.light-mode .qr-frame-btn { background:#fff !important; border-color:rgba(0,0,0,0.14) !important; }
-  /* Habillages en ligne horizontale scrollable */
+  /* Habillages en grille 4 colonnes (display géré par JS) */
   #qr-frames-grid {
-    display:flex !important; flex-direction:row !important;
-    flex-wrap:nowrap !important; overflow-x:auto !important;
-    overflow-y:hidden !important; gap:6px !important;
-    padding-bottom:4px; max-height:none !important;
-    scrollbar-width:thin; scrollbar-color:rgba(0,0,0,0.15) transparent;
+    grid-template-columns:repeat(4, minmax(0, 1fr)) !important;
+    flex-direction:unset !important;
+    flex-wrap:unset !important;
+    overflow-x:visible !important;
+    gap:6px !important;
   }
   #qr-frames-grid > div { display:none !important; } /* masquer labels catégorie */
-  .qr-frame-btn { width:64px !important; height:64px !important; flex-shrink:0 !important; }
+  .qr-frame-btn { width:auto !important; height:auto !important; flex-shrink:unset !important; aspect-ratio:1 !important; }
   #qr-preview-wrap canvas { max-width:120px !important; max-height:120px !important; }
   body.light-mode .qr-shape-btn { background:#fff; border:1.5px solid rgba(0,0,0,0.14); }
   body.light-mode .qr-shape-btn.active { border-color:var(--amber); background:rgba(245,158,11,0.12); color:var(--amber); }
@@ -2011,8 +2011,8 @@
 
   /* QR — Boutons suggestion */
   .qr-suggest-btn {
-    padding:5px 10px; background:var(--bg3); border:1px solid var(--border);
-    border-radius:20px; font-size:11.5px; cursor:pointer; color:var(--text2);
+    padding:6px 12px; background:var(--bg3); border:1px solid var(--border);
+    border-radius:10px; font-size:12px; cursor:pointer; color:var(--text2);
     font-family:'DM Sans',sans-serif; transition:all .14s; white-space:nowrap;
   }
   .qr-suggest-btn:hover { border-color:var(--amber); color:var(--amber); background:var(--amber-glow); }
@@ -2027,8 +2027,8 @@
      Glassmorphism, glow ambre, profondeur, boutons premium.
      ============================================================ */
 
-  /* Volet droit un peu plus large pour que les controles respirent */
-  :root { --tools-w: 360px; }
+  /* Volet droit plus large pour que les controles respirent */
+  :root { --tools-w: 380px; }
 
   /* Fond global : noir -> bleu nuit avec degrades subtils */
   body:not(.light-mode) {
@@ -2179,6 +2179,52 @@
   @media (prefers-reduced-motion: no-preference){
     .product-card:hover, .format-card:hover, .products-panel-card:hover { transform: translateY(-3px); }
   }
+
+  /* ── FIL D'ARIANE / BREADCRUMB ── */
+  .topbar-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text3);
+    white-space: nowrap;
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    font-family: 'DM Sans', sans-serif;
+    padding: 0 2px;
+  }
+  .topbar-breadcrumb .bc-sep {
+    opacity: 0.5;
+    font-size: 13px;
+  }
+  .topbar-breadcrumb .bc-current {
+    color: var(--text2);
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 160px;
+  }
+  @media (max-width: 900px) { .topbar-breadcrumb { display: none !important; } }
+
+  /* ── CONTRASTE RENFORCÉ MODE CLAIR ── */
+  body.light-mode .stat-pill { color: var(--text2); }
+  body.light-mode .stat-pill strong { color: var(--amber); }
+  body.light-mode .tool-section-title { color: var(--text2) !important; }
+  body.light-mode .sidebar-label { color: var(--text3) !important; }
+  body.light-mode .qr-suggest-btn { background: #fff; border-color: rgba(0,0,0,0.14); color: var(--text2); }
+  body.light-mode .qr-suggest-btn:hover { border-color: var(--amber); color: var(--amber); }
+  body.light-mode .lib-cat-btn { background: #fff; border-color: rgba(0,0,0,0.14); color: var(--text2); border-radius: 10px; }
+  body.light-mode .lib-cat-btn.active { background: var(--amber); border-color: var(--amber); color: #000; border-radius: 10px; }
+  body.light-mode .tool-tab { background: #fff; border-color: rgba(0,0,0,0.14); color: var(--text2); border-radius: 10px; }
+  body.light-mode .tool-tab.active { background: var(--amber); border-color: var(--amber); color: #000; border-radius: 10px; }
+  body.light-mode .tab-btn { color: var(--text2); }
+  body.light-mode .tab-btn.active { color: var(--amber); border-bottom-color: var(--amber); }
+
+  /* ── CONTRASTE RENFORCÉ MODE SOMBRE ── */
+  body:not(.light-mode) .tool-section-title { color: var(--text2); }
+  body:not(.light-mode) .qr-suggest-btn { color: var(--text2); }
+  body:not(.light-mode) .qr-link-label { color: var(--text2); }
 </style>
 </head>
 <body>
@@ -2280,7 +2326,14 @@
 </svg>
       </span>
     </div>
-    
+
+    <!-- Fil d'Ariane (desktop uniquement) -->
+    <div class="topbar-breadcrumb" id="topbar-breadcrumb">
+      <span>Produits</span>
+      <span class="bc-sep">›</span>
+      <span id="bc-product" class="bc-current">T-Shirt</span>
+    </div>
+
     <div class="topbar-stats">
       <div class="stat-pill">
         <div class="dot green"></div>
@@ -5163,7 +5216,7 @@ function updateViewSwitcher() {
   const mockupBtns = allMockups.map((m, mi) => {
     const active = mi === _STATE_mockupIdx;
     return `<button onclick="switchMockupSelection(${mi})"
-      style="padding:6px 12px;border-radius:20px;border:1px solid ${active ? 'var(--amber)' : 'var(--border)'};
+      style="padding:6px 12px;border-radius:10px;border:1px solid ${active ? 'var(--amber)' : 'var(--border)'};
              background:${active ? 'var(--amber-dim)' : 'transparent'};
              color:${active ? 'var(--amber)' : 'var(--text2)'};
              font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;
@@ -5184,7 +5237,7 @@ function updateViewSwitcher() {
     const viewBtns = STATE_mockup.views.map((v, i) => {
       const active = i === STATE_viewIdx;
       return `<button onclick="switchMockupView(${i})"
-        style="padding:6px 12px;border-radius:20px;border:1px solid ${active ? 'var(--amber)' : 'var(--border)'};
+        style="padding:6px 12px;border-radius:10px;border:1px solid ${active ? 'var(--amber)' : 'var(--border)'};
                background:${active ? 'var(--amber-dim)' : 'transparent'};
                color:${active ? 'var(--amber)' : 'var(--text2)'};
                font-size:11px;cursor:pointer;white-space:nowrap;font-family:'DM Sans',sans-serif;
@@ -5246,6 +5299,8 @@ function selectProduct(key) {
     el.classList.toggle('active', el.dataset.product === key);
   });
   document.getElementById('stat-product').textContent = PRODUCTS[key].name;
+  const _bcEl = document.getElementById('bc-product');
+  if (_bcEl) _bcEl.textContent = PRODUCTS[key].name;
   updatePrice();
   applyMockup(key, 0, 0, true); // changement de type produit → ré-ouvre le panneau Produits
 }
