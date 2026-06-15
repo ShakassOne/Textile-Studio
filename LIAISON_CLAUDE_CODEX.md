@@ -5,8 +5,8 @@
 > du projet TextileLab. Il est dans le repo et **doit être mis à jour à chaque push**
 > par celui qui pousse (Claude ou Codex).
 
-**Dernière mise à jour :** 2026-06-15 07:15 — par **Claude**
-**Branche :** `main` · **Dernier commit poussé connu :** `2421f5d`
+**Dernière mise à jour :** 2026-06-15 — par **Claude** (redesign studio)
+**Branche :** `main` · **Dernier commit poussé connu :** `5f260c8`
 
 ---
 
@@ -26,6 +26,7 @@
 
 | Date | Auteur | Commit | Résumé | Risque |
 |------|--------|--------|--------|--------|
+| 2026-06-15 | Claude (push Alan) | `5f260c8` | **Redesign premium dark** studio (glassmorphism, glow ambre, profondeur). Markup : barre du bas sans formats A3-A6 ni Snap (« Supprimer l'arrière-plan » en clair), badge dims **informatif** (lecture seule), segmented control **Clair/Sombre** (`setTheme()` additif, `toggleTheme()` conservé), QR **sans étapes 1/2/3/4**, bouton « **+ Ajouter ce QR code** », biblio images **4 colonnes**. **CSS/markup uniquement** — fabric.js, coords, `addToCart()`, `setFormat()`/prix, routes, Shopify, auth, DB **intacts**. JS inline validé `node --check`. Phase 2 (vCard + gating panier) **en attente GO Alan**. | faible |
 | 2026-06-15 | Claude | `2421f5d` | Exempte `/api/shopify/fee-variant` du middleware abonnement (302→panier sans surcharge) | faible |
 | 2026-06-15 | Claude (push Alan) | `5d6e53b` | Surcharge format → ligne « Frais d'impression » + scope `write_products` | **moyen** (approche tarif remise en cause, voir §6) |
 | 2026-06-14 | Claude (push Alan) | `805f847` | Restaure modal + aperçu panier (proxy + frame-ancestors) | faible — **validé OK par Alan** |
