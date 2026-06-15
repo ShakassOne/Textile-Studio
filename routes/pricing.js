@@ -19,9 +19,12 @@ function readShopSurcharges(shopId) {
 }
 
 // These could be moved to DB for admin-editable pricing
+// Surcharges par défaut = ÉCHELLE CANONIQUE (alignée studio FORMATS + utils/print-tiers.js
+// + variantes Shopify pré-tarifées). Le studio n'applique plus ces valeurs au calcul
+// d'impression (échelle figée côté studio) ; la section admin reste un repère.
 let PRICING = {
   base:    { tshirt: 19.90, hoodie: 39.90, cap: 24.90, totebag: 14.90 },
-  formats: { A3: 8.00, A4: 5.00, A5: 3.00, A6: 2.00 },
+  formats: { A3: 4.00, A4: 3.00, A5: 2.00, A6: 1.50 },
   products: [
     { key: 'tshirt',  name: 'T-Shirt',   emoji: '👕', base: 19.90 },
     { key: 'hoodie',  name: 'Hoodie',     emoji: '🧥', base: 39.90 },
@@ -29,10 +32,10 @@ let PRICING = {
     { key: 'totebag', name: 'Tote Bag',   emoji: '👜', base: 14.90 },
   ],
   formatList: [
-    { key: 'A3', label: 'A3', dims: '297×420mm', extra: 8.00,  dpi300: '3508×4961px', usage: 'Grande surface, dos' },
-    { key: 'A4', label: 'A4', dims: '210×297mm', extra: 5.00,  dpi300: '2480×3508px', usage: 'Devant standard' },
-    { key: 'A5', label: 'A5', dims: '148×210mm', extra: 3.00,  dpi300: '1748×2480px', usage: 'Poitrine, poche' },
-    { key: 'A6', label: 'A6', dims: '105×148mm', extra: 2.00,  dpi300: '1240×1748px', usage: 'Logo, signature' },
+    { key: 'A3', label: 'A3', dims: '297×420mm', extra: 4.00,  dpi300: '3508×4961px', usage: 'Grande surface, dos' },
+    { key: 'A4', label: 'A4', dims: '210×297mm', extra: 3.00,  dpi300: '2480×3508px', usage: 'Devant standard' },
+    { key: 'A5', label: 'A5', dims: '148×210mm', extra: 2.00,  dpi300: '1748×2480px', usage: 'Poitrine, poche' },
+    { key: 'A6', label: 'A6', dims: '105×148mm', extra: 1.50,  dpi300: '1240×1748px', usage: 'Logo, signature' },
   ],
 };
 

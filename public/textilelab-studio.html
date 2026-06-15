@@ -3345,11 +3345,15 @@ const PRODUCTS = {
   totebag: { name: 'Tote Bag',   emoji: '👜', base: 14.90 },
 };
 
+// Surcharges (extra) = ÉCHELLE CANONIQUE, alignée sur utils/print-tiers.js et sur
+// les variantes Shopify pré-tarifées. NE PAS la faire dériver depuis l'admin :
+// le montant calculé ici DOIT correspondre exactement à une valeur d'option
+// « Impression » existante (sinon « combinaison non configurée »).
 const FORMATS = {
-  A3: { label: 'A3 · 297×420mm', dims: '297×420mm', extra: 8.00, aspect: 297/420, mmW: 297, mmH: 420 },
-  A4: { label: 'A4 · 210×297mm', dims: '210×297mm', extra: 5.00, aspect: 210/297, mmW: 210, mmH: 297 },
-  A5: { label: 'A5 · 148×210mm', dims: '148×210mm', extra: 3.00, aspect: 148/210, mmW: 148, mmH: 210 },
-  A6: { label: 'A6 · 105×148mm', dims: '105×148mm', extra: 2.00, aspect: 105/148, mmW: 105, mmH: 148 },
+  A3: { label: 'A3 · 297×420mm', dims: '297×420mm', extra: 4.00, aspect: 297/420, mmW: 297, mmH: 420 },
+  A4: { label: 'A4 · 210×297mm', dims: '210×297mm', extra: 3.00, aspect: 210/297, mmW: 210, mmH: 297 },
+  A5: { label: 'A5 · 148×210mm', dims: '148×210mm', extra: 2.00, aspect: 148/210, mmW: 148, mmH: 210 },
+  A6: { label: 'A6 · 105×148mm', dims: '105×148mm', extra: 1.50, aspect: 105/148, mmW: 105, mmH: 148 },
 };
 
 // Largeur physique de la zone d'impression — calibrée par mockup en admin.
@@ -9059,9 +9063,10 @@ async function loadPricingFromAPI() {
     const el = document.getElementById(`price-${k}`);
     if (el) el.textContent = base.toFixed(2).replace('.', ',') + ' €';
   });
-  if (pricing.formats) {
-    Object.keys(pricing.formats).forEach(k => { if (FORMATS[k]) FORMATS[k].extra = pricing.formats[k]; });
-  }
+  // NB : on N'APPLIQUE PLUS pricing.formats sur FORMATS[k].extra.
+  // Les surcharges d'impression sont CANONIQUES (cf. const FORMATS) et doivent
+  // rester alignées sur les variantes Shopify pré-tarifées. Laisser l'admin les
+  // modifier ici ferait dériver le montant calculé → « combinaison non configurée ».
   updatePrice();
 }
 
