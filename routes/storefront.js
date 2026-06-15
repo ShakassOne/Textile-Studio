@@ -560,30 +560,30 @@ async function fetchAdminVariantById(shopRecord, variantId) {
 const _numId = (v) => String(v || '').replace(/^gid:\/\/shopify\/ProductVariant\//, '').trim();
 
 /**
- * Fonction CENTRALE de résolution.
+ * Fonction CENTRALE de résolution (modèle MONTANT).
  * @param {Object} p
  * @param {string} p.shopRecord     — { shop_domain, access_token }
  * @param {number} p.shopId
  * @param {string} p.baseVariantId  — variante de base (taille/couleur/genre) sélectionnée
  * @param {string} [p.productId]    — id produit Shopify (sinon déduit du baseVariant)
- * @param {string} p.tierKey        — palier canonique (NONE/LOGO/A5/A4/A3/DUPLEX)
+ * @param {number} p.amount         — surcharge totale d'impression en € (0 = sans impression)
  * @returns {Promise<{ ok, variant_id?, price?, source?, error?, needs_setup?, detail? }>}
  */
 async function resolveVariantForCustomization(p) {
   const { shopRecord, shopId } = p;
   const baseVariantId = _numId(p.baseVariantId);
-  const tierKey = PRINT.TIER_BY_KEY[p.tierKey] ? p.tierKey : 'NONE';
+  const amount = Math.round(Number(p.amount || 0) * 100) / 100;
 
   if (!baseVariantId) return { ok: false, error: 'baseVariantId manquant' };
 
-  // CAS « Sans impression » → on garde la variante de base telle quelle.
-  if (tierKey === 'NONE') {
+  // CAS « Sans impression » (montant 0) → on garde la variante de base telle quelle.
+  if (amount <= 0) {
     let price = null;
     try {
       const v = await fetchAdminVariantById(shopRecord, baseVariantId);
       price = v ? Number(v.price) : null;
     } catch (_) {}
-    return { ok: true, variant_id: baseVariantId, price, source: 'base', tier: 'NONE' };
+    return { ok: true, variant_id: baseVariantId, price, source: 'base', amount: 0 };
   }
 
   // Charger le produit (options + variants).
@@ -603,12 +603,12 @@ async function resolveVariantForCustomization(p) {
     baseVariant = (product.variants || []).find(v => String(v.id) === baseVariantId) || null;
   }
 
+  const wantLabel = PRINT.amountLabel(amount); // ex "+7,00 €"
   const detail = {
     product_id: productId || null,
     base_variant_id: baseVariantId,
-    tier: tierKey,
-    label: PRINT.TIER_BY_KEY[tierKey].label,
-    sides: PRINT.TIER_BY_KEY[tierKey].sides,
+    amount,
+    label: wantLabel,
     base_options: baseVariant
       ? [baseVariant.option1, baseVariant.option2, baseVariant.option3]
       : null,
@@ -618,14 +618,14 @@ async function resolveVariantForCustomization(p) {
   if (product && Array.isArray(product.options) && baseVariant) {
     const printOpt = product.options.find(o => PRINT.isPrintOptionName(o.name));
     if (printOpt) {
-      const pos = printOpt.position; // 1..3
-      const wantLabel = PRINT.TIER_BY_KEY[tierKey].label;
+      const pos  = printOpt.position; // 1..3
+      const want = PRINT.norm(wantLabel);
       // Mêmes valeurs sur les AUTRES positions que la variante de base,
-      // et la position « Impression » qui matche le palier voulu.
+      // et la position « Impression » dont la valeur == montant voulu.
       const match = (product.variants || []).find(v => {
         for (const i of [1, 2, 3]) {
           if (i === pos) {
-            if (PRINT.tierKeyFromOptionValue(v['option' + i]) !== tierKey) return false;
+            if (PRINT.norm(v['option' + i]) !== want) return false;
           } else {
             if ((v['option' + i] || null) !== (baseVariant['option' + i] || null)) return false;
           }
@@ -634,28 +634,25 @@ async function resolveVariantForCustomization(p) {
       });
       if (match) {
         return { ok: true, variant_id: String(match.id), price: Number(match.price),
-                 source: 'option', tier: tierKey, option_value: wantLabel };
+                 source: 'option', amount, option_value: wantLabel };
       }
-      // L'option existe mais la combinaison n'est pas créée → on tente le mapping,
-      // puis on échouera proprement si rien.
       detail.print_option = printOpt.name;
     }
   }
 
-  // ── STRATÉGIE B : table de mapping admin ───────────────────────────────────
+  // ── STRATÉGIE B : table de mapping admin (par montant) ─────────────────────
   const mapping = readVariantMapping(shopId);
-  const key = PRINT.mappingKey(baseVariantId, tierKey);
+  const key = PRINT.mappingKey(baseVariantId, amount);
   const mapped = mapping[key];
   if (mapped) {
     const finalId = _numId(mapped);
     let price = null;
     try {
-      // prix : dans le même produit si présent, sinon fetch direct.
       const inProd = product && (product.variants || []).find(v => String(v.id) === finalId);
       if (inProd) price = Number(inProd.price);
       else { const v = await fetchAdminVariantById(shopRecord, finalId); price = v ? Number(v.price) : null; }
     } catch (_) {}
-    return { ok: true, variant_id: finalId, price, source: 'mapping', tier: tierKey };
+    return { ok: true, variant_id: finalId, price, source: 'mapping', amount };
   }
 
   // ── ÉCHEC : aucune variante → erreur claire + log détaillé ─────────────────
@@ -669,8 +666,7 @@ async function resolveVariantForCustomization(p) {
 }
 
 // GET /api/shopify/resolve-variant
-//   query : base_variant_id, product_id?, tier? (NONE/LOGO/A5/A4/A3/DUPLEX),
-//           formats? (CSV ex "A6,A3"), faces?, shop
+//   query : base_variant_id, product_id?, amount (€ surcharge totale), shop
 router.get('/resolve-variant', attachShopId, async (req, res) => {
   try {
     const shopId = req.shopId;
@@ -683,19 +679,13 @@ router.get('/resolve-variant', attachShopId, async (req, res) => {
     const baseVariantId = req.query.base_variant_id || req.query.variant_id;
     if (!baseVariantId) return res.status(400).json({ ok: false, error: 'base_variant_id requis' });
 
-    // Palier : fourni directement (tier) ou recalculé depuis formats/faces.
-    let tierKey = req.query.tier;
-    if (!tierKey || !PRINT.TIER_BY_KEY[tierKey]) {
-      const formats = String(req.query.formats || '').split(',').map(s => s.trim()).filter(Boolean);
-      const faces   = req.query.faces != null ? Number(req.query.faces) : formats.length;
-      tierKey = PRINT.tierFromDesign({ formats, faces }).key;
-    }
+    const amount = Number(req.query.amount || 0);
 
     const out = await resolveVariantForCustomization({
       shopRecord, shopId,
       baseVariantId,
       productId: req.query.product_id || '',
-      tierKey,
+      amount,
     });
 
     if (!out.ok) {
@@ -710,18 +700,18 @@ router.get('/resolve-variant', attachShopId, async (req, res) => {
 });
 
 // ── Mapping admin : lecture/écriture de la table de correspondance ───────────
-// GET  /api/shopify/variant-mapping            → { mapping: {...}, tiers: [...] }
+// GET  /api/shopify/variant-mapping            → { mapping: {...}, paliers: [...] }
 // POST /api/shopify/variant-mapping
-//   - { mapping: {...} }                        → remplace toute la table
-//   - { base_variant_id, tier, variant_id }     → upsert d'une entrée
-//   - { remove: "<baseVariantId>::<TIER>" }     → supprime une entrée
+//   - { mapping: {...} }                              → remplace toute la table
+//   - { base_variant_id, amount, variant_id }         → upsert d'une entrée
+//   - { remove: "<baseVariantId>::<amount>" }         → supprime une entrée
 router.get('/variant-mapping', requireAuth, attachShopId, (req, res) => {
   try {
     const shopId = req.shopId;
     if (!shopId) return res.status(400).json({ error: 'Boutique introuvable' });
     return res.json({
       mapping: readVariantMapping(shopId),
-      tiers: PRINT.PRINT_TIERS.map(t => ({ key: t.key, label: t.label, sides: t.sides })),
+      paliers: PRINT.paliers(),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -746,13 +736,13 @@ router.post('/variant-mapping', requireAuth, attachShopId, (req, res) => {
       return res.json({ saved: true, mapping });
     }
 
-    const base = _numId(body.base_variant_id);
-    const tier = PRINT.TIER_BY_KEY[body.tier] ? body.tier : null;
-    const vid  = _numId(body.variant_id);
-    if (!base || !tier || !vid) {
-      return res.status(400).json({ error: 'base_variant_id, tier (NONE/LOGO/A5/A4/A3/DUPLEX) et variant_id requis' });
+    const base   = _numId(body.base_variant_id);
+    const amount = body.amount != null ? Number(body.amount) : NaN;
+    const vid    = _numId(body.variant_id);
+    if (!base || !Number.isFinite(amount) || amount <= 0 || !vid) {
+      return res.status(400).json({ error: 'base_variant_id, amount (€ > 0) et variant_id requis' });
     }
-    mapping[PRINT.mappingKey(base, tier)] = vid;
+    mapping[PRINT.mappingKey(base, amount)] = vid;
     writeVariantMapping(shopId, mapping);
     return res.json({ saved: true, mapping });
   } catch (err) {

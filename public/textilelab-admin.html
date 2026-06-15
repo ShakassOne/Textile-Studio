@@ -558,7 +558,7 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
                   style="width:170px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:13px;outline:none">
               </div>
               <div>
-                <label style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px">Palier</label>
+                <label style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px">Surcharge</label>
                 <select id="vm-tier"
                   style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-size:13px;outline:none"></select>
               </div>
@@ -2495,26 +2495,34 @@ async function saveProductPricing() {
 // MAPPING VARIANTES PRÉ-TARIFÉES (impression incluse)
 // ============================================
 let _variantMapping = {};
-let _variantTiers = [
-  { key:'NONE', label:'Sans impression' }, { key:'LOGO', label:'Petit logo' },
-  { key:'A5', label:'A5 recto' }, { key:'A4', label:'A4 recto' },
-  { key:'A3', label:'A3 recto' }, { key:'DUPLEX', label:'Recto + verso' },
+let _variantPaliers = [
+  { amount:1.5, key:'1.50', label:'+1,50 €' }, { amount:2, key:'2.00', label:'+2,00 €' },
+  { amount:3, key:'3.00', label:'+3,00 €' },   { amount:3.5, key:'3.50', label:'+3,50 €' },
+  { amount:4, key:'4.00', label:'+4,00 €' },   { amount:4.5, key:'4.50', label:'+4,50 €' },
+  { amount:5, key:'5.00', label:'+5,00 €' },   { amount:5.5, key:'5.50', label:'+5,50 €' },
+  { amount:6, key:'6.00', label:'+6,00 €' },   { amount:7, key:'7.00', label:'+7,00 €' },
+  { amount:8, key:'8.00', label:'+8,00 €' },
 ];
 
 async function loadVariantMapping() {
   const data = await api('/api/shopify/variant-mapping');
   if (data) {
     _variantMapping = data.mapping || {};
-    if (Array.isArray(data.tiers) && data.tiers.length) _variantTiers = data.tiers;
+    if (Array.isArray(data.paliers) && data.paliers.length) {
+      _variantPaliers = data.paliers.filter(p => Number(p.amount) > 0); // exclut 0 (sans impression)
+    }
   }
-  // Remplir le select des paliers (on exclut NONE : pas de mapping nécessaire)
   const sel = document.getElementById('vm-tier');
-  if (sel) sel.innerHTML = _variantTiers.filter(t=>t.key!=='NONE')
-    .map(t => `<option value="${t.key}">${t.label}</option>`).join('');
+  if (sel) sel.innerHTML = _variantPaliers
+    .map(p => `<option value="${p.amount}">${p.label}</option>`).join('');
   _renderVariantMapping();
 }
 
-function _tierLabel(key){ const t=_variantTiers.find(x=>x.key===key); return t?t.label:key; }
+function _palierLabel(key){
+  const p=_variantPaliers.find(x=>x.key===key || String(x.amount)===String(key));
+  if (p) return p.label;
+  const n=Number(key); return Number.isFinite(n) ? ('+'+n.toFixed(2).replace('.',',')+' €') : key;
+}
 
 function _renderVariantMapping() {
   const box = document.getElementById('variant-mapping-list');
@@ -2527,14 +2535,14 @@ function _renderVariantMapping() {
   box.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr auto 1fr auto;gap:8px 14px;align-items:center;font-size:13px">
       <div style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px">Variante de base</div>
-      <div style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px">Palier</div>
+      <div style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px">Surcharge</div>
       <div style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px">Variante finale</div>
       <div></div>
       ${entries.map(([key,val]) => {
-        const [base,tier] = key.split('::');
+        const [base,amt] = key.split('::');
         return `
         <div style="font-family:'DM Mono',monospace">${base}</div>
-        <div><span style="font-size:11px;padding:3px 9px;border-radius:20px;background:var(--bg3);border:1px solid var(--border)">${_tierLabel(tier)}</span></div>
+        <div><span style="font-size:11px;padding:3px 9px;border-radius:20px;background:var(--bg3);border:1px solid var(--border)">${_palierLabel(amt)}</span></div>
         <div style="font-family:'DM Mono',monospace">${val}</div>
         <div><button class="btn" style="padding:4px 10px;font-size:12px" onclick="removeVariantMappingEntry('${key.replace(/'/g,"")}')">🗑</button></div>`;
       }).join('')}
@@ -2542,12 +2550,12 @@ function _renderVariantMapping() {
 }
 
 async function saveVariantMappingEntry() {
-  const base = (document.getElementById('vm-base')?.value||'').trim();
-  const tier = (document.getElementById('vm-tier')?.value||'').trim();
-  const vid  = (document.getElementById('vm-final')?.value||'').trim();
-  if (!base || !tier || !vid) { showToast('⚠ Renseignez base, palier et variante finale'); return; }
+  const base   = (document.getElementById('vm-base')?.value||'').trim();
+  const amount = (document.getElementById('vm-tier')?.value||'').trim();
+  const vid    = (document.getElementById('vm-final')?.value||'').trim();
+  if (!base || !amount || !vid) { showToast('⚠ Renseignez base, surcharge et variante finale'); return; }
   const res = await api('/api/shopify/variant-mapping', {
-    method:'POST', body: JSON.stringify({ base_variant_id: base, tier, variant_id: vid })
+    method:'POST', body: JSON.stringify({ base_variant_id: base, amount: Number(amount), variant_id: vid })
   });
   if (res?.saved) {
     _variantMapping = res.mapping || _variantMapping;

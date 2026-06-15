@@ -5323,9 +5323,33 @@ function _faceHasContent(mockup, idx) {
   return (STATE.viewLayers?.[key] || []).length > 0;
 }
 
-// Surcharge totale = Σ sur chaque face AVEC contenu de la surcharge du format de CETTE face.
-// → petit recto + gros verso = surcharge petit + surcharge gros (cumul).
-// → plusieurs visuels sur une même face = UNE seule surcharge (celle du format de la face).
+// Format cumulé d'une face = format qui englobe TOUS les visuels de la face.
+// Règle Alan : plusieurs visuels sur une même face cumulent (2×A4 = A3, 2×A5 = A4…),
+// plafonné A3. On le calcule via la bounding box union des objets de la face
+// COURANTE (objets fabric vivants). Pour une face non courante (calques sauvegardés,
+// géométrie hors-écran) on retombe sur son format propre (_faceFormat).
+function _faceCumulFormat(mockup, idx) {
+  if (idx === STATE_viewIdx && canvas) {
+    try {
+      const objs = _getUserDesignObjects();
+      if (objs.length > 1) {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        objs.forEach(o => {
+          const r = o.getBoundingRect(true, true);
+          minX = Math.min(minX, r.left);          minY = Math.min(minY, r.top);
+          maxX = Math.max(maxX, r.left + r.width); maxY = Math.max(maxY, r.top + r.height);
+        });
+        const w = maxX - minX, h = maxY - minY;
+        if (w > 0 && h > 0) return _pxToFormat(w, h).fmt; // _pxToFormat plafonne déjà à A3
+      }
+    } catch (_) { /* fallback ci-dessous */ }
+  }
+  return _faceFormat(mockup?.id, idx);
+}
+
+// Surcharge totale = Σ sur chaque face AVEC contenu de la surcharge du format CUMULÉ de la face.
+// → petit recto + gros verso = surcharge petit + surcharge gros (cumul entre faces).
+// → plusieurs visuels sur une même face = surcharge du format englobant (cumul même face).
 function _computeSurcharge() {
   const mockup = STATE_mockup;
   const views  = mockup?.views || [];
@@ -5333,7 +5357,7 @@ function _computeSurcharge() {
   let total = 0;
   const scan = (idx) => {
     if (!_faceHasContent(mockup, idx)) return;
-    const fmt   = _faceFormat(mockup?.id, idx);
+    const fmt   = _faceCumulFormat(mockup, idx);
     const extra = FORMATS[fmt]?.extra || 0;
     total += extra;
     detail.push({ name: (views[idx]?.name || `Vue ${idx + 1}`), format: fmt, extra });
@@ -5343,17 +5367,12 @@ function _computeSurcharge() {
   return { total: Math.round(total * 100) / 100, detail };
 }
 
-// Palier d'impression canonique à partir du detail de _computeSurcharge().
-// MIROIR de utils/print-tiers.js (serveur) — garder les deux cohérents.
-//   detail = [{ name, format(A3/A4/A5/A6), extra }, ...] (faces AVEC contenu)
-function _tlTierFromDesign(detail) {
-  const faces = (detail || []).length;
-  if (faces <= 0) return { key: 'NONE', label: 'Sans impression', sides: 'none' };
-  if (faces >= 2) return { key: 'DUPLEX', label: 'Recto + verso', sides: 'recto-verso' };
-  const map   = { A6: 'LOGO', A5: 'A5', A4: 'A4', A3: 'A3' };
-  const lbl   = { LOGO: 'Petit logo', A5: 'A5 recto', A4: 'A4 recto', A3: 'A3 recto' };
-  const key   = map[detail[0].format] || 'LOGO';
-  return { key, label: lbl[key], sides: 'recto' };
+// Libellé de la valeur d'option « Impression » à partir du montant de surcharge.
+// MIROIR de utils/print-tiers.js amountLabel() — garder les deux cohérents.
+//   0 € → "Sans impression" ; sinon "+X,XX €" (la variante porte le prix inclus).
+function _tlAmountLabel(amount) {
+  const v = Math.round(Number(amount || 0) * 100) / 100;
+  return v <= 0 ? 'Sans impression' : '+' + v.toFixed(2).replace('.', ',') + ' €';
 }
 
 function updatePrice() {
@@ -7111,11 +7130,14 @@ async function _checkoutShopifyDirect() {
   const _surchargeTotal  = _sc.total;
   const _surchargeLabel  = _sc.detail.map(d => `${d.name} ${d.format}`).join(' + ');
 
-  // ── Palier d'impression canonique (miroir de utils/print-tiers.js) ─────────
-  // Sert à choisir la VARIANTE pré-tarifée (impression incluse, une seule ligne).
-  // NE modifie PAS le prix : ces props sont uniquement informatives / production.
-  const _printTier = _tlTierFromDesign(_sc.detail);
-  const _printFormats = _sc.detail.map(d => d.format).filter(Boolean);
+  // ── Surcharge d'impression → choix de la VARIANTE pré-tarifée (montant) ─────
+  // Une seule ligne panier, prix d'impression INCLUS dans la variante choisie.
+  // Ces props NE modifient PAS le prix : elles servent à la production.
+  const _printAmount  = _surchargeTotal;                 // € surcharge totale
+  const _printLabel   = _tlAmountLabel(_printAmount);     // "+7,00 €" ou "Sans impression"
+  const _printSides   = _sc.detail.length >= 2 ? 'recto-verso'
+                       : (_sc.detail.length === 1 ? 'recto' : 'none');
+  const _printFormats = _sc.detail.map(d => `${d.name}:${d.format}`); // ex "Recto:A4 + Verso:A3"
 
   const propsObj = {
     '_design_id': String(designId || ''),
@@ -7125,10 +7147,10 @@ async function _checkoutShopifyDirect() {
     '_faces':     String(viewsCount),
     '_surcharge': _surchargeTotal.toFixed(2),
     // ── Infos PRODUCTION (n'affectent pas le prix) ──
-    '_print_tier':   _printTier.key,            // NONE/LOGO/A5/A4/A3/DUPLEX
-    '_print_label':  _printTier.label,          // "A4 recto", "Recto + verso"…
-    '_print_sides':  _printTier.sides,          // none / recto / recto-verso
-    '_print_format': _printFormats.join('+') || '',
+    '_print_amount': _printAmount.toFixed(2),   // surcharge € (info)
+    '_print_label':  _printLabel,               // "+7,00 €" / "Sans impression"
+    '_print_sides':  _printSides,               // none / recto / recto-verso
+    '_print_format': _printFormats.join(' + ') || '',
   };
   if (_surchargeLabel) propsObj['_formats'] = _surchargeLabel;
 
@@ -7174,12 +7196,10 @@ async function _checkoutShopifyDirect() {
     //   • sinon table de mapping admin.
     // Si aucune variante → on N'AJOUTE RIEN et on affiche une erreur claire.
     let finalVariantId = String(variantId);
-    if (_printTier.key !== 'NONE') {
+    if (_printAmount > 0) {
       const _params = new URLSearchParams({
         base_variant_id: String(variantId),
-        tier: _printTier.key,
-        formats: _printFormats.join(','),
-        faces: String(_sc.detail.length),
+        amount: _printAmount.toFixed(2),
         shop: window._TL_SHOP || '',
       });
       const _ref2 = (_resolvedProductHandle || window._TL_PRODUCT_HANDLE || '');
@@ -7196,7 +7216,7 @@ async function _checkoutShopifyDirect() {
         // Variante manquante → AUCUN ajout panier + log détaillé pour Alan.
         console.error('[TextileLab] Variante d\'impression introuvable — ajout panier annulé.', {
           product: STATE.product, color: STATE.textileColor,
-          tier: _printTier.key, label: _printTier.label, sides: _printTier.sides,
+          amount: _printAmount, label: _printLabel, sides: _printSides,
           formats: _printFormats, base_variant_id: String(variantId),
           server: rData || null,
         });
