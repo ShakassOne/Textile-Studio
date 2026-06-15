@@ -535,9 +535,43 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
 
         <!-- ── Section 2 : Surcharges d'impression (sans prix de base produit) ── -->
         <div>
-          <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:14px;display:flex;align-items:center;gap:8px"><span>🖨️</span> Surcharges d'impression</div>
+          <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:14px;display:flex;align-items:center;gap:8px"><span>🖨️</span> Surcharges d'impression <span style="font-size:10px;color:var(--text3);font-weight:400">(affichage prix studio uniquement)</span></div>
           <div id="products-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px">
             <div style="color:var(--text3);font-size:13px;padding:20px">Chargement…</div>
+          </div>
+        </div>
+
+        <!-- ── Section 3 : Mapping variantes pré-tarifées (impression incluse) ── -->
+        <div class="table-card" style="padding:0;overflow:hidden">
+          <div style="padding:18px 20px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">
+            <span style="font-size:16px">🎯</span>
+            <div>
+              <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px">Mapping variantes d'impression</div>
+              <div style="font-size:11px;color:var(--text3);margin-top:2px">Associez (variante de base + palier) → variante Shopify finale pré-tarifée. Secours quand le produit n'a pas d'option « Impression ». Le panier reste sur UNE seule ligne.</div>
+            </div>
+          </div>
+          <div style="padding:16px;display:flex;flex-direction:column;gap:14px">
+            <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:14px">
+              <div>
+                <label style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px">ID variante de base</label>
+                <input id="vm-base" type="text" placeholder="ex 4012345678901"
+                  style="width:170px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:13px;outline:none">
+              </div>
+              <div>
+                <label style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px">Palier</label>
+                <select id="vm-tier"
+                  style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-size:13px;outline:none"></select>
+              </div>
+              <div>
+                <label style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px">ID variante finale</label>
+                <input id="vm-final" type="text" placeholder="ex 4012399999999"
+                  style="width:170px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:13px;outline:none">
+              </div>
+              <button class="btn btn-primary" onclick="saveVariantMappingEntry()">＋ Ajouter</button>
+            </div>
+            <div id="variant-mapping-list">
+              <div style="color:var(--text3);font-size:13px;padding:12px">Chargement…</div>
+            </div>
           </div>
         </div>
 
@@ -1066,7 +1100,7 @@ function showView(name) {
   if (name === 'categories') loadCategoriesView();
   if (name === 'mockups')   loadMockupsView();
   if (name === 'library')   loadLibrary();
-  if (name === 'pricing')   { loadProductLinks(); loadPricingEditor(); }
+  if (name === 'pricing')   { loadProductLinks(); loadPricingEditor(); loadVariantMapping(); }
   if (name === 'ai-styles') loadAiStyles();
   if (name === 'ai-creations') loadAiCreations('pending');
   if (name === 'qr-frames') loadQrFrames();
@@ -2455,6 +2489,77 @@ async function saveProductPricing() {
   const res = await api('/api/pricing', {method:'PUT', body:JSON.stringify({products,formats})});
   if (res?.products||res?.ok) { _pricingData=res; showToast('✅ Tarifs enregistrés'); }
   else showToast('⚠ Erreur lors de l\'enregistrement');
+}
+
+// ============================================
+// MAPPING VARIANTES PRÉ-TARIFÉES (impression incluse)
+// ============================================
+let _variantMapping = {};
+let _variantTiers = [
+  { key:'NONE', label:'Sans impression' }, { key:'LOGO', label:'Petit logo' },
+  { key:'A5', label:'A5 recto' }, { key:'A4', label:'A4 recto' },
+  { key:'A3', label:'A3 recto' }, { key:'DUPLEX', label:'Recto + verso' },
+];
+
+async function loadVariantMapping() {
+  const data = await api('/api/shopify/variant-mapping');
+  if (data) {
+    _variantMapping = data.mapping || {};
+    if (Array.isArray(data.tiers) && data.tiers.length) _variantTiers = data.tiers;
+  }
+  // Remplir le select des paliers (on exclut NONE : pas de mapping nécessaire)
+  const sel = document.getElementById('vm-tier');
+  if (sel) sel.innerHTML = _variantTiers.filter(t=>t.key!=='NONE')
+    .map(t => `<option value="${t.key}">${t.label}</option>`).join('');
+  _renderVariantMapping();
+}
+
+function _tierLabel(key){ const t=_variantTiers.find(x=>x.key===key); return t?t.label:key; }
+
+function _renderVariantMapping() {
+  const box = document.getElementById('variant-mapping-list');
+  if (!box) return;
+  const entries = Object.entries(_variantMapping||{});
+  if (!entries.length) {
+    box.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:12px;background:var(--bg3);border:1px dashed var(--border);border-radius:10px">Aucune correspondance. Ajoutez-en une ci-dessus, ou laissez vide si vos produits utilisent une option « Impression ».</div>';
+    return;
+  }
+  box.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr auto 1fr auto;gap:8px 14px;align-items:center;font-size:13px">
+      <div style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px">Variante de base</div>
+      <div style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px">Palier</div>
+      <div style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px">Variante finale</div>
+      <div></div>
+      ${entries.map(([key,val]) => {
+        const [base,tier] = key.split('::');
+        return `
+        <div style="font-family:'DM Mono',monospace">${base}</div>
+        <div><span style="font-size:11px;padding:3px 9px;border-radius:20px;background:var(--bg3);border:1px solid var(--border)">${_tierLabel(tier)}</span></div>
+        <div style="font-family:'DM Mono',monospace">${val}</div>
+        <div><button class="btn" style="padding:4px 10px;font-size:12px" onclick="removeVariantMappingEntry('${key.replace(/'/g,"")}')">🗑</button></div>`;
+      }).join('')}
+    </div>`;
+}
+
+async function saveVariantMappingEntry() {
+  const base = (document.getElementById('vm-base')?.value||'').trim();
+  const tier = (document.getElementById('vm-tier')?.value||'').trim();
+  const vid  = (document.getElementById('vm-final')?.value||'').trim();
+  if (!base || !tier || !vid) { showToast('⚠ Renseignez base, palier et variante finale'); return; }
+  const res = await api('/api/shopify/variant-mapping', {
+    method:'POST', body: JSON.stringify({ base_variant_id: base, tier, variant_id: vid })
+  });
+  if (res?.saved) {
+    _variantMapping = res.mapping || _variantMapping;
+    document.getElementById('vm-base').value=''; document.getElementById('vm-final').value='';
+    _renderVariantMapping(); showToast('✅ Correspondance enregistrée');
+  } else showToast('⚠ ' + (res?.error || 'Erreur enregistrement'));
+}
+
+async function removeVariantMappingEntry(key) {
+  const res = await api('/api/shopify/variant-mapping', { method:'POST', body: JSON.stringify({ remove: key }) });
+  if (res?.saved) { _variantMapping = res.mapping || {}; _renderVariantMapping(); showToast('🗑 Correspondance supprimée'); }
+  else showToast('⚠ Erreur suppression');
 }
 
 

@@ -408,7 +408,18 @@ router.get('/product-variant', async (req, res) => {
 const FEE_UNIT = 0.50; // granularité (0,50 € → gère 1,50 / 2 / 3 / 4 et leurs sommes)
 
 router.get('/fee-variant', attachShopId, async (req, res) => {
-  try {
+  // ── DÉPRÉCIÉ (juin 2026) ────────────────────────────────────────────────
+  // Le modèle « 2e ligne Frais d'impression » est abandonné au profit de
+  // variantes Shopify pré-tarifées (voir GET /api/shopify/resolve-variant).
+  // On NE crée plus de produit caché. Le studio n'appelle plus cet endpoint.
+  // 410 neutralise tout appel résiduel sans rien créer côté boutique.
+  return res.status(410).json({
+    deprecated: true,
+    error: 'fee-variant supprimé : utilisez /api/shopify/resolve-variant (variantes pré-tarifées).',
+  });
+  /* eslint-disable no-unreachable */
+  // eslint-disable-next-line no-unreachable
+  try { // legacy (mort) — conservé pour historique, jamais atteint
     const { getDB } = require('../db/database');
     const { getSetting, setSetting } = require('../db/settings');
     const db = getDB();
@@ -489,5 +500,266 @@ router.post('/fee-variant', requireAuth, attachShopId, (req, res) => {
   }
 });
 
+// ═════════════════════════════════════════════════════════════════════════════
+// RÉSOLUTION DE VARIANTE PRÉ-TARIFÉE (remplace « Frais d'impression »)
+// ═════════════════════════════════════════════════════════════════════════════
+// Objectif CDC (juin 2026) : UNE SEULE ligne panier, prix d'impression inclus
+// dans la variante. Plus aucune 2e ligne, pas de Shopify Plus, pas de Cart
+// Transform. TSL choisit automatiquement le bon variantId :
+//   1. via une OPTION de variante « Impression » si le produit en a une ;
+//   2. sinon via une TABLE DE MAPPING admin (settings.variant_mapping) ;
+//   3. sinon erreur claire + log détaillé (rien n'est ajouté au panier).
+const PRINT = require('../utils/print-tiers');
+
+// Lit la table de mapping d'une boutique : { "<baseVariantId>::<TIER>": "<finalVariantId>" }
+function readVariantMapping(shopId) {
+  try {
+    const { getSetting } = require('../db/settings');
+    const raw = getSetting(shopId, 'variant_mapping');
+    if (!raw) return {};
+    const obj = JSON.parse(raw);
+    return (obj && typeof obj === 'object') ? obj : {};
+  } catch (_) { return {}; }
+}
+
+function writeVariantMapping(shopId, mapping) {
+  const { setSetting } = require('../db/settings');
+  setSetting(shopId, 'variant_mapping', JSON.stringify(mapping || {}));
+}
+
+// Récupère { shop_domain, access_token } de la boutique courante (ou null).
+function getShopRecord(shopId) {
+  const { getDB } = require('../db/database');
+  return getDB().prepare(
+    'SELECT shop_domain, access_token FROM shops WHERE id = ? AND is_active = 1'
+  ).get(shopId) || null;
+}
+
+// Admin REST : produit complet (options + variants) par product_id.
+async function fetchAdminProductById(shopRecord, productId) {
+  const r = await fetch(
+    `https://${shopRecord.shop_domain}/admin/api/2024-01/products/${encodeURIComponent(productId)}.json`,
+    { headers: { 'X-Shopify-Access-Token': shopRecord.access_token } }
+  );
+  if (!r.ok) return null;
+  const j = await r.json();
+  return j.product || null;
+}
+
+// Admin REST : variante seule (pour récupérer product_id / price) par variant_id.
+async function fetchAdminVariantById(shopRecord, variantId) {
+  const r = await fetch(
+    `https://${shopRecord.shop_domain}/admin/api/2024-01/variants/${encodeURIComponent(variantId)}.json`,
+    { headers: { 'X-Shopify-Access-Token': shopRecord.access_token } }
+  );
+  if (!r.ok) return null;
+  const j = await r.json();
+  return j.variant || null;
+}
+
+const _numId = (v) => String(v || '').replace(/^gid:\/\/shopify\/ProductVariant\//, '').trim();
+
+/**
+ * Fonction CENTRALE de résolution.
+ * @param {Object} p
+ * @param {string} p.shopRecord     — { shop_domain, access_token }
+ * @param {number} p.shopId
+ * @param {string} p.baseVariantId  — variante de base (taille/couleur/genre) sélectionnée
+ * @param {string} [p.productId]    — id produit Shopify (sinon déduit du baseVariant)
+ * @param {string} p.tierKey        — palier canonique (NONE/LOGO/A5/A4/A3/DUPLEX)
+ * @returns {Promise<{ ok, variant_id?, price?, source?, error?, needs_setup?, detail? }>}
+ */
+async function resolveVariantForCustomization(p) {
+  const { shopRecord, shopId } = p;
+  const baseVariantId = _numId(p.baseVariantId);
+  const tierKey = PRINT.TIER_BY_KEY[p.tierKey] ? p.tierKey : 'NONE';
+
+  if (!baseVariantId) return { ok: false, error: 'baseVariantId manquant' };
+
+  // CAS « Sans impression » → on garde la variante de base telle quelle.
+  if (tierKey === 'NONE') {
+    let price = null;
+    try {
+      const v = await fetchAdminVariantById(shopRecord, baseVariantId);
+      price = v ? Number(v.price) : null;
+    } catch (_) {}
+    return { ok: true, variant_id: baseVariantId, price, source: 'base', tier: 'NONE' };
+  }
+
+  // Charger le produit (options + variants).
+  let productId = p.productId ? String(p.productId).trim() : '';
+  let baseVariant = null;
+  let product = null;
+  try {
+    if (!productId) {
+      const v = await fetchAdminVariantById(shopRecord, baseVariantId);
+      if (v) { productId = String(v.product_id); }
+    }
+    if (productId) product = await fetchAdminProductById(shopRecord, productId);
+  } catch (e) {
+    return { ok: false, error: 'Admin API: ' + e.message };
+  }
+  if (product) {
+    baseVariant = (product.variants || []).find(v => String(v.id) === baseVariantId) || null;
+  }
+
+  const detail = {
+    product_id: productId || null,
+    base_variant_id: baseVariantId,
+    tier: tierKey,
+    label: PRINT.TIER_BY_KEY[tierKey].label,
+    sides: PRINT.TIER_BY_KEY[tierKey].sides,
+    base_options: baseVariant
+      ? [baseVariant.option1, baseVariant.option2, baseVariant.option3]
+      : null,
+  };
+
+  // ── STRATÉGIE A : option de variante « Impression » sur le produit ──────────
+  if (product && Array.isArray(product.options) && baseVariant) {
+    const printOpt = product.options.find(o => PRINT.isPrintOptionName(o.name));
+    if (printOpt) {
+      const pos = printOpt.position; // 1..3
+      const wantLabel = PRINT.TIER_BY_KEY[tierKey].label;
+      // Mêmes valeurs sur les AUTRES positions que la variante de base,
+      // et la position « Impression » qui matche le palier voulu.
+      const match = (product.variants || []).find(v => {
+        for (const i of [1, 2, 3]) {
+          if (i === pos) {
+            if (PRINT.tierKeyFromOptionValue(v['option' + i]) !== tierKey) return false;
+          } else {
+            if ((v['option' + i] || null) !== (baseVariant['option' + i] || null)) return false;
+          }
+        }
+        return true;
+      });
+      if (match) {
+        return { ok: true, variant_id: String(match.id), price: Number(match.price),
+                 source: 'option', tier: tierKey, option_value: wantLabel };
+      }
+      // L'option existe mais la combinaison n'est pas créée → on tente le mapping,
+      // puis on échouera proprement si rien.
+      detail.print_option = printOpt.name;
+    }
+  }
+
+  // ── STRATÉGIE B : table de mapping admin ───────────────────────────────────
+  const mapping = readVariantMapping(shopId);
+  const key = PRINT.mappingKey(baseVariantId, tierKey);
+  const mapped = mapping[key];
+  if (mapped) {
+    const finalId = _numId(mapped);
+    let price = null;
+    try {
+      // prix : dans le même produit si présent, sinon fetch direct.
+      const inProd = product && (product.variants || []).find(v => String(v.id) === finalId);
+      if (inProd) price = Number(inProd.price);
+      else { const v = await fetchAdminVariantById(shopRecord, finalId); price = v ? Number(v.price) : null; }
+    } catch (_) {}
+    return { ok: true, variant_id: finalId, price, source: 'mapping', tier: tierKey };
+  }
+
+  // ── ÉCHEC : aucune variante → erreur claire + log détaillé ─────────────────
+  console.warn('[resolve-variant] AUCUNE variante pour combinaison :', JSON.stringify(detail));
+  return {
+    ok: false,
+    needs_setup: true,
+    error: 'Cette combinaison taille / impression n\'est pas encore configurée.',
+    detail,
+  };
+}
+
+// GET /api/shopify/resolve-variant
+//   query : base_variant_id, product_id?, tier? (NONE/LOGO/A5/A4/A3/DUPLEX),
+//           formats? (CSV ex "A6,A3"), faces?, shop
+router.get('/resolve-variant', attachShopId, async (req, res) => {
+  try {
+    const shopId = req.shopId;
+    if (!shopId) return res.status(400).json({ ok: false, error: 'Boutique introuvable' });
+    const shopRecord = getShopRecord(shopId);
+    if (!shopRecord?.access_token) {
+      return res.status(503).json({ ok: false, error: 'Boutique non installée (OAuth requis)' });
+    }
+
+    const baseVariantId = req.query.base_variant_id || req.query.variant_id;
+    if (!baseVariantId) return res.status(400).json({ ok: false, error: 'base_variant_id requis' });
+
+    // Palier : fourni directement (tier) ou recalculé depuis formats/faces.
+    let tierKey = req.query.tier;
+    if (!tierKey || !PRINT.TIER_BY_KEY[tierKey]) {
+      const formats = String(req.query.formats || '').split(',').map(s => s.trim()).filter(Boolean);
+      const faces   = req.query.faces != null ? Number(req.query.faces) : formats.length;
+      tierKey = PRINT.tierFromDesign({ formats, faces }).key;
+    }
+
+    const out = await resolveVariantForCustomization({
+      shopRecord, shopId,
+      baseVariantId,
+      productId: req.query.product_id || '',
+      tierKey,
+    });
+
+    if (!out.ok) {
+      const code = out.needs_setup ? 409 : (out.error && /manquant|requis/.test(out.error) ? 400 : 502);
+      return res.status(code).json(out);
+    }
+    return res.json(out);
+  } catch (err) {
+    console.error('resolve-variant error:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ── Mapping admin : lecture/écriture de la table de correspondance ───────────
+// GET  /api/shopify/variant-mapping            → { mapping: {...}, tiers: [...] }
+// POST /api/shopify/variant-mapping
+//   - { mapping: {...} }                        → remplace toute la table
+//   - { base_variant_id, tier, variant_id }     → upsert d'une entrée
+//   - { remove: "<baseVariantId>::<TIER>" }     → supprime une entrée
+router.get('/variant-mapping', requireAuth, attachShopId, (req, res) => {
+  try {
+    const shopId = req.shopId;
+    if (!shopId) return res.status(400).json({ error: 'Boutique introuvable' });
+    return res.json({
+      mapping: readVariantMapping(shopId),
+      tiers: PRINT.PRINT_TIERS.map(t => ({ key: t.key, label: t.label, sides: t.sides })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/variant-mapping', requireAuth, attachShopId, (req, res) => {
+  try {
+    const shopId = req.shopId;
+    if (!shopId) return res.status(400).json({ error: 'Boutique introuvable' });
+    const body = req.body || {};
+
+    if (body.mapping && typeof body.mapping === 'object') {
+      writeVariantMapping(shopId, body.mapping);
+      return res.json({ saved: true, mapping: readVariantMapping(shopId) });
+    }
+
+    const mapping = readVariantMapping(shopId);
+    if (body.remove) {
+      delete mapping[String(body.remove)];
+      writeVariantMapping(shopId, mapping);
+      return res.json({ saved: true, mapping });
+    }
+
+    const base = _numId(body.base_variant_id);
+    const tier = PRINT.TIER_BY_KEY[body.tier] ? body.tier : null;
+    const vid  = _numId(body.variant_id);
+    if (!base || !tier || !vid) {
+      return res.status(400).json({ error: 'base_variant_id, tier (NONE/LOGO/A5/A4/A3/DUPLEX) et variant_id requis' });
+    }
+    mapping[PRINT.mappingKey(base, tier)] = vid;
+    writeVariantMapping(shopId, mapping);
+    return res.json({ saved: true, mapping });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
 module.exports.getVariantId = getVariantId;
+module.exports.resolveVariantForCustomization = resolveVariantForCustomization;

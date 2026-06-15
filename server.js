@@ -483,7 +483,8 @@ app.use((req, res, next) => {
     '/api/product-links/public',
     '/api/product-links/by-mockup',
     '/api/shopify/product-variant',
-    '/api/shopify/fee-variant',   // ← ligne "Frais d'impression" storefront (surcharge format)
+    '/api/shopify/resolve-variant', // ← variante pré-tarifée storefront (impression incluse, une seule ligne)
+    '/api/shopify/fee-variant',   // ← DÉPRÉCIÉ (410) — conservé pour neutraliser les appels résiduels
     '/api/shopify/products',
     '/api/shop-settings/style/public',
     '/textilelab-studio.html',

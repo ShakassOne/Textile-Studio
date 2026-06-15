@@ -5343,6 +5343,19 @@ function _computeSurcharge() {
   return { total: Math.round(total * 100) / 100, detail };
 }
 
+// Palier d'impression canonique à partir du detail de _computeSurcharge().
+// MIROIR de utils/print-tiers.js (serveur) — garder les deux cohérents.
+//   detail = [{ name, format(A3/A4/A5/A6), extra }, ...] (faces AVEC contenu)
+function _tlTierFromDesign(detail) {
+  const faces = (detail || []).length;
+  if (faces <= 0) return { key: 'NONE', label: 'Sans impression', sides: 'none' };
+  if (faces >= 2) return { key: 'DUPLEX', label: 'Recto + verso', sides: 'recto-verso' };
+  const map   = { A6: 'LOGO', A5: 'A5', A4: 'A4', A3: 'A3' };
+  const lbl   = { LOGO: 'Petit logo', A5: 'A5 recto', A4: 'A4 recto', A3: 'A3 recto' };
+  const key   = map[detail[0].format] || 'LOGO';
+  return { key, label: lbl[key], sides: 'recto' };
+}
+
 function updatePrice() {
   let base = PRODUCTS[STATE.product]?.base || 0;
   if (window._TL_SHOP) {
@@ -7097,6 +7110,13 @@ async function _checkoutShopifyDirect() {
   const _sc = _computeSurcharge();
   const _surchargeTotal  = _sc.total;
   const _surchargeLabel  = _sc.detail.map(d => `${d.name} ${d.format}`).join(' + ');
+
+  // ── Palier d'impression canonique (miroir de utils/print-tiers.js) ─────────
+  // Sert à choisir la VARIANTE pré-tarifée (impression incluse, une seule ligne).
+  // NE modifie PAS le prix : ces props sont uniquement informatives / production.
+  const _printTier = _tlTierFromDesign(_sc.detail);
+  const _printFormats = _sc.detail.map(d => d.format).filter(Boolean);
+
   const propsObj = {
     '_design_id': String(designId || ''),
     '_product':   STATE.product,
@@ -7104,6 +7124,11 @@ async function _checkoutShopifyDirect() {
     '_color':     STATE.textileColor,
     '_faces':     String(viewsCount),
     '_surcharge': _surchargeTotal.toFixed(2),
+    // ── Infos PRODUCTION (n'affectent pas le prix) ──
+    '_print_tier':   _printTier.key,            // NONE/LOGO/A5/A4/A3/DUPLEX
+    '_print_label':  _printTier.label,          // "A4 recto", "Recto + verso"…
+    '_print_sides':  _printTier.sides,          // none / recto / recto-verso
+    '_print_format': _printFormats.join('+') || '',
   };
   if (_surchargeLabel) propsObj['_formats'] = _surchargeLabel;
 
@@ -7141,51 +7166,62 @@ async function _checkoutShopifyDirect() {
     }
     if (!variantId) throw new Error('Variante Shopify introuvable pour ce produit');
 
-    // ── Ligne "Frais d'impression" (2e ligne panier) si surcharge > 0 ──────────
-    // Le panier Shopify facture le prix de la variante : la surcharge de format
-    // est donc ajoutée via une variante dédiée (0,50 €), quantité = surcharge/0,50.
-    // Marche sur tous les plans (pas besoin de Shopify Plus).
-    let feeLine = null;
-    if (_surchargeTotal > 0) {
+    // ── Résolution de la variante FINALE pré-tarifée (impression INCLUSE) ──────
+    // CDC juin 2026 : UNE SEULE ligne panier. Plus de 2e ligne « Frais
+    // d'impression ». TSL demande au backend la variante correspondant à
+    // (variante de base + palier d'impression) :
+    //   • option « Impression » du produit si elle existe,
+    //   • sinon table de mapping admin.
+    // Si aucune variante → on N'AJOUTE RIEN et on affiche une erreur claire.
+    let finalVariantId = String(variantId);
+    if (_printTier.key !== 'NONE') {
+      const _params = new URLSearchParams({
+        base_variant_id: String(variantId),
+        tier: _printTier.key,
+        formats: _printFormats.join(','),
+        faces: String(_sc.detail.length),
+        shop: window._TL_SHOP || '',
+      });
+      const _ref2 = (_resolvedProductHandle || window._TL_PRODUCT_HANDLE || '');
+      if (_ref2.startsWith('id:')) _params.set('product_id', _ref2.slice(3));
+      let rData = null, rOk = false;
       try {
-        const fRes = await fetch(
-          `${APP_ORIGIN}/api/shopify/fee-variant?shop=${encodeURIComponent(window._TL_SHOP || '')}`,
-          { headers: { 'X-Shop-Domain': window._TL_SHOP || '' } }
-        );
-        const fData = fRes.ok ? await fRes.json() : null;
-        if (fData?.variant_id) {
-          const unit = Number(fData.unit) || 0.5;
-          const qty  = Math.max(1, Math.round(_surchargeTotal / unit));
-          feeLine = {
-            variantId: String(fData.variant_id),
-            quantity:  qty,
-            properties: {
-              '_design_uid': propsObj['_design_uid'],
-              '_frais':      _surchargeTotal.toFixed(2).replace('.', ',') + ' €',
-              '_formats':    _surchargeLabel || '',
-            },
-          };
-        } else if (fData?.needs_setup) {
-          console.warn('[TextileLab] Produit "Frais d\'impression" non configuré — surcharge non facturée. (scope write_products ou config manuelle requise)');
-        }
-      } catch (e) { console.warn('[TextileLab] fee-variant:', e.message); }
+        const rRes = await fetch(`${APP_ORIGIN}/api/shopify/resolve-variant?${_params.toString()}`,
+          { headers: { 'X-Shop-Domain': window._TL_SHOP || '' } });
+        rData = await rRes.json().catch(() => null);
+        rOk = rRes.ok && rData && rData.ok && rData.variant_id;
+      } catch (e) { console.error('[TextileLab] resolve-variant:', e.message); }
+
+      if (!rOk) {
+        // Variante manquante → AUCUN ajout panier + log détaillé pour Alan.
+        console.error('[TextileLab] Variante d\'impression introuvable — ajout panier annulé.', {
+          product: STATE.product, color: STATE.textileColor,
+          tier: _printTier.key, label: _printTier.label, sides: _printTier.sides,
+          formats: _printFormats, base_variant_id: String(variantId),
+          server: rData || null,
+        });
+        showToast('⚠️ Cette combinaison taille / impression n\'est pas encore configurée.');
+        allBtns.forEach(b => { if (b.tagName === 'BUTTON') { b.disabled = false; b.textContent = '🛒 Ajouter au panier'; } });
+        return;
+      }
+      finalVariantId = String(rData.variant_id);
     }
 
     showToast('✅ Ajout au panier…');
+    // UNE SEULE LIGNE : la variante finale porte déjà le prix d'impression.
     // Si dans un iframe → tl-modal.js appelle /cart/add.json puis ouvre le drawer
     if (window.self !== window.top) {
       setTimeout(() => {
         window.parent.postMessage({
           type:       'tl-add-to-cart',
-          variantId:  String(variantId),
+          variantId:  finalVariantId,
           quantity:   1,
           properties: propsObj,
           previewUrl: _previewImgUrl || null,
-          feeLine:    feeLine, // 2e ligne (surcharge) — tl-modal l'ajoute au même /cart/add.json
         }, '*');
       }, 800);
     } else {
-      // Hors iframe : form POST vers /cart/add — items[] gère 1 ou 2 lignes
+      // Hors iframe : form POST vers /cart/add — une seule ligne produit.
       setTimeout(() => {
         var _form = document.createElement('form');
         _form.method = 'POST';
@@ -7203,8 +7239,7 @@ async function _checkoutShopifyDirect() {
             _form.appendChild(_fp);
           });
         };
-        _addItem(0, variantId, 1, propsObj);
-        if (feeLine) _addItem(1, feeLine.variantId, feeLine.quantity, feeLine.properties);
+        _addItem(0, finalVariantId, 1, propsObj);
         document.body.appendChild(_form);
         _form.submit();
       }, 800);
