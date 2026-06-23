@@ -8629,7 +8629,10 @@ function init() {
       // ── Styles IA (Photo → Illustration) : activés/désactivés par le marchand
       // (toggle admin → GET /api/shop-settings/style/public). On révèle l'onglet
       // Photo (desktop + mobile) uniquement si le marchand l'a activé.
-      fetch(`${window.location.origin}/api/shop-settings/style/public?shop=${encodeURIComponent(window._TL_SHOP)}`)
+      // cache:'no-store' + cache-bust → le toggle admit/coupe l'onglet est pris
+      // en compte dès le rechargement du studio (sinon le navigateur sert la
+      // réponse en cache jusqu'à 60 s et la désactivation semble sans effet).
+      fetch(`${window.location.origin}/api/shop-settings/style/public?shop=${encodeURIComponent(window._TL_SHOP)}&_=${Date.now()}`, { cache: 'no-store' })
         .then(r => r.ok ? r.json() : null)
         .then(cfg => { if (cfg && cfg.ai_photo_styles_enabled) _revealPhotoStylesUI(); })
         .catch(() => {});
