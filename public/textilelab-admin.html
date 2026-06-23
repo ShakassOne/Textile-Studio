@@ -740,6 +740,31 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
           </div>
         </div>
 
+        <!-- Studio — Styles IA (Photo → Illustration) -->
+        <style>
+          .tl-switch{position:relative;display:inline-block;width:46px;height:26px;flex-shrink:0}
+          .tl-switch input{opacity:0;width:0;height:0}
+          .tl-switch .tl-switch-slider{position:absolute;inset:0;background:var(--border);border-radius:26px;transition:.2s;cursor:pointer}
+          .tl-switch .tl-switch-slider::before{content:"";position:absolute;height:20px;width:20px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+          .tl-switch input:checked + .tl-switch-slider{background:var(--amber,#F59E0B)}
+          .tl-switch input:checked + .tl-switch-slider::before{transform:translateX(20px)}
+        </style>
+        <div class="table-card" style="padding:20px">
+          <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px">✨ Studio — Styles IA (Photo → Illustration)</h3>
+          <p style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5">Active l'onglet <strong style="color:var(--text2)">Photo</strong> dans le studio côté boutique : le client charge une photo et la transforme en illustration via l'IA, en choisissant un de vos <strong style="color:var(--text2)">Styles IA</strong>. Nécessite une clé OpenAI configurée plus haut. Prise en compte côté boutique en ~1 min.</p>
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+            <label class="tl-switch">
+              <input type="checkbox" id="ai-photo-styles-toggle" onchange="_applyAiPhotoStylesToggle(this.checked)">
+              <span class="tl-switch-slider"></span>
+            </label>
+            <span id="ai-photo-styles-state" style="font-size:13px;color:var(--text3)">…</span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+            <button class="btn btn-primary" id="ai-photo-styles-save-btn" onclick="saveAiPhotoStyles()">💾 Enregistrer</button>
+            <span id="ai-photo-styles-result" style="font-size:12px;color:var(--text3);align-self:center;min-height:16px"></span>
+          </div>
+        </div>
+
         <!-- Stockage / Maintenance -->
         <div class="table-card" style="padding:20px">
           <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px">🧹 Stockage — fichiers inutilisés</h3>
@@ -2580,6 +2605,7 @@ async function loadSettingsInfo() {
   testAPIConnection();
   loadAIKeyStatus();
   loadDrawerStyle();
+  loadAiPhotoStyles();
   const [aiStatus, shopStatus] = await Promise.all([api('/api/ai/status'), api('/api/shopify/status')]);
   const svcEl = document.getElementById('services-status');
   if (svcEl) {
@@ -2666,6 +2692,43 @@ async function saveDrawerStyle() {
     _applyDrawerPreview(data.cart_drawer_bg_color || '');
     if (out) { out.textContent = '✅ Enregistré — visible côté boutique dans ~1 min'; out.style.color = 'var(--success)'; }
     showToast('✅ Apparence drawer mise à jour');
+  } else {
+    if (out) { out.textContent = '❌ ' + (data?.error || 'Erreur inconnue'); out.style.color = 'var(--danger)'; }
+  }
+}
+
+// ── Studio : activation des Styles IA (Photo → Illustration) ───────────────
+function _applyAiPhotoStylesToggle(enabled) {
+  const tog = document.getElementById('ai-photo-styles-toggle');
+  const st  = document.getElementById('ai-photo-styles-state');
+  if (tog) tog.checked = !!enabled;
+  if (st) {
+    st.textContent  = enabled ? 'Activé — onglet Photo visible côté boutique' : 'Désactivé — onglet Photo masqué côté boutique';
+    st.style.color  = enabled ? 'var(--success)' : 'var(--text3)';
+  }
+}
+
+async function loadAiPhotoStyles() {
+  const data = await api('/api/shop-settings/style');
+  _applyAiPhotoStylesToggle(!!(data && data.ai_photo_styles_enabled));
+}
+
+async function saveAiPhotoStyles() {
+  const tog = document.getElementById('ai-photo-styles-toggle');
+  const out = document.getElementById('ai-photo-styles-result');
+  const btn = document.getElementById('ai-photo-styles-save-btn');
+  const enabled = !!(tog && tog.checked);
+  if (out) { out.textContent = '⏳ Sauvegarde…'; out.style.color = 'var(--text3)'; }
+  if (btn) btn.disabled = true;
+  const data = await api('/api/shop-settings/style', {
+    method: 'POST',
+    body:   JSON.stringify({ ai_photo_styles_enabled: enabled }),
+  });
+  if (btn) btn.disabled = false;
+  if (data?.ok) {
+    _applyAiPhotoStylesToggle(!!data.ai_photo_styles_enabled);
+    if (out) { out.textContent = '✅ Enregistré — visible côté boutique dans ~1 min'; out.style.color = 'var(--success)'; }
+    showToast('✅ Styles IA ' + (data.ai_photo_styles_enabled ? 'activés' : 'désactivés'));
   } else {
     if (out) { out.textContent = '❌ ' + (data?.error || 'Erreur inconnue'); out.style.color = 'var(--danger)'; }
   }

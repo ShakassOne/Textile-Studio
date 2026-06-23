@@ -42,25 +42,51 @@ function normalizeColor(v) {
   return s; // hex déjà validé en amont
 }
 
+// ── Flags booléens (stockés '1'/'0' dans la table settings) ─────────────────
+// Si la clé n'a jamais été écrite → on renvoie `defaultVal`.
+function readBoolSetting(shopId, key, defaultVal) {
+  const v = getSetting(shopId, key);
+  if (v === '' || v == null) return defaultVal;
+  return v === '1' || v === 'true';
+}
+function coerceBool(v) {
+  return v === true || v === 1 || v === '1' || v === 'true';
+}
+// Styles IA (Photo → Illustration) activés par défaut côté storefront.
+const AI_PHOTO_STYLES_DEFAULT = true;
+
 // ── GET /api/shop-settings/style — lecture admin ────────────────────────────
 router.get('/style', requireAuth, attachShopId, (req, res) => {
-  const bg = getSetting(req.shopId, 'cart_drawer_bg_color') || '';
   res.json({
-    cart_drawer_bg_color: bg,
+    cart_drawer_bg_color:    getSetting(req.shopId, 'cart_drawer_bg_color') || '',
+    ai_photo_styles_enabled: readBoolSetting(req.shopId, 'ai_photo_styles_enabled', AI_PHOTO_STYLES_DEFAULT),
   });
 });
 
 // ── POST /api/shop-settings/style — écriture admin ──────────────────────────
+// Ne met à jour que les champs présents dans le body (mise à jour partielle),
+// pour qu'enregistrer le toggle n'écrase pas la couleur et inversement.
 router.post('/style', requireAuth, attachShopId, express.json(), (req, res) => {
-  const { cart_drawer_bg_color } = req.body || {};
-  if (!isValidColor(cart_drawer_bg_color)) {
-    return res.status(400).json({
-      error: 'Couleur invalide — doit être vide, "transparent" ou un hex (#000, #000000, #00000000)',
-    });
+  const body = req.body || {};
+
+  if ('cart_drawer_bg_color' in body) {
+    if (!isValidColor(body.cart_drawer_bg_color)) {
+      return res.status(400).json({
+        error: 'Couleur invalide — doit être vide, "transparent" ou un hex (#000, #000000, #00000000)',
+      });
+    }
+    setSetting(req.shopId, 'cart_drawer_bg_color', normalizeColor(body.cart_drawer_bg_color));
   }
-  const normalized = normalizeColor(cart_drawer_bg_color);
-  setSetting(req.shopId, 'cart_drawer_bg_color', normalized);
-  res.json({ ok: true, cart_drawer_bg_color: normalized });
+
+  if ('ai_photo_styles_enabled' in body) {
+    setSetting(req.shopId, 'ai_photo_styles_enabled', coerceBool(body.ai_photo_styles_enabled) ? '1' : '0');
+  }
+
+  res.json({
+    ok: true,
+    cart_drawer_bg_color:    getSetting(req.shopId, 'cart_drawer_bg_color') || '',
+    ai_photo_styles_enabled: readBoolSetting(req.shopId, 'ai_photo_styles_enabled', AI_PHOTO_STYLES_DEFAULT),
+  });
 });
 
 // ── GET /api/shop-settings/style/public — consommé par tl-modal.js ──────────
@@ -72,14 +98,16 @@ router.get('/style/public', (req, res) => {
   res.set('Cache-Control', 'public, max-age=60'); // 1 min de cache CDN/browser
   const shopDomain = String(req.query.shop || '').toLowerCase().trim();
   if (!shopDomain) {
-    return res.json({ cart_drawer_bg_color: '' });
+    return res.json({ cart_drawer_bg_color: '', ai_photo_styles_enabled: AI_PHOTO_STYLES_DEFAULT });
   }
   const shopId = getShopIdByDomain(shopDomain);
   if (!shopId) {
-    return res.json({ cart_drawer_bg_color: '' });
+    return res.json({ cart_drawer_bg_color: '', ai_photo_styles_enabled: AI_PHOTO_STYLES_DEFAULT });
   }
-  const bg = getSetting(shopId, 'cart_drawer_bg_color') || '';
-  res.json({ cart_drawer_bg_color: bg });
+  res.json({
+    cart_drawer_bg_color:    getSetting(shopId, 'cart_drawer_bg_color') || '',
+    ai_photo_styles_enabled: readBoolSetting(shopId, 'ai_photo_styles_enabled', AI_PHOTO_STYLES_DEFAULT),
+  });
 });
 
 // Pré-vol CORS

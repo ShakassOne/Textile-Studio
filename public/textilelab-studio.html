@@ -3083,7 +3083,7 @@
         <span>IA</span>
       </button>
 
-      <button class="m-tool-card" onclick="closeDrawer();openPhotoModal()" style="display:none">
+      <button class="m-tool-card" id="mtool-photo" onclick="closeDrawer();openPhotoModal()" style="display:none">
         <div class="m-tool-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="26" height="26"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
         </div>
@@ -6462,6 +6462,17 @@ function toggleLockLayer(i) {
 // ============================================
 // TABS
 // ============================================
+// Révèle l'onglet Photo → Illustration (styles IA) — masqué par défaut, affiché
+// seulement si le marchand a activé le flag (cf. init storefront).
+function _revealPhotoStylesUI() {
+  const desktopTab = document.querySelector('.tab-btn[data-tab="photo"]');
+  if (desktopTab) desktopTab.style.display = '';
+  const bnav = document.getElementById('bnav-photo');
+  if (bnav) bnav.style.display = '';
+  const mcard = document.getElementById('mtool-photo');
+  if (mcard) mcard.style.display = '';
+}
+
 function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === `tab-${tab}`));
@@ -8614,6 +8625,14 @@ function init() {
       // Masquer le bouton "Générer visuels produit" (admin seulement)
       const _btnGen = document.getElementById('btn-gen-visuals');
       if (_btnGen) _btnGen.style.display = 'none';
+
+      // ── Styles IA (Photo → Illustration) : activés/désactivés par le marchand
+      // (toggle admin → GET /api/shop-settings/style/public). On révèle l'onglet
+      // Photo (desktop + mobile) uniquement si le marchand l'a activé.
+      fetch(`${window.location.origin}/api/shop-settings/style/public?shop=${encodeURIComponent(window._TL_SHOP)}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(cfg => { if (cfg && cfg.ai_photo_styles_enabled) _revealPhotoStylesUI(); })
+        .catch(() => {});
     }
 
     loadShopifyProductLinks();
