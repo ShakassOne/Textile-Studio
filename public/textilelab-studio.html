@@ -4692,6 +4692,7 @@ async function refreshResolvedProductPrice() {
     const j = r.ok ? await r.json() : null;
     if (j && Number.isFinite(Number(j.variant_price))) {
       _shopifyBasePriceByRef[ref] = Number(j.variant_price);
+      updatePrice(); // rafraîchit l'affichage (sinon il reste sur le fallback codé en dur)
     }
   } catch(e) {}
 }
@@ -4718,6 +4719,7 @@ async function prefetchLinkedProductPrices() {
   }));
   // Re-render le panneau avec les prix maintenant dispos
   renderProductsPanel();
+  updatePrice(); // rafraîchit le prix affiché une fois la base Shopify connue
 }
 
 function _tlShowProductThumb(url) {
