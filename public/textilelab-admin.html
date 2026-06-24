@@ -2420,7 +2420,14 @@ function _renderProductLinks() {
             <span class="pl-save-indicator" id="pl-ind-${_pid2id(pid)}">✓</span>
           </div>
         </td>
-        <td id="pl-status-${_pid2id(pid)}">${statusHtml}</td>
+        <td id="pl-status-${_pid2id(pid)}">
+          ${statusHtml}
+          <div style="margin-top:6px">
+            <button class="btn btn-sm pl-prep-btn" data-pid="${_esc(String(pid))}"
+              title="Ajoute l'option « Impression » (masquée sur la fiche) pour la tarification à la volée"
+              onclick="_plPrepareCustomization(this)">✨ Activer perso tarifée</button>
+          </div>
+        </td>
       </tr>`;
   }).join('');
 
@@ -2437,6 +2444,31 @@ function _esc(s) {
 function _pid2id(pid) {
   // Transforme un GID Shopify en un ID CSS safe: "gid://shopify/Product/123" → "sp_123"
   return 'sp_' + String(pid).replace(/[^a-zA-Z0-9]/g, '_');
+}
+
+// Active la personnalisation tarifée : ajoute l'option « Impression » au produit
+// (masquée sur la fiche par tl-modal.js ; les variantes pré-tarifées sont créées
+// à la volée au moment de l'ajout au panier).
+async function _plPrepareCustomization(btn) {
+  const pid = btn.getAttribute('data-pid');
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = '⏳ Activation…';
+  try {
+    const r = await api('/api/shopify/prepare-customization', {
+      method: 'POST',
+      body:   JSON.stringify({ product_id: pid }),
+    });
+    if (r && r.ok) {
+      btn.textContent = r.already ? '✓ Déjà activé' : '✓ Activé';
+      showToast(r.already ? '✓ Produit déjà activé' : '✅ Personnalisation tarifée activée');
+    } else {
+      btn.disabled = false; btn.textContent = old;
+      showToast('❌ ' + ((r && r.error) || 'Échec de l\'activation'));
+    }
+  } catch (e) {
+    btn.disabled = false; btn.textContent = old;
+    showToast('❌ ' + (window.__TL_LAST_API_ERROR || e.message || 'Échec de l\'activation'));
+  }
 }
 
 async function _onPlChange(sel) {

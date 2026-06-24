@@ -870,6 +870,30 @@
       .catch(function() { _tlRevealCtas(btns); }); // fail-open
   }
 
+  // ── Masquage de l'option « Impression » sur la fiche produit ────────────────
+  // L'option porte les variantes pré-tarifées (prix d'impression inclus). Le
+  // client ne doit PAS la voir ni la choisir sur la fiche — il passe par le
+  // studio. Best-effort multi-thèmes : on masque le bloc d'option dont le
+  // libellé/legend commence par « Impression ». La variante par défaut reste
+  // « Sans impression » (prix de base) → fiche produit normale.
+  function _tlHidePrintOption() {
+    try {
+      var RE = /^\s*impression\b/i;
+      var nodes = document.querySelectorAll(
+        'fieldset legend, .product-form__input > label, .product-form__input legend, label, .form__label'
+      );
+      for (var i = 0; i < nodes.length; i++) {
+        var el = nodes[i];
+        if (!RE.test(el.textContent || '')) continue;
+        var box = el.closest('.product-form__input')
+               || el.closest('fieldset')
+               || (el.parentElement && (el.parentElement.querySelector('select, input, .select')
+                    ? el.parentElement : null));
+        if (box) box.style.display = 'none';
+      }
+    } catch (e) { /* silencieux */ }
+  }
+
   // ── Init ────────────────────────────────────────────────────────────────────
   function init() {
     injectDOM();
@@ -879,6 +903,10 @@
     _tlInitCartSync();
     _tlLoadStyleSettings();
     _tlGatePersonaliseButtons();
+    _tlHidePrintOption();
+    // Les sélecteurs de variante peuvent se rendre tardivement (thèmes JS).
+    setTimeout(_tlHidePrintOption, 800);
+    setTimeout(_tlHidePrintOption, 2000);
   }
 
   // ── Synchronisation persistante des images du panier ───────────────────────

@@ -557,6 +557,61 @@ async function fetchAdminVariantById(shopRecord, variantId) {
   return j.variant || null;
 }
 
+// Admin GraphQL (2025-01) — utilisé pour ajouter l'option « Impression » à un
+// produit (productOptionsCreate, indispo en REST 2024-01). Lance en cas d'erreur.
+async function adminGraphQL(shopRecord, query, variables) {
+  const r = await fetch(
+    `https://${shopRecord.shop_domain}/admin/api/2025-01/graphql.json`,
+    {
+      method: 'POST',
+      headers: {
+        'X-Shopify-Access-Token': shopRecord.access_token,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query, variables }),
+    }
+  );
+  const j = await r.json().catch(() => null);
+  if (!r.ok) { const e = new Error('Admin GraphQL HTTP ' + r.status); e.status = r.status; throw e; }
+  if (j && j.errors) throw new Error(j.errors.map(e => e.message).join(', '));
+  return j ? j.data : null;
+}
+
+// Admin REST : crée une variante pré-tarifée (taille de base + palier d'impression).
+// ADDITIF — ne modifie jamais les variantes existantes. La valeur d'option
+// « Impression » (ex « +4,00 € ») est ajoutée automatiquement par Shopify si
+// elle n'existe pas encore. Lance une erreur (.status) en cas d'échec.
+async function createPricedVariant(shopRecord, product, baseVariant, printPos, wantLabel, price) {
+  const variant = { price: Number(price).toFixed(2) };
+  for (const i of [1, 2, 3]) {
+    if (i === printPos) variant['option' + i] = wantLabel;
+    else if (baseVariant['option' + i] != null) variant['option' + i] = baseVariant['option' + i];
+  }
+  // Hérite des propriétés logistiques de la variante de base.
+  variant.taxable           = baseVariant.taxable !== false;
+  variant.requires_shipping = baseVariant.requires_shipping !== false;
+  if (baseVariant.weight != null) { variant.weight = baseVariant.weight; variant.weight_unit = baseVariant.weight_unit; }
+  if (baseVariant.sku) variant.sku = baseVariant.sku;
+  // Pas de suivi de stock sur la dimension « Impression » → toujours achetable.
+  variant.inventory_management = null;
+  variant.inventory_policy     = 'continue';
+
+  const r = await fetch(
+    `https://${shopRecord.shop_domain}/admin/api/2024-01/products/${encodeURIComponent(product.id)}/variants.json`,
+    {
+      method: 'POST',
+      headers: { 'X-Shopify-Access-Token': shopRecord.access_token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ variant }),
+    }
+  );
+  const j = await r.json().catch(() => null);
+  if (!r.ok) {
+    const msg = j && j.errors ? JSON.stringify(j.errors) : ('HTTP ' + r.status);
+    const e = new Error(msg); e.status = r.status; throw e;
+  }
+  return j.variant;
+}
+
 const _numId = (v) => String(v || '').replace(/^gid:\/\/shopify\/ProductVariant\//, '').trim();
 
 /**
@@ -614,29 +669,31 @@ async function resolveVariantForCustomization(p) {
       : null,
   };
 
-  // ── STRATÉGIE A : option de variante « Impression » sur le produit ──────────
-  if (product && Array.isArray(product.options) && baseVariant) {
-    const printOpt = product.options.find(o => PRINT.isPrintOptionName(o.name));
-    if (printOpt) {
-      const pos  = printOpt.position; // 1..3
-      const want = PRINT.norm(wantLabel);
-      // Mêmes valeurs sur les AUTRES positions que la variante de base,
-      // et la position « Impression » dont la valeur == montant voulu.
-      const match = (product.variants || []).find(v => {
-        for (const i of [1, 2, 3]) {
-          if (i === pos) {
-            if (PRINT.norm(v['option' + i]) !== want) return false;
-          } else {
-            if ((v['option' + i] || null) !== (baseVariant['option' + i] || null)) return false;
-          }
+  // Option « Impression » du produit (présente si le produit a été préparé).
+  const printOpt = (product && Array.isArray(product.options))
+    ? product.options.find(o => PRINT.isPrintOptionName(o.name))
+    : null;
+  if (printOpt) detail.print_option = printOpt.name;
+
+  // ── STRATÉGIE A : variante existante avec la bonne valeur d'option ──────────
+  if (printOpt && baseVariant) {
+    const pos  = printOpt.position; // 1..3
+    const want = PRINT.norm(wantLabel);
+    // Mêmes valeurs sur les AUTRES positions que la variante de base,
+    // et la position « Impression » dont la valeur == montant voulu.
+    const match = (product.variants || []).find(v => {
+      for (const i of [1, 2, 3]) {
+        if (i === pos) {
+          if (PRINT.norm(v['option' + i]) !== want) return false;
+        } else {
+          if ((v['option' + i] || null) !== (baseVariant['option' + i] || null)) return false;
         }
-        return true;
-      });
-      if (match) {
-        return { ok: true, variant_id: String(match.id), price: Number(match.price),
-                 source: 'option', amount, option_value: wantLabel };
       }
-      detail.print_option = printOpt.name;
+      return true;
+    });
+    if (match) {
+      return { ok: true, variant_id: String(match.id), price: Number(match.price),
+               source: 'option', amount, option_value: wantLabel };
     }
   }
 
@@ -655,12 +712,42 @@ async function resolveVariantForCustomization(p) {
     return { ok: true, variant_id: finalId, price, source: 'mapping', amount };
   }
 
+  // ── STRATÉGIE C : AUTO-CRÉATION de la variante pré-tarifée (additif) ────────
+  // Le produit a une option « Impression » mais la combinaison (taille + montant)
+  // n'existe pas encore → on la crée (prix = base + surcharge) et on la mémorise
+  // dans le mapping pour réutilisation directe. N'altère jamais l'existant.
+  if (printOpt && baseVariant && shopRecord && shopRecord.access_token) {
+    const base = Number(baseVariant.price);
+    if (Number.isFinite(base)) {
+      const finalPrice = Math.round((base + amount) * 100) / 100;
+      try {
+        const created = await createPricedVariant(shopRecord, product, baseVariant, printOpt.position, wantLabel, finalPrice);
+        if (created && created.id) {
+          const m2 = readVariantMapping(shopId);
+          m2[key] = String(created.id);
+          writeVariantMapping(shopId, m2);
+          console.info('[resolve-variant] variante créée', { product_id: productId, base_variant_id: baseVariantId, amount, label: wantLabel, variant_id: created.id });
+          return { ok: true, variant_id: String(created.id), price: Number(created.price), source: 'created', amount };
+        }
+      } catch (e) {
+        console.warn('[resolve-variant] auto-création échouée:', e.status || '', e.message);
+        if (e.status === 401 || e.status === 403) {
+          return { ok: false, needs_setup: true,
+            error: 'Création de variante refusée (scope write_products requis).', detail };
+        }
+        // autre erreur → on tombe dans le 409 générique ci-dessous
+      }
+    }
+  }
+
   // ── ÉCHEC : aucune variante → erreur claire + log détaillé ─────────────────
   console.warn('[resolve-variant] AUCUNE variante pour combinaison :', JSON.stringify(detail));
   return {
     ok: false,
     needs_setup: true,
-    error: 'Cette combinaison taille / impression n\'est pas encore configurée.',
+    error: printOpt
+      ? 'Cette combinaison taille / impression n\'est pas encore configurée.'
+      : 'Ce produit n\'est pas activé pour la personnalisation tarifée (option « Impression » absente).',
     detail,
   };
 }
@@ -747,6 +834,63 @@ router.post('/variant-mapping', requireAuth, attachShopId, (req, res) => {
     return res.json({ saved: true, mapping });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/shopify/prepare-customization (admin) ──────────────────────────
+// Active la personnalisation tarifée sur un produit : ajoute l'option
+// « Impression » (valeur « Sans impression ») si absente. SEULE modif
+// structurelle, déclenchée explicitement par le marchand (jamais au checkout).
+// Les variantes existantes sont conservées (variantStrategy LEAVE_AS_IS) et
+// reçoivent la valeur « Sans impression » → prix de base inchangé.
+const _MUT_ADD_PRINT_OPTION = `
+  mutation tlAddPrintOption($productId: ID!, $options: [OptionCreateInput!]!) {
+    productOptionsCreate(productId: $productId, options: $options, variantStrategy: LEAVE_AS_IS) {
+      userErrors { field message code }
+      product { id options { name } }
+    }
+  }`;
+
+router.post('/prepare-customization', requireAuth, attachShopId, async (req, res) => {
+  try {
+    const shopId = req.shopId;
+    if (!shopId) return res.status(400).json({ error: 'Boutique introuvable' });
+    const shopRecord = getShopRecord(shopId);
+    if (!shopRecord?.access_token) {
+      return res.status(503).json({ error: 'Boutique non installée (OAuth requis)' });
+    }
+    const productId = String(req.body?.product_id || '')
+      .replace(/^gid:\/\/shopify\/Product\//, '').trim();
+    if (!/^\d+$/.test(productId)) {
+      return res.status(400).json({ error: 'product_id invalide (ID numérique attendu)' });
+    }
+
+    const product = await fetchAdminProductById(shopRecord, productId);
+    if (!product) return res.status(404).json({ error: 'Produit introuvable' });
+
+    // Déjà activé ?
+    const existing = (product.options || []).find(o => PRINT.isPrintOptionName(o.name));
+    if (existing) return res.json({ ok: true, already: true, option: existing.name });
+
+    // Shopify : 3 options max par produit.
+    if ((product.options || []).length >= 3) {
+      return res.status(409).json({
+        error: 'Le produit a déjà 3 options (max Shopify) — impossible d\'ajouter « Impression ».',
+      });
+    }
+
+    const data = await adminGraphQL(shopRecord, _MUT_ADD_PRINT_OPTION, {
+      productId: `gid://shopify/Product/${productId}`,
+      options: [{ name: 'Impression', values: [{ name: 'Sans impression' }] }],
+    });
+    const ue = data?.productOptionsCreate?.userErrors || [];
+    if (ue.length) return res.status(422).json({ error: ue.map(e => e.message).join(', ') });
+
+    return res.json({ ok: true, created: true });
+  } catch (err) {
+    console.error('prepare-customization error:', err.status || '', err.message);
+    const needs_setup = err.status === 401 || err.status === 403 || /access|scope|403|401/i.test(err.message);
+    return res.status(needs_setup ? 409 : 500).json({ error: err.message, needs_setup });
   }
 });
 
