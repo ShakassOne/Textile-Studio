@@ -270,6 +270,28 @@
       .catch(function() {});
   }
 
+  // ── Section Rendering API : id de la section du drawer panier ───────────────
+  // Permet de demander à Shopify le HTML frais du drawer lors de /cart/add, et
+  // de l'injecter → le produit apparaît dès la 1re ouverture (fini le "2 fois").
+  function _tlCartDrawerSectionId() {
+    var el = document.querySelector(
+      'cart-drawer-component, cart-drawer, #CartDrawer, #cart-drawer, .cart-drawer, .drawer--cart'
+    );
+    var sec = el && el.closest ? el.closest('.shopify-section') : null;
+    if (sec && sec.id) return sec.id.replace(/^shopify-section-/, '');
+    if (document.getElementById('shopify-section-cart-drawer')) return 'cart-drawer';
+    return null;
+  }
+  function _tlInjectSectionHTML(sectionId, html) {
+    try {
+      var wrap = document.getElementById('shopify-section-' + sectionId);
+      if (!wrap || !html) return;
+      var parsed = new DOMParser().parseFromString(html, 'text/html');
+      var fresh  = parsed.getElementById('shopify-section-' + sectionId);
+      wrap.innerHTML = fresh ? fresh.innerHTML : (parsed.body ? parsed.body.innerHTML : wrap.innerHTML);
+    } catch (e) { /* silencieux — on garde l'ancien contenu */ }
+  }
+
   // ── Ouverture du drawer panier natif du thème ───────────────────────────────
   function _tlOpenCartDrawer() {
     document.documentElement.dispatchEvent(new CustomEvent('cart:open', { bubbles: true }));
@@ -646,24 +668,33 @@
             // UNE SEULE LIGNE : le prix d'impression est inclus dans la variante.
             // (Le modèle « 2e ligne Frais d'impression » a été supprimé — CDC juin 2026.)
             var _items = [{ id: parseInt(_vid, 10), quantity: _qty, properties: _props }];
+            // Section Rendering API : on demande le HTML frais du drawer pour
+            // qu'il s'affiche rempli dès la 1re ouverture.
+            var _sectionId = _tlCartDrawerSectionId();
+            var _addBody = { items: _items };
+            if (_sectionId) { _addBody.sections = _sectionId; _addBody.sections_url = window.location.pathname; }
             fetch('/cart/add.json', {
               method:  'POST',
               headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-              body: JSON.stringify({ items: _items }),
+              body: JSON.stringify(_addBody),
             })
             .then(function(r) { return r.json(); })
-            .then(function() {
+            .then(function(data) {
               // Fermer le modal APRÈS succès
               closeModal();
 
-              // 1. Déclencher cart:update
+              // 1. Injecter le HTML frais du drawer (sinon il s'ouvre vide au 1er ajout)
+              if (_sectionId && data && data.sections && data.sections[_sectionId]) {
+                _tlInjectSectionHTML(_sectionId, data.sections[_sectionId]);
+              }
+              // Déclencher cart:update (compat thèmes qui écoutent l'event)
               document.dispatchEvent(new CustomEvent('cart:update', {
                 bubbles: true,
                 detail: { source: 'tl-modal', data: { sections: {} } }
               }));
 
-              // 2. Ouvrir le drawer via l'API du composant
-              var drawerEl = document.querySelector('cart-drawer-component');
+              // 2. Ouvrir le drawer via l'API du composant (re-query après injection)
+              var drawerEl = document.querySelector('cart-drawer-component, cart-drawer');
               if (drawerEl) {
                 if (typeof drawerEl.open === 'function')           { drawerEl.open(); }
                 else if (typeof drawerEl.showDialog === 'function') { drawerEl.showDialog(); }

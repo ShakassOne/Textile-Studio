@@ -8911,6 +8911,19 @@ async function loadProductCategories() {
     }
   });
 
+  // ── Front = uniquement les catégories créées en admin ──────────────────────
+  // Masquer les catégories codées en dur (tshirt/hoodie/cap/totebag) qui ne sont
+  // PAS définies côté admin → le front suit le back.
+  const adminKeys = new Set(cats.map(c => String(c.key)));
+  document.querySelectorAll('.product-item[data-product], .product-card[data-product]').forEach(el => {
+    el.style.display = adminKeys.has(el.dataset.product) ? '' : 'none';
+  });
+  // Si la catégorie active n'existe plus en admin, basculer sur la 1re dispo.
+  if (!adminKeys.has(STATE.product) && cats.length) {
+    const first = String(cats[0].key);
+    if (first && typeof selectProduct === 'function') selectProduct(first);
+  }
+
   updatePrice();
 }
 
