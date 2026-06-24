@@ -31,7 +31,19 @@ router.get('/', requireAuth, attachShopId, (req, res) => {
 });
 
 // ── GET /public — liste publique des liaisons (storefront) ─────────────────
+// PUBLIC + CORS large : appelé en cross-origin depuis le storefront (tl-modal.js)
+// pour n'afficher le bouton « Personnaliser » que sur les produits liés.
+// no-store : la prise/suppression de liaison en admin est reflétée immédiatement.
+router.options('/public', (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  res.sendStatus(204);
+});
 router.get('/public', attachShopId, (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.set('Cache-Control', 'no-store');
   const db = getDB();
   const links = db.prepare(`
     SELECT

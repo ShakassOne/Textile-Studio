@@ -812,6 +812,64 @@
     }
   }
 
+  // ── Gating du bouton « Personnaliser » selon les liaisons admin ─────────────
+  // Le block liquid rend le bouton masqué (display:none) sur le storefront.
+  // On interroge /api/product-links/public et on ne révèle que les produits
+  // LIÉS à un mockup en admin. Fail-open : en cas d'erreur réseau/API, on révèle
+  // tous les boutons pour ne jamais casser la perso d'un produit légitimement lié.
+  function _tlRevealCtas(btns) {
+    for (var i = 0; i < btns.length; i++) _tlCtaContainer(btns[i]).style.display = '';
+  }
+  // Conteneur à afficher/masquer pour un bouton donné (compat ancien + nouveau liquid).
+  function _tlCtaContainer(btn) {
+    return btn.closest('.tl-cta-block')
+        || btn.closest('[id^="tl-cta-"]')
+        || btn;
+  }
+  // Contexte produit : data-attributes (nouveau liquid) sinon params du href (ancien).
+  function _tlBtnProduct(btn) {
+    var box = btn.closest('[data-tl-product-id], [data-tl-product-handle]');
+    var pid = box ? (box.getAttribute('data-tl-product-id') || '') : '';
+    var ph  = box ? (box.getAttribute('data-tl-product-handle') || '') : '';
+    if (!pid && !ph) {
+      try {
+        var u = new URL(btn.getAttribute('href') || '', window.location.origin);
+        pid = u.searchParams.get('product_id') || '';
+        ph  = u.searchParams.get('product') || '';
+      } catch (e) { /* href non parsable → laissé vide */ }
+    }
+    return { pid: String(pid).trim(), ph: String(ph).trim().toLowerCase() };
+  }
+  function _tlGatePersonaliseButtons() {
+    var btns = document.querySelectorAll('.tl-personalise-btn');
+    if (!btns.length) return;
+    var shop = (window.Shopify && window.Shopify.shop)
+            || window._TL_SHOP
+            || window.location.hostname;
+    if (!shop) { _tlRevealCtas(btns); return; }
+    var url = TSL_BACKEND_ORIGIN
+            + '/api/product-links/public?shop=' + encodeURIComponent(shop)
+            + '&_=' + Date.now();
+    fetch(url, { credentials: 'omit', mode: 'cors' })
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(links) {
+        if (!Array.isArray(links)) { _tlRevealCtas(btns); return; } // fail-open
+        var ids = {}, handles = {};
+        links.forEach(function(l) {
+          if (l.shopify_product_id != null) ids[String(l.shopify_product_id)] = 1;
+          if (l.shopify_product_handle) handles[String(l.shopify_product_handle).toLowerCase()] = 1;
+        });
+        for (var i = 0; i < btns.length; i++) {
+          var p = _tlBtnProduct(btns[i]);
+          // Bouton générique (aucun produit ciblé) → on n'y touche pas.
+          if (!p.pid && !p.ph) { _tlCtaContainer(btns[i]).style.display = ''; continue; }
+          var linked = (p.pid && ids[p.pid]) || (p.ph && handles[p.ph]);
+          _tlCtaContainer(btns[i]).style.display = linked ? '' : 'none';
+        }
+      })
+      .catch(function() { _tlRevealCtas(btns); }); // fail-open
+  }
+
   // ── Init ────────────────────────────────────────────────────────────────────
   function init() {
     injectDOM();
@@ -820,6 +878,7 @@
     interceptTslButtons();
     _tlInitCartSync();
     _tlLoadStyleSettings();
+    _tlGatePersonaliseButtons();
   }
 
   // ── Synchronisation persistante des images du panier ───────────────────────

@@ -11,11 +11,14 @@
     2. API /api/product-links/by-product/{handle} → URL avec mockup lié (enrichie en JS)
     3. Sinon                                      → éditeur générique (produit pré-sélectionné par handle)
 
-  IMPORTANT : le bouton est TOUJOURS rendu — la liaison mockup ne fait
-  qu'enrichir l'URL. Il est ainsi visible dans l'éditeur de thème et sur
-  le storefront dès l'ajout du block, sans configuration préalable.
-  (Fix review Shopify 2.1.1 : l'ancienne version ne rendait rien sans
-  metafield ni liaison mockup → widget invisible sur un store de test.)
+  VISIBILITÉ : le block est toujours RENDU dans le DOM, mais masqué par
+  défaut sur le storefront (style display:none). tl-modal.js interroge
+  /api/product-links/public et n'affiche le bouton que sur les produits
+  LIÉS à un mockup en admin (data-tl-product-id / data-tl-product-handle).
+  En mode éditeur de thème (request.design_mode), il reste TOUJOURS visible
+  pour que le marchand puisse poser/voir le block (et pour la review Shopify).
+  Sécurité : si l'API échoue, tl-modal.js révèle quand même les boutons
+  (fail-open) → on ne casse jamais la perso sur un produit lié.
 
   Usage "bouton libre" (hors block) — collez n'importe où dans votre thème :
     <a data-tsl-open="{{ product.handle }}" class="button">🎨 Personnaliser</a>
@@ -37,7 +40,14 @@
   {%- endcapture -%}
 {%- endif -%}
 
-<div id="tl-cta-{{ product.id | default: 'generic' }}" {{ block.shopify_attributes }}>
+<div
+  id="tl-cta-{{ product.id | default: 'generic' }}"
+  class="tl-cta-block"
+  data-tl-product-id="{{ product.id }}"
+  data-tl-product-handle="{{ product.handle }}"
+  {%- unless request.design_mode %} style="display:none;"{%- endunless -%}
+  {{ block.shopify_attributes }}
+>
   <a
     href="{{ tl_editor_url | strip }}"
     class="button tl-personalise-btn"
