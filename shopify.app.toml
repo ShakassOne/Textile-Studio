@@ -38,11 +38,14 @@ subpath = "textilelab"
 prefix = "apps"
 
 [access_scopes]
-# Audit B7 — principe du moindre privilège : write_products/write_orders/read_customers retirés
-# write_products : non utilisé dans le flow merchant principal (feature admin optionnelle)
-# write_orders   : aucune mutation order dans le code
-# read_customers : non nécessaire, Shopify fournit l'email dans le payload GDPR directement
-scopes = "read_products,read_orders"
+# write_products (rétabli 06/2026) : REQUIS par la personnalisation tarifée —
+#   l'app ajoute une option « Impression » et crée des variantes pré-tarifées
+#   (surcharge d'impression incluse) pour garder UNE seule ligne panier au prix
+#   exact, sans Shopify Plus. Cf. routes/storefront.js (prepare-customization +
+#   resolveVariantForCustomization, stratégie C).
+# write_orders   : aucune mutation order dans le code → non demandé.
+# read_customers : non nécessaire, Shopify fournit l'email dans le payload GDPR.
+scopes = "read_products,read_orders,write_products"
 
 [auth]
 redirect_urls = [
