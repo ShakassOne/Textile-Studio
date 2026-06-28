@@ -884,7 +884,10 @@
     fetch(url, { credentials: 'omit', mode: 'cors' })
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(links) {
-        if (!Array.isArray(links)) { _tlRevealCtas(btns); return; } // fail-open
+        // fail-open : erreur API OU boutique sans AUCUNE liaison (install fraîche /
+        // store de review Shopify) → on affiche les boutons pour ne pas paraître
+        // cassé. Le gating ne s'active que dès qu'au moins un produit est lié.
+        if (!Array.isArray(links) || links.length === 0) { _tlRevealCtas(btns); return; }
         var ids = {}, handles = {};
         links.forEach(function(l) {
           if (l.shopify_product_id != null) ids[String(l.shopify_product_id)] = 1;
