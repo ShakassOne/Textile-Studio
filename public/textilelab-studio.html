@@ -5631,11 +5631,14 @@ function _downscaleDataURL(dataUrl, maxDim = 2000) {
 }
 
 function handleImageUpload(e) {
-  const file = e.target.files[0];
+  const input = e.target;
+  const file = input.files[0];
   if (!file) return;
   const reader = new FileReader();
   reader.onload = async (ev) => {
     const src = await _downscaleDataURL(ev.target.result, 2000);
+    // Réutilisable le temps de la session : l'ajouter à la bibliothèque.
+    _addSessionUpload(src, file.name);
     fabric.Image.fromURL(src, (img) => {
       const maxW = canvas.getWidth() * 0.7;
       const maxH = canvas.getHeight() * 0.7;
@@ -5658,6 +5661,9 @@ function handleImageUpload(e) {
     });
   };
   reader.readAsDataURL(file);
+  // Réinitialise l'input : sans ça, re-sélectionner le MÊME fichier (ex. même
+  // logo sur recto puis verso) ne déclenche pas 'change' → rien ne se passe.
+  input.value = '';
 }
 
 // ── Suppression fond avec slider inline ──────────────────────────────
@@ -9111,7 +9117,23 @@ async function loadPricingFromAPI() {
 // LIBRARY — Bibliothèque images
 // ============================================
 let _libraryItems = [];
+let _sessionUploads = []; // visuels uploadés par le client, réutilisables le temps de la session
 let _libCat = ''; // sera défini par la première catégorie chargée
+
+// Ajoute un visuel uploadé à la bibliothèque de session (en tête), dédupliqué.
+function _addSessionUpload(url, name) {
+  if (!url) return;
+  if (_sessionUploads.some(u => u.url === url)) return;
+  _sessionUploads.unshift({
+    id: '__session_' + Date.now(),
+    url, thumb_url: url,
+    category: '__session__',
+    filename: name || 'Mon import',
+    __isUserAi: true,        // → renderLibraryGrid utilise l'URL brute (dataURL), sans API_BASE
+    __isSessionUpload: true,
+  });
+  try { renderLibraryGrid(_libCat); } catch (_) {}
+}
 
 async function loadLibrary() {
   const status = document.getElementById('lib-status');
@@ -9205,9 +9227,11 @@ function filterLibrary(cat) {
 function renderLibraryGrid(cat) {
   const grid = document.getElementById('lib-grid');
   if (!grid) return;
-  const items = (cat === 'all' || !cat)
+  const base = (cat === 'all' || !cat)
     ? _libraryItems
     : _libraryItems.filter(i => i.category === cat);
+  // Les visuels uploadés dans la session s'affichent toujours en tête (toutes catégories).
+  const items = _sessionUploads.concat(base);
 
   if (!items.length) {
     grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--text3);font-size:11px">
