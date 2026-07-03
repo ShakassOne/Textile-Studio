@@ -852,6 +852,22 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
           <!-- Peuplé dynamiquement par _populateProductSelect() -->
         </select>
       </div>
+      <div class="field-group">
+        <div class="field-label">Couleurs du textile disponibles</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.5">
+          Nuancier proposé au client dans le studio pour CE mockup (couleurs réelles du produit).
+          Laissez vide pour la palette générique (36 couleurs).
+        </div>
+        <div id="m-colors-list" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <input type="color" id="m-color-pick" value="#ffffff"
+            style="width:42px;height:34px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);padding:2px;cursor:pointer">
+          <input type="text" id="m-color-name" placeholder="Nom (ex: Blanc)" maxlength="40"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();addMockupColor();}"
+            style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-size:12px;outline:none;width:150px">
+          <button class="btn btn-sm" type="button" onclick="addMockupColor()">+ Ajouter</button>
+        </div>
+      </div>
       <div class="field-label">Vues disponibles</div>
       <div class="views-section">
         <div class="views-header">
@@ -1940,10 +1956,45 @@ function renderMockupCards() {
 }
 
 function openNewMockup() {
-  ED = {id:null,_apiId:null,name:'',product:'tshirt',views:[],file3d:null,activeViewIdx:0};
+  ED = {id:null,_apiId:null,name:'',product:'tshirt',views:[],colors:[],file3d:null,activeViewIdx:0};
   addView('Face avant');
   populateMockupModal();
   openMockupModal('Nouveau mockup');
+}
+
+// ── Nuancier du mockup (couleurs textile réelles du produit) ────────────────
+function renderMockupColors() {
+  const list = document.getElementById('m-colors-list');
+  if (!list) return;
+  const colors = Array.isArray(ED.colors) ? ED.colors : [];
+  if (!colors.length) {
+    list.innerHTML = '<span style="font-size:11px;color:var(--text3)">Aucune — palette générique utilisée</span>';
+    return;
+  }
+  list.innerHTML = colors.map((c, i) => `
+    <span title="Cliquer pour retirer" onclick="removeMockupColor(${i})"
+      style="display:inline-flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:3px 10px 3px 4px;font-size:11px;color:var(--text2);cursor:pointer">
+      <span style="width:18px;height:18px;border-radius:50%;background:${c.hex};border:1px solid var(--border);flex-shrink:0"></span>
+      ${escapeHtml(c.name || c.hex)} ✕
+    </span>`).join('');
+}
+
+function addMockupColor() {
+  const pick = document.getElementById('m-color-pick');
+  const nameEl = document.getElementById('m-color-name');
+  const hex = String(pick?.value || '').toLowerCase();
+  if (!/^#[0-9a-f]{6}$/.test(hex)) return;
+  if (!Array.isArray(ED.colors)) ED.colors = [];
+  if (ED.colors.some(c => c.hex === hex)) { showToast('Couleur déjà dans la liste'); return; }
+  ED.colors.push({ name: (nameEl?.value || '').trim().slice(0, 40), hex });
+  if (nameEl) nameEl.value = '';
+  renderMockupColors();
+}
+
+function removeMockupColor(i) {
+  if (!Array.isArray(ED.colors)) return;
+  ED.colors.splice(i, 1);
+  renderMockupColors();
 }
 
 function editMockup(id) {
@@ -1983,6 +2034,7 @@ function _populateProductSelect(selectedKey) {
 function populateMockupModal() {
   document.getElementById('m-name').value = ED.name;
   _populateProductSelect(ED.product);
+  renderMockupColors();
   // Afficher le nom du GLB existant s'il y en a un
   const glbEl = document.getElementById('file-3d-label');
   if (glbEl) {
@@ -2207,6 +2259,7 @@ async function saveMockup() {
 
   // Payload JSON sans le blob GLB (trop gros)
   const payload={name:ED.name, product:ED.product, views:ED.views,
+    colors: Array.isArray(ED.colors)?ED.colors:[],
     file3d_name: ED.file3d?.name||'', file3d_url: ED._existingGlbUrl||''};
 
   let saved=null;

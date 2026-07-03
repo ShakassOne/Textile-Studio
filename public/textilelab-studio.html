@@ -2772,18 +2772,20 @@
 
       <!-- TAB: COLOR -->
       <div class="tab-content" id="tab-color">
-        <div class="tool-section">
+        <!-- Picker libre — masqué quand le mockup définit son propre nuancier
+             (le client ne doit choisir que parmi les couleurs réelles du produit) -->
+        <div class="tool-section" id="custom-color-section">
           <div class="tool-section-title">Couleur du textile</div>
           <div class="color-row" style="margin-bottom:12px">
             <input type="color" id="textile-color" value="#FFFFFF" oninput="updateTextileColor(this.value); syncColorFromHex('textile')">
             <input type="text" class="hex-input" id="textile-hex" value="#FFFFFF" oninput="syncColorFromHex('textile')">
           </div>
-          <!-- swatch et label conservés en hidden pour la compatibilité JS (updateTextileColor les met à jour) -->
-          <div id="textile-swatch" style="display:none;width:60px;height:60px;border-radius:50%;background:#fff"></div>
-          <div style="display:none;font-size:10px" id="textile-hex-label">#FFFFFF</div>
         </div>
+        <!-- swatch et label conservés en hidden pour la compatibilité JS (updateTextileColor les met à jour) -->
+        <div id="textile-swatch" style="display:none;width:60px;height:60px;border-radius:50%;background:#fff"></div>
+        <div style="display:none;font-size:10px" id="textile-hex-label">#FFFFFF</div>
         <div class="tool-section">
-          <div class="tool-section-title">Palette textile (36 couleurs)</div>
+          <div class="tool-section-title" id="palette-title">Palette textile (36 couleurs)</div>
           <div class="palette-grid" id="color-palette"></div>
         </div>
       </div>
@@ -3451,7 +3453,6 @@ const TOPTEX_COLORS = [
   { name: 'Chocolate',      hex: '#4A2C18' },
 ];
 
-const PALETTE = TOPTEX_COLORS.map(c => c.hex);
 
 // ============================================
 // CANVAS SETUP
@@ -5009,6 +5010,8 @@ function applyMockup(productKey, viewIdx, mockupIdx, userAction = false) {
 
   STATE_mockup = allMockups[_STATE_mockupIdx] || null;
   const _newMockupId = STATE_mockup?.id ?? null;
+  // Nuancier du mockup (couleurs réelles du produit, définies en admin)
+  try { _setPaletteForMockup(STATE_mockup); } catch (_) {}
   _syncResolvedProductHandle();
   // Panneau "Produits disponibles" : on ne le ré-ouvre QUE sur une action
   // utilisateur qui change réellement de mockup (ou de type de produit).
@@ -5802,11 +5805,42 @@ function bfsRemoveBg(imageData, tolerance) {
 // ============================================
 // COLOR TOOL
 // ============================================
+// Palette active : nuancier du mockup courant (admin) sinon les 36 génériques.
+let _activePalette = TOPTEX_COLORS.slice();
+
 function initPalette() {
   const grid = document.getElementById('color-palette');
-  grid.innerHTML = TOPTEX_COLORS.map(c =>
-    `<div class="swatch" style="background:${c.hex}" onclick="selectPaletteColor('${c.hex}')" title="${c.name} — ${c.hex}"></div>`
+  grid.innerHTML = _activePalette.map(c =>
+    `<div class="swatch" style="background:${c.hex}" onclick="selectPaletteColor('${c.hex}')" title="${(c.name || c.hex)} — ${c.hex}"></div>`
   ).join('');
+}
+
+// Applique le nuancier du mockup (colors_json admin). Liste vide/absente →
+// palette générique + picker libre. Nuancier défini → seules CES couleurs,
+// picker libre masqué, et bascule sur la 1re couleur si l'actuelle n'y est pas.
+function _setPaletteForMockup(mockup) {
+  const colors = Array.isArray(mockup?.colors)
+    ? mockup.colors.filter(c => c && /^#[0-9a-fA-F]{3,6}$/.test(String(c.hex || '')))
+    : [];
+  const restricted = colors.length > 0;
+  const next = restricted ? colors : TOPTEX_COLORS;
+
+  const changed = next.length !== _activePalette.length
+    || next.some((c, i) => c.hex !== _activePalette[i]?.hex);
+  _activePalette = next.slice();
+  if (changed) initPalette();
+
+  const customSection = document.getElementById('custom-color-section');
+  if (customSection) customSection.style.display = restricted ? 'none' : '';
+  const title = document.getElementById('palette-title');
+  if (title) title.textContent = restricted
+    ? `Couleurs disponibles (${_activePalette.length})`
+    : 'Palette textile (36 couleurs)';
+
+  // Couleur courante indisponible sur ce produit → prendre la 1re du nuancier.
+  if (restricted && !_activePalette.some(c => c.hex.toLowerCase() === String(STATE.textileColor || '').toLowerCase())) {
+    selectPaletteColor(_activePalette[0].hex);
+  }
 }
 
 function updateTextileColor(hex) {
@@ -5893,7 +5927,7 @@ function removeColorOverlay() {
 function selectPaletteColor(hex) {
   updateTextileColor(hex);
   document.querySelectorAll('.swatch').forEach((s, i) => {
-    s.classList.toggle('active', PALETTE[i] === hex);
+    s.classList.toggle('active', _activePalette[i]?.hex === hex);
   });
   // Fermer le drawer mobile après sélection couleur
   if (currentDrawer) closeDrawer();

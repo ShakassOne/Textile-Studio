@@ -5,11 +5,34 @@ const { requireAuth } = require('./auth');
 const { getDB } = require('../db/database');
 const { attachShopId } = require('./_shop-context');
 
+// ── Nuancier par mockup ──────────────────────────────────────────────────────
+// colors_json = [{name, hex}, …]. Liste vide = le studio garde sa palette par
+// défaut (36 couleurs). Validation : hex #rgb/#rrggbb, nom ≤ 40 chars, 60 max.
+const HEX_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+function sanitizeColors(input) {
+  if (!Array.isArray(input)) return [];
+  return input
+    .map(c => ({
+      name: String(c?.name || '').trim().slice(0, 40),
+      hex:  String(c?.hex  || '').trim().toLowerCase(),
+    }))
+    .filter(c => HEX_RE.test(c.hex))
+    .filter((c, i, arr) => arr.findIndex(x => x.hex === c.hex) === i)
+    .slice(0, 60);
+}
+// Ligne DB → objet API (views + colors parsés, colors_json masqué)
+function serializeMockup(row) {
+  let colors = [];
+  try { colors = JSON.parse(row.colors_json || '[]'); } catch {}
+  const { colors_json, ...rest } = row;
+  return { ...rest, views: JSON.parse(row.views_json || '[]'), colors };
+}
+
 // GET /api/mockups (scopé shop)
 router.get('/', attachShopId, (req, res) => {
   const db   = getDB();
   const rows = db.prepare('SELECT * FROM mockups WHERE shop_id=? ORDER BY updated_at DESC').all(req.shopId);
-  res.json(rows.map(r => ({ ...r, views: JSON.parse(r.views_json || '[]') })));
+  res.json(rows.map(serializeMockup));
 });
 
 // GET /api/mockups/product/:product — first mockup for a given product (scopé shop)
@@ -17,7 +40,7 @@ router.get('/product/:product', attachShopId, (req, res) => {
   const db  = getDB();
   const row = db.prepare('SELECT * FROM mockups WHERE shop_id=? AND product=? ORDER BY updated_at DESC LIMIT 1').get(req.shopId, req.params.product);
   if (!row) return res.status(404).json({ error: 'No mockup for this product' });
-  res.json({ ...row, views: JSON.parse(row.views_json || '[]') });
+  res.json(serializeMockup(row));
 });
 
 // GET /api/mockups/:id (scopé shop)
@@ -25,22 +48,23 @@ router.get('/:id', attachShopId, (req, res) => {
   const db  = getDB();
   const row = db.prepare('SELECT * FROM mockups WHERE id=? AND shop_id=?').get(req.params.id, req.shopId);
   if (!row) return res.status(404).json({ error: 'Not found' });
-  res.json({ ...row, views: JSON.parse(row.views_json || '[]') });
+  res.json(serializeMockup(row));
 });
 
 // POST /api/mockups — create (admin, scopé shop)
 router.post('/', requireAuth, attachShopId, (req, res) => {
   const db = getDB();
-  const { name, product, views = [], file3d_name = '', file3d_url = '' } = req.body;
+  const { name, product, views = [], file3d_name = '', file3d_url = '', colors = [] } = req.body;
   if (!name || !product) return res.status(400).json({ error: 'name and product required' });
 
   const info = db.prepare(`
-    INSERT INTO mockups (shop_id, name, product, views_json, file3d_name, file3d_url)
-    VALUES (?,?,?,?,?,?)
-  `).run(req.shopId, name, product, JSON.stringify(views), file3d_name, file3d_url);
+    INSERT INTO mockups (shop_id, name, product, views_json, file3d_name, file3d_url, colors_json)
+    VALUES (?,?,?,?,?,?,?)
+  `).run(req.shopId, name, product, JSON.stringify(views), file3d_name, file3d_url,
+         JSON.stringify(sanitizeColors(colors)));
 
   const row = db.prepare('SELECT * FROM mockups WHERE id=?').get(info.lastInsertRowid);
-  res.status(201).json({ ...row, views: JSON.parse(row.views_json) });
+  res.status(201).json(serializeMockup(row));
 });
 
 // PUT /api/mockups/:id (admin, scopé shop)
@@ -49,17 +73,18 @@ router.put('/:id', requireAuth, attachShopId, (req, res) => {
   const row = db.prepare('SELECT id FROM mockups WHERE id=? AND shop_id=?').get(req.params.id, req.shopId);
   if (!row) return res.status(404).json({ error: 'Not found' });
 
-  const { name, product, views, file3d_name, file3d_url } = req.body;
+  const { name, product, views, file3d_name, file3d_url, colors } = req.body;
   db.prepare(`
     UPDATE mockups SET
       name=?, product=?, views_json=?,
-      file3d_name=?, file3d_url=?,
+      file3d_name=?, file3d_url=?, colors_json=?,
       updated_at=datetime('now')
     WHERE id=? AND shop_id=?
-  `).run(name, product, JSON.stringify(views || []), file3d_name || '', file3d_url || '', req.params.id, req.shopId);
+  `).run(name, product, JSON.stringify(views || []), file3d_name || '', file3d_url || '',
+         JSON.stringify(sanitizeColors(colors)), req.params.id, req.shopId);
 
   const updated = db.prepare('SELECT * FROM mockups WHERE id=?').get(req.params.id);
-  res.json({ ...updated, views: JSON.parse(updated.views_json) });
+  res.json(serializeMockup(updated));
 });
 
 // DELETE /api/mockups/:id (admin, scopé shop)
@@ -113,7 +138,7 @@ router.post('/:id/upload-glb', requireAuth, attachShopId, glbUpload.single('file
     .run(url, req.file.originalname, req.params.id, req.shopId);
 
   const updated = db.prepare('SELECT * FROM mockups WHERE id=?').get(req.params.id);
-  res.json({ ...updated, views: JSON.parse(updated.views_json || '[]'), file3d_url: url });
+  res.json({ ...serializeMockup(updated), file3d_url: url });
 });
 
 module.exports = router;
