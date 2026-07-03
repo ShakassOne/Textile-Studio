@@ -805,7 +805,7 @@
     width: 100%; aspect-ratio: 1;
     border-radius: 5px;
     cursor: pointer;
-    border: 2px solid transparent;
+    border: 1px solid #000;
     transition: transform 0.1s, border-color 0.1s;
   }
   .swatch:hover { transform: scale(1.15); }
@@ -5874,6 +5874,18 @@ function applyColorOverlay(hex) {
   const bgObj = canvas.getObjects().find(o => o.__isMockupBg);
   if (!bgObj) { canvas.renderAll(); return; }
   if (!hex || hex === '#FFFFFF' || hex === '#ffffff') { canvas.renderAll(); return; }
+
+  // Plancher des couleurs quasi noires : en multiply, un noir pur (#000000)
+  // écrase toutes les ombres/plis du mockup (rendu aplat). On plafonne au
+  // « Black » textile historique (#222222) — rendu identique à la palette
+  // d'origine, quel que soit le noir saisi dans le nuancier admin.
+  const _m = /^#([0-9a-f]{6})$/i.exec(hex);
+  if (_m) {
+    const r = parseInt(_m[1].slice(0, 2), 16),
+          g = parseInt(_m[1].slice(2, 4), 16),
+          b = parseInt(_m[1].slice(4, 6), 16);
+    if (r < 0x22 && g < 0x22 && b < 0x22) hex = '#222222';
+  }
 
   const el = bgObj.getElement ? bgObj.getElement() : bgObj._element;
   if (!el) { canvas.renderAll(); return; }
