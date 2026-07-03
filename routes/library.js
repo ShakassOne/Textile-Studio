@@ -68,6 +68,29 @@ router.post('/categories', requireAuth, attachShopId, (req, res) => {
   res.status(201).json({ id: info.lastInsertRowid, category: name });
 });
 
+// DELETE /api/library/categories/:name — supprime une catégorie VIDE (admin)
+// Refuse (409) si des images l'utilisent encore : les déplacer/supprimer
+// d'abord — aucune perte de données silencieuse. Nettoie aussi les
+// placeholders internes (__cat_placeholder_%) de cette catégorie.
+router.delete('/categories/:name', requireAuth, attachShopId, (req, res) => {
+  const name = String(req.params.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Nom requis' });
+  const db = getDB();
+  const count = db.prepare(
+    "SELECT COUNT(*) AS n FROM library WHERE shop_id=? AND category=? AND filename NOT LIKE '__cat_placeholder_%'"
+  ).get(req.shopId, name).n;
+  if (count > 0) {
+    return res.status(409).json({
+      error: `La catégorie contient encore ${count} image(s) — déplacez-les ou supprimez-les d'abord.`,
+      count,
+    });
+  }
+  db.prepare("DELETE FROM library WHERE shop_id=? AND category=? AND filename LIKE '__cat_placeholder_%'")
+    .run(req.shopId, name);
+  db.prepare('DELETE FROM categories WHERE shop_id=? AND name=?').run(req.shopId, name);
+  res.json({ deleted: true, category: name });
+});
+
 // GET /api/library — exclut les cat_placeholder côté serveur (scopé shop)
 router.get('/', attachShopId, (req, res) => {
   const db = getDB();

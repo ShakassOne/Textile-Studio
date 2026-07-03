@@ -478,6 +478,7 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
         <div><div class="page-title">Bibliothèque visuels</div><div class="page-sub" id="lib-count-label">—</div></div>
         <div class="page-actions">
           <button class="btn" onclick="openCreateCatModal()">+ Catégorie</button>
+          <button class="btn" onclick="openDeleteCatModal()">🗑 Catégorie</button>
           <button class="btn btn-primary" onclick="openUploadModal()">+ Ajouter des images</button>
         </div>
       </div>
@@ -1498,6 +1499,69 @@ async function _confirmLibMoveCat() {
   showToast(`✅ ${ids.length} image(s) déplacée(s) vers "${cat}"`);
   await loadLibrary();
   filterLib(cat);
+}
+
+// ── Suppression de catégories de bibliothèque ───────────────────────────────
+// Liste chaque catégorie avec son nombre d'images. Suppression possible
+// uniquement si VIDE (le serveur refuse sinon) — les images ne sont jamais
+// supprimées en cascade : utiliser « Changer de catégorie » d'abord.
+function openDeleteCatModal() {
+  document.getElementById('lib-cat-del-modal')?.remove();
+  if (!_libCats.length) return showToast('Aucune catégorie à supprimer');
+  const counts = {};
+  _libItems.forEach(i => {
+    if (i.filename?.startsWith('__cat_placeholder_')) return;
+    if (i.category) counts[i.category] = (counts[i.category] || 0) + 1;
+  });
+  const rows = _libCats.map(cat => {
+    const n = counts[cat] || 0;
+    const safe = cat.replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:10px">
+      <div style="flex:1;font-size:13px">${safe}</div>
+      <div style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace">${n} image${n > 1 ? 's' : ''}</div>
+      ${n === 0
+        ? `<button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger)" data-delcat="${safe}">Supprimer</button>`
+        : `<button class="btn btn-sm" disabled title="Déplacez ou supprimez d'abord les images (sélection → Changer de catégorie)" style="opacity:.4;cursor:not-allowed">Supprimer</button>`}
+    </div>`;
+  }).join('');
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay open';
+  modal.id = 'lib-cat-del-modal';
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width:420px" onclick="event.stopPropagation()">
+      <div class="modal-header"><div class="modal-title">🗑 Supprimer une catégorie</div>
+        <button class="modal-close" onclick="document.getElementById('lib-cat-del-modal').remove()">×</button></div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:11px;color:var(--text3);line-height:1.5;margin-bottom:4px">
+          Seules les catégories <b>vides</b> peuvent être supprimées — les images ne sont jamais effacées avec la catégorie.
+          Pour vider une catégorie : sélectionnez ses images puis « Changer de catégorie » (ou supprimez-les).
+        </div>
+        ${rows}
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="document.getElementById('lib-cat-del-modal').remove()">Fermer</button>
+      </div>
+    </div>`;
+  modal.querySelectorAll('[data-delcat]').forEach(btn => {
+    btn.addEventListener('click', () => _confirmDeleteLibCat(btn.getAttribute('data-delcat')));
+  });
+  document.body.appendChild(modal);
+}
+
+async function _confirmDeleteLibCat(cat) {
+  try {
+    const r = await api('/api/library/categories/' + encodeURIComponent(cat), { method: 'DELETE' });
+    if (r && r.deleted) {
+      showToast(`🗑 Catégorie « ${cat} » supprimée`);
+      document.getElementById('lib-cat-del-modal')?.remove();
+      await loadLibrary();
+    } else if (r) {
+      showToast('❌ ' + (r.error || 'Suppression refusée'));
+    }
+  } catch (e) {
+    showToast('❌ ' + (window.__TL_LAST_API_ERROR || e.message));
+  }
 }
 
 function openUploadModal() {
