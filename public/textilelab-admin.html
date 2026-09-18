@@ -1827,8 +1827,13 @@ async function _sfUploadOne(file, onStep) {
 }
 
 async function _sfHandleUploadFiles(files) {
-  const list = Array.from(files || []).filter(f => f.type.startsWith('image/'));
-  if (!list.length) return;
+  const all  = Array.from(files || []);
+  const list = all.filter(f => f.type.startsWith('image/'));
+  if (!list.length) {
+    // Jamais de sortie silencieuse : l'admin doit savoir pourquoi rien ne bouge.
+    if (all.length) showToast('⚠ Aucun fichier image dans la sélection');
+    return;
+  }
   const status = document.getElementById('sf-upload-status');
   const btn    = document.getElementById('sf-confirm-btn');
   if (btn) btn.disabled = true;
@@ -1935,7 +1940,13 @@ function openShopifyFilesModal(pendingFiles) {
   // Input file dédié : sert uniquement à alimenter Shopify Files.
   const inp = document.getElementById('sf-file-input');
   inp.value = '';
-  inp.onchange = async () => { const f = inp.files; inp.value = ''; await _sfHandleUploadFiles(f); };
+  inp.onchange = async () => {
+    // inp.files est une FileList VIVANTE : il faut la copier AVANT de remettre
+    // inp.value à '' (ce qui la vide), sinon _sfHandleUploadFiles ne reçoit rien.
+    const picked = Array.from(inp.files);
+    inp.value = '';
+    await _sfHandleUploadFiles(picked);
+  };
   document.getElementById('sf-upload-btn').onclick = e => { e.stopPropagation(); inp.click(); };
   document.getElementById('sf-more-btn').onclick   = () => _sfLoadPage(true);
 
