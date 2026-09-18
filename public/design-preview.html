@@ -17,14 +17,12 @@
     padding: 40px 16px 60px;
   }
 
+  /* Logo Winshirt : PNG noir sur fond transparent → inversé en blanc,
+     la page est sur fond sombre. */
   .logo {
-    font-family: 'Arial Black', sans-serif;
-    font-size: 20px;
-    font-weight: 900;
     margin-bottom: 32px;
-    letter-spacing: -0.5px;
   }
-  .logo span { color: #F59E0B; }
+  .logo img { display: block; height: 30px; width: auto; filter: invert(1); }
 
   h1 {
     font-size: 15px;
@@ -147,7 +145,7 @@
 </head>
 <body>
 
-<div class="logo">Textile<span>Lab</span> Studio</div>
+<div class="logo"><img src="https://cdn.shopify.com/s/files/1/0927/6181/7424/files/Logo_Winshirt_14ca612c-0aaf-4f77-aaff-4e96d7c2a567.png?v=1789736445" alt="Winshirt"></div>
 <h1>Aperçu de votre design personnalisé</h1>
 
 <div id="app">

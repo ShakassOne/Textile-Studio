@@ -1809,6 +1809,10 @@
   /* Logo responsive */
   .logo-desktop-text { display: flex !important; align-items: center; height: 32px; }
   .logo-mobile-img   { display: none !important; align-items: center; height: 28px; }
+  /* Logo Winshirt : PNG noir sur fond transparent → inversé en blanc sur le
+     thème sombre (défaut), laissé tel quel en mode clair. */
+  .logo-winshirt { display: block; filter: invert(1); }
+  body.light-mode .logo-winshirt { filter: none; }
   @media (max-width: 768px) {
     .logo-desktop-text { display: none !important; }
     .logo-mobile-img   { display: flex !important; }
@@ -2238,92 +2242,12 @@
     </button>
     <div class="logo" style="display:flex;align-items:center">
       <span class="logo-desktop-text">
-        <svg style="height:32px;width:auto" id="Calque_2" data-name="Calque 2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 504.79 299.38">
-  <defs>
-    <style>
-      .cls-1 {
-        fill: var(--amber);
-      }
-
-      .cls-2, .cls-3 {
-        fill: var(--text);
-      }
-
-      .cls-3 {
-        font-family: Impact, Impact;
-        font-size: 14.98px;
-      }
-
-      .cls-4 {
-        letter-spacing: .07em;
-      }
-
-      .cls-5 {
-        letter-spacing: .05em;
-      }
-
-      .cls-6 {
-        letter-spacing: .05em;
-      }
-    </style>
-  </defs>
-  <g id="Calque_1-2" data-name="Calque 1">
-    <rect class="cls-1" x="135.19" y="174.93" width="121.47" height="54.44"/>
-    <path class="cls-1" d="M256.66,102.58v41.75s-40.42-.24-40.42-.24c-5.14-.03-10.17-1.21-15.1-2.17-9.59-1.87-18.47-5.25-26.7-10.33-21.42-13.24-27.28-36.81-23.56-60.48,2.78-17.65,12.94-31.98,28.65-40.4,13.46-7.21,29.16-10.8,44.51-11.81l9.55-.63,204.26.02-41.85,54.85h-161.28c-4.57.27-8.27.73-12.43,1.49-4.08,1.49-7.77,3.97-8.71,8.45-1.44,6.9-.22,13.92,6.75,17.1,3.44.95,7.18,2.26,10.89,2.28l25.44.11Z"/>
-    <g>
-      <path d="M502.16,181.42c-7.06,29.05-31.24,40.85-58.34,45.81-6.23.52-12.07,1.98-18.55,1.99l-162.9.13V79.19s65.69,0,65.69,0v95.76s175.04,0,175.04,0c.2,2.14-.17,4.14-.94,6.48Z"/>
-      <path d="M157.95,18.29l35.15.12c-7.39,2.87-14.14,5.46-20.71,9.7-16.42,10.6-25.09,25.79-27.84,44.97l-15.07.18-.02,116.35v39.76s-65.68.01-65.68.01V73.17S0,73.13,0,73.13V18.27s144.1,0,144.1,0l13.85.02Z"/>
-    </g>
-    <path class="cls-1" d="M412.94,144.28l-78.86.05v-41.78s102.93.2,102.93.2c5.86.03,11.45,1.39,17.12,1.99,10.67,2.63,17.48,4.35,26.94,9.89,19.81,11.58,25.55,32.77,23.24,54.58h-65.43c3.55-6.33,3.71-13.45-.23-19.13-6.46-8.61-25.71-5.79-25.71-5.79Z"/>
-    <text class="cls-3" transform="translate(65.05 251.71) scale(3.12 1)"><tspan class="cls-5" x="0" y="0">TEXTILE STUDIO </tspan><tspan class="cls-4" x="103.67" y="0">L</tspan><tspan class="cls-6" x="110.49" y="0">AB</tspan></text>
-    <path class="cls-2" d="M430.93,0H67.97c-15.14,0-28.99,5.64-39.55,14.94h9.05c8.7-5.92,19.2-9.38,30.5-9.38h362.96c30.01,0,54.42,24.42,54.42,54.42v53.37c1.98,1.31,3.83,2.75,5.56,4.29v-57.67c0-33.08-26.91-59.99-59.98-59.99Z"/>
-    <path class="cls-1" d="M485.35,213.93v25.46c0,30.01-24.41,54.42-54.42,54.42H67.97c-30.01,0-54.42-24.41-54.42-54.42V76.47h-5.56v162.92c0,33.08,26.91,59.99,59.99,59.99h362.96c33.07,0,59.98-26.91,59.98-59.99v-30.44c-1.72,1.75-3.57,3.41-5.56,4.98Z"/>
-  </g>
-</svg>
+        <img class="logo-winshirt" style="height:32px;width:auto" alt="Winshirt"
+             src="https://cdn.shopify.com/s/files/1/0927/6181/7424/files/Logo_Winshirt_14ca612c-0aaf-4f77-aaff-4e96d7c2a567.png?v=1789736445">
       </span>
       <span class="logo-mobile-img">
-        <svg style="height:28px;width:auto" id="Calque_2" data-name="Calque 2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 504.79 299.38">
-  <defs>
-    <style>
-      .cls-1 {
-        fill: var(--amber);
-      }
-
-      .cls-2, .cls-3 {
-        fill: var(--text);
-      }
-
-      .cls-3 {
-        font-family: Impact, Impact;
-        font-size: 14.98px;
-      }
-
-      .cls-4 {
-        letter-spacing: .07em;
-      }
-
-      .cls-5 {
-        letter-spacing: .05em;
-      }
-
-      .cls-6 {
-        letter-spacing: .05em;
-      }
-    </style>
-  </defs>
-  <g id="Calque_1-2" data-name="Calque 1">
-    <rect class="cls-1" x="135.19" y="174.93" width="121.47" height="54.44"/>
-    <path class="cls-1" d="M256.66,102.58v41.75s-40.42-.24-40.42-.24c-5.14-.03-10.17-1.21-15.1-2.17-9.59-1.87-18.47-5.25-26.7-10.33-21.42-13.24-27.28-36.81-23.56-60.48,2.78-17.65,12.94-31.98,28.65-40.4,13.46-7.21,29.16-10.8,44.51-11.81l9.55-.63,204.26.02-41.85,54.85h-161.28c-4.57.27-8.27.73-12.43,1.49-4.08,1.49-7.77,3.97-8.71,8.45-1.44,6.9-.22,13.92,6.75,17.1,3.44.95,7.18,2.26,10.89,2.28l25.44.11Z"/>
-    <g>
-      <path d="M502.16,181.42c-7.06,29.05-31.24,40.85-58.34,45.81-6.23.52-12.07,1.98-18.55,1.99l-162.9.13V79.19s65.69,0,65.69,0v95.76s175.04,0,175.04,0c.2,2.14-.17,4.14-.94,6.48Z"/>
-      <path d="M157.95,18.29l35.15.12c-7.39,2.87-14.14,5.46-20.71,9.7-16.42,10.6-25.09,25.79-27.84,44.97l-15.07.18-.02,116.35v39.76s-65.68.01-65.68.01V73.17S0,73.13,0,73.13V18.27s144.1,0,144.1,0l13.85.02Z"/>
-    </g>
-    <path class="cls-1" d="M412.94,144.28l-78.86.05v-41.78s102.93.2,102.93.2c5.86.03,11.45,1.39,17.12,1.99,10.67,2.63,17.48,4.35,26.94,9.89,19.81,11.58,25.55,32.77,23.24,54.58h-65.43c3.55-6.33,3.71-13.45-.23-19.13-6.46-8.61-25.71-5.79-25.71-5.79Z"/>
-    <text class="cls-3" transform="translate(65.05 251.71) scale(3.12 1)"><tspan class="cls-5" x="0" y="0">TEXTILE STUDIO </tspan><tspan class="cls-4" x="103.67" y="0">L</tspan><tspan class="cls-6" x="110.49" y="0">AB</tspan></text>
-    <path class="cls-2" d="M430.93,0H67.97c-15.14,0-28.99,5.64-39.55,14.94h9.05c8.7-5.92,19.2-9.38,30.5-9.38h362.96c30.01,0,54.42,24.42,54.42,54.42v53.37c1.98,1.31,3.83,2.75,5.56,4.29v-57.67c0-33.08-26.91-59.99-59.98-59.99Z"/>
-    <path class="cls-1" d="M485.35,213.93v25.46c0,30.01-24.41,54.42-54.42,54.42H67.97c-30.01,0-54.42-24.41-54.42-54.42V76.47h-5.56v162.92c0,33.08,26.91,59.99,59.99,59.99h362.96c33.07,0,59.98-26.91,59.98-59.99v-30.44c-1.72,1.75-3.57,3.41-5.56,4.98Z"/>
-  </g>
-</svg>
+        <img class="logo-winshirt" style="height:28px;width:auto" alt="Winshirt"
+             src="https://cdn.shopify.com/s/files/1/0927/6181/7424/files/Logo_Winshirt_14ca612c-0aaf-4f77-aaff-4e96d7c2a567.png?v=1789736445">
       </span>
     </div>
 

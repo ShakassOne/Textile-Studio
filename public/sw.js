@@ -193,7 +193,7 @@ function offlineFallback(request) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Hors ligne — TextileLab Studio</title>
+  <title>Hors ligne — Winshirt</title>
   <style>
     body{margin:0;background:#0a0a0c;color:#f0f0f5;font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;gap:16px;text-align:center;padding:20px}
     h1{font-size:22px;font-weight:800;margin:0}h1 span{color:#F59E0B}
@@ -204,7 +204,7 @@ function offlineFallback(request) {
 </head>
 <body>
   <div class="icon">📡</div>
-  <h1>Textile<span>Lab</span> Studio</h1>
+  <h1>Wins<span>hirt</span></h1>
   <p>Vous êtes hors ligne. Vos designs locaux sont disponibles, mais la connexion au serveur est requise pour sauvegarder ou commander.</p>
   <button onclick="location.reload()">🔄 Réessayer</button>
 </body>

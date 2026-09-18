@@ -48,13 +48,12 @@
     box-shadow: 0 32px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.03);
   }
 
+  /* Logo Winshirt : PNG noir sur fond transparent → inversé en blanc,
+     l'écran de connexion est sur fond sombre. */
   .logo {
-    font-family: 'Syne', sans-serif;
-    font-weight: 800;
-    font-size: 22px;
-    margin-bottom: 4px;
+    margin-bottom: 8px;
   }
-  .logo span { color: var(--amber); }
+  .logo img { display: block; height: 28px; width: auto; margin: 0 auto; filter: invert(1); }
   .logo-sub {
     font-size: 11px;
     color: var(--text3);
@@ -173,7 +172,7 @@
 <div class="glow"></div>
 
 <div class="login-box">
-  <div class="logo">Textile<span>Lab</span></div>
+  <div class="logo"><img src="https://cdn.shopify.com/s/files/1/0927/6181/7424/files/Logo_Winshirt_14ca612c-0aaf-4f77-aaff-4e96d7c2a567.png?v=1789736445" alt="Winshirt"></div>
   <div class="logo-sub">ADMIN — BACKOFFICE</div>
 
   <h1>Connexion</h1>
