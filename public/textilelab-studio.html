@@ -8637,6 +8637,14 @@ function init() {
       applyMockup(STATE.product, 0);
     }
     showMockupStatus();
+
+    // ── Templates produit ────────────────────────────────────────────────
+    // MOCKUPS_DATA est chargé ici : _tplApply peut retrouver le mockup du
+    // template. Le template est appliqué APRÈS la résolution automatique et
+    // la remplace (produit, couleur, mockup, format).
+    _tplInitAdminBar();
+    const _tplProductId = _up.get('product_id') || '';
+    if (_tplProductId) _tplLoadForProduct(_tplProductId);
   });
   initCanvas();
   initPalette();
@@ -8796,6 +8804,212 @@ async function apiFetch(path, opts = {}) {
     console.warn(`API ${path} failed:`, err.message);
     return null;
   }
+}
+
+// ============================================
+// TEMPLATES PRODUIT (metafield Shopify custom.tsl_template)
+// ============================================
+// Deux flux, tous deux inactifs par défaut :
+//
+//  • Admin (?admin=1&shop&host, studio ouvert en iframe depuis l'admin TSL) :
+//    prépare un design recto+verso, choisit un produit via le Resource Picker
+//    natif, et l'enregistre dans le metafield du produit.
+//
+//  • Client (?product_id=… , déjà utilisé par le studio pour résoudre le
+//    mockup) : si le produit porte un template, il est chargé et remplace le
+//    produit / la couleur / le mockup / le format résolus automatiquement.
+//
+// Sans ces paramètres, rien de ce bloc ne s'exécute — le flux client existant
+// est strictement inchangé.
+
+const TPL_VERSION = 1;
+
+// Mode admin : le paramètre seul ne suffit pas, App Bridge doit répondre
+// (il n'est injecté par le serveur que si ?admin=1&shop&host sont présents).
+function _tplAdminMode() {
+  return new URLSearchParams(window.location.search).get('admin') === '1'
+      && typeof window.shopify !== 'undefined';
+}
+
+// Session token Shopify frais (TTL ~60 s) — jamais mis en cache.
+async function _tplIdToken() {
+  for (let i = 0; i < 50 && (typeof window.shopify === 'undefined' || !window.shopify.idToken); i++) {
+    await new Promise(r => setTimeout(r, 100));
+  }
+  if (typeof window.shopify === 'undefined' || !window.shopify.idToken) return null;
+  try { return await window.shopify.idToken(); }
+  catch (e) { console.warn('[TPL] idToken:', e.message); return null; }
+}
+
+// ── Sérialisation ───────────────────────────────────────────────────────────
+// On repart de STATE.viewLayers (toutes les faces), pas de canvas.toJSON() qui
+// ne verrait que la face courante. STATE.viewThumbs est délibérément exclu :
+// ce sont des dataURL JPEG qui feraient exploser la taille du metafield.
+// La face active n'est pas stockée : c'est un état de session, le client
+// ouvrira toujours sur le recto.
+function _tplBuild() {
+  _saveCurrentViewLayers(); // fige la face en cours d'édition dans STATE.viewLayers
+  return {
+    v:           TPL_VERSION,
+    product:     STATE.product,
+    color:       STATE.textileColor,
+    format:      STATE.format,
+    mockupId:    STATE_mockup?.id ?? null,
+    viewFormats: STATE.viewFormats || {},
+    viewLayers:  STATE.viewLayers  || {},
+    savedAt:     new Date().toISOString(),
+  };
+}
+
+// Repère les visuels qui ne sont pas des URLs (dataURL base64) : ce sont eux
+// qui font dépasser la limite de 128 Ko du metafield JSON.
+function _tplCountInlineImages(tpl) {
+  let n = 0;
+  Object.values(tpl.viewLayers || {}).forEach(objs => {
+    (objs || []).forEach(o => { if (typeof o?.src === 'string' && o.src.startsWith('data:')) n++; });
+  });
+  return n;
+}
+
+// ── Enregistrement ──────────────────────────────────────────────────────────
+async function tplSaveAsTemplate() {
+  if (!_tplAdminMode()) return;
+
+  let selection;
+  try {
+    selection = await window.shopify.resourcePicker({ type: 'product', multiple: false });
+  } catch (e) {
+    return showToast('❌ Sélecteur produit indisponible : ' + e.message);
+  }
+  if (!selection || !selection.length) return; // annulé
+
+  const product = selection[0];
+  // On envoie l'ID NUMÉRIQUE, pas le GID : un "gid://…" encodé dans le chemin
+  // donne des %2F, que certains reverse-proxies normalisent ou refusent.
+  // Le serveur reconstruit le GID (_toProductGid).
+  const productId = String(product.id || '').replace(/\D/g, '');
+  const label     = product.title || productId;
+  if (!productId) return showToast('❌ Produit sans identifiant exploitable');
+
+  // Écrasement : prévenir avant de remplacer un template existant.
+  const existing = await apiFetch(`/api/products/${encodeURIComponent(productId)}/template`);
+  if (existing?.exists) {
+    const when = existing.updatedAt ? new Date(existing.updatedAt).toLocaleString('fr-FR') : '';
+    if (!confirm(`Un template existe déjà pour « ${label} »${when ? ` (enregistré le ${when})` : ''}.\n\nLe remplacer ?`)) return;
+  }
+
+  const tpl    = _tplBuild();
+  const inline = _tplCountInlineImages(tpl);
+  const koCalc = Math.round(JSON.stringify(tpl).length / 1024);
+  if (inline) {
+    if (!confirm(`${inline} visuel(s) ne viennent pas de la bibliothèque Shopify et sont intégrés en base64 (~${koCalc} Ko).\n\n`
+               + 'Shopify limite un template à 128 Ko : l\'enregistrement risque d\'échouer.\n\nContinuer quand même ?')) return;
+  }
+
+  showToast('⏳ Enregistrement du template…');
+  const token = await _tplIdToken();
+  if (!token) return showToast('❌ Session Shopify indisponible — rouvrez le studio depuis l\'admin');
+
+  try {
+    const res = await fetch(`${API_BASE}/api/admin/products/${encodeURIComponent(productId)}/template`, {
+      method: 'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${token}`,
+        ...(window._TL_SHOP ? { 'X-Shop-Domain': window._TL_SHOP } : {}),
+      },
+      body: JSON.stringify({ template: tpl }),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) return showToast('❌ ' + (out.error || `HTTP ${res.status}`));
+    showToast(`✅ Template enregistré sur « ${label} » (${Math.round((out.bytes || 0) / 1024)} Ko)`);
+  } catch (e) {
+    showToast('❌ ' + e.message);
+  }
+}
+
+// ── Bandeau admin ───────────────────────────────────────────────────────────
+function _tplInitAdminBar() {
+  if (!_tplAdminMode() || document.getElementById('tpl-admin-bar')) return;
+  const bar = document.createElement('div');
+  bar.id = 'tpl-admin-bar';
+  bar.style.cssText =
+    // bottom:84px — au-dessus de la barre d'onglets mobile et de la barre
+    // d'actions desktop, qui occupent toutes deux le bas de l'écran.
+    'position:fixed;left:50%;bottom:84px;transform:translateX(-50%);z-index:8000;'
+    + 'display:flex;align-items:center;gap:12px;padding:9px 14px;border-radius:999px;'
+    + 'background:rgba(20,20,26,.94);border:1px solid rgba(245,158,11,.5);'
+    + 'box-shadow:0 8px 28px rgba(0,0,0,.45);backdrop-filter:blur(8px);'
+    + 'font-family:\'DM Sans\',sans-serif;font-size:12.5px;color:#f0f0f5';
+  bar.innerHTML =
+    '<span style="display:flex;align-items:center;gap:6px;white-space:nowrap">'
+    + '<span style="width:7px;height:7px;border-radius:50%;background:#F59E0B;flex-shrink:0"></span>'
+    + 'Mode Admin — préparation d\'un template</span>'
+    + '<button id="tpl-save-btn" style="border:none;border-radius:999px;padding:7px 15px;'
+    + 'background:#F59E0B;color:#111;font-weight:700;font-size:12.5px;cursor:pointer;'
+    + 'font-family:\'DM Sans\',sans-serif;white-space:nowrap">Enregistrer comme template</button>';
+  document.body.appendChild(bar);
+  document.getElementById('tpl-save-btn').onclick = tplSaveAsTemplate;
+}
+
+// ── Chargement côté client ──────────────────────────────────────────────────
+// Le template fait autorité : il impose produit, couleur, mockup et format,
+// par-dessus ce que la résolution ?product_id= avait déjà appliqué.
+function _tplApply(tpl) {
+  if (!tpl || !tpl.viewLayers) return false;
+
+  // 1. viewFormats doit être posé AVANT applyMockup : il s'en sert pour
+  //    restaurer le format propre de la face affichée (petit recto / gros verso).
+  STATE.viewFormats = tpl.viewFormats || {};
+  if (tpl.product) STATE.product      = tpl.product;
+  if (tpl.color)   STATE.textileColor = tpl.color;
+  if (tpl.format)  STATE.format       = tpl.format;
+
+  // 2. Marquer le produit actif dans l'UI sans passer par selectProduct(),
+  //    qui rouvrirait le panneau « Produits disponibles » au chargement.
+  try {
+    document.querySelectorAll('[data-product]').forEach(el =>
+      el.classList.toggle('active', el.dataset.product === STATE.product));
+  } catch (_) {}
+
+  // 3. Retrouver le mockup d'origine : les clés de viewLayers valent
+  //    "<mockupId>_<viewIdx>", elles ne correspondront que sur le bon mockup.
+  let mockupIdxLocal = 0;
+  const forProduct = MOCKUPS_DATA.filter(m => m.product === STATE.product);
+  if (tpl.mockupId != null) {
+    const i = forProduct.findIndex(m => String(m.id) === String(tpl.mockupId));
+    if (i >= 0) mockupIdxLocal = i;
+    else console.warn('[TPL] mockup', tpl.mockupId, 'introuvable — repli sur le premier du produit');
+  }
+
+  // 4. Toujours ouvrir sur le recto : la face active n'est pas stockée.
+  STATE_viewIdx = 0;
+  applyMockup(STATE.product, 0, mockupIdxLocal);
+
+  // 5. Les calques sont injectés APRÈS applyMockup, jamais avant : son étape 1
+  //    appelle _saveCurrentViewLayers() (canvas encore vide → écraserait le
+  //    template) ou remet STATE.viewLayers à {} si le produit change. On pose
+  //    donc les calques une fois le mockup installé, puis on restaure le recto
+  //    explicitement. Même temporisation que loadDesignFromAPI (applyMockup
+  //    charge le PNG du vêtement de façon asynchrone).
+  setTimeout(() => {
+    STATE.viewLayers = tpl.viewLayers;
+    _restoreViewLayers(STATE_mockup?.id, 0, () => {
+      try { _reorderCanvasLayers(); } catch (_) {}
+      try { if (tpl.color) updateTextileColor(tpl.color); } catch (_) {}
+      try { updateLayerBar(); updateDesktopLayerPanel(); } catch (_) {}
+      try { updatePrice(); } catch (_) {}
+      try { canvas.requestRenderAll(); } catch (_) {}
+    });
+  }, 800);
+  return true;
+}
+
+async function _tplLoadForProduct(productId) {
+  if (!productId) return;
+  const data = await apiFetch(`/api/products/${encodeURIComponent(productId)}/template`);
+  if (!data?.exists || !data.template) return; // produit sans template → flux normal
+  if (_tplApply(data.template)) showToast('🎨 Design chargé — personnalisez-le');
 }
 
 // ── Charger les catégories produit depuis l'API et mettre à jour les noms dans l'UI ──
