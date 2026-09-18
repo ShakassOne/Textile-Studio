@@ -136,6 +136,22 @@ app.get('/textilelab-admin.html', (req, res, next) => {
 // domaine parent transmis (?parent_domain=) — ainsi le modal marche pour TOUT
 // marchand, quel que soit son domaine. (Sans ?parent_domain → CSP globale, admin.)
 app.get('/textilelab-studio.html', (req, res, next) => {
+  // ── Mode admin (?admin=1&shop&host) : App Bridge injecté dans le <head> ──
+  // Le studio sert alors à préparer un template produit depuis l'iframe admin
+  // Shopify : il lui faut window.shopify pour le Resource Picker (choix du
+  // produit) et idToken() (auth du POST). Même pattern que l'admin ci-dessus.
+  // Sans ces trois paramètres → flux client inchangé, aucune injection.
+  if (req.query.admin === '1' && req.query.shop && req.query.host) {
+    return fs.readFile(path.join(__dirname, 'public', 'textilelab-studio.html'), 'utf8', (err, html) => {
+      if (err) return next(err);
+      const apiKey = process.env.SHOPIFY_API_KEY || '9f77ba5672b593f4e6a5d32d2093e460';
+      const inject =
+        '<meta id="shopify-api-key" name="shopify-api-key" content="' + apiKey + '">' +
+        '<script data-shopify-app-bridge="1" src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>';
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.type('html').send(html.replace(/<head>/i, '<head>' + inject));
+    });
+  }
   const parent = (req.query.parent_domain || '').trim();
   if (!parent) return next(); // contexte admin/standalone → CSP globale (middleware)
   const safe = parent.replace(/[^a-zA-Z0-9.:\-]/g, ''); // hygiène (domaine only)
@@ -528,6 +544,9 @@ app.use('/oauth',               require('./routes/oauth'));
 app.use('/api/shopify-session', require('./routes/shopify-session'));
 app.use('/api/admin',          require('./routes/admin-graphql'));
 app.use('/api/shop-settings',  require('./routes/shop-settings'));
+// Templates produit — monté sur /api car il sert deux préfixes :
+//   POST /api/admin/products/:id/template (admin)  et  GET /api/products/:id/template (public)
+app.use('/api',                require('./routes/product-templates'));
 app.use('/proxy',             require('./routes/app-proxy'));
 
 // ── Fix webhooks : réenregistre orders/paid sur tous les shops actifs ─────────

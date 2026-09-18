@@ -3174,22 +3174,22 @@
       <div class="format-card active" onclick="setFormat('A3');updateFormatCards()" data-fmt="A3">
         <div class="format-card-name">A3</div>
         <div class="format-card-dims">297 × 420mm</div>
-        <div class="format-card-price">+8,00 €</div>
+        <div class="format-card-price">+4,00 €</div>
       </div>
       <div class="format-card" onclick="setFormat('A4');updateFormatCards()" data-fmt="A4">
         <div class="format-card-name">A4</div>
         <div class="format-card-dims">210 × 297mm</div>
-        <div class="format-card-price">+5,00 €</div>
+        <div class="format-card-price">+3,00 €</div>
       </div>
       <div class="format-card" onclick="setFormat('A5');updateFormatCards()" data-fmt="A5">
         <div class="format-card-name">A5</div>
         <div class="format-card-dims">148 × 210mm</div>
-        <div class="format-card-price">+3,00 €</div>
+        <div class="format-card-price">+2,00 €</div>
       </div>
       <div class="format-card" onclick="setFormat('A6');updateFormatCards()" data-fmt="A6">
         <div class="format-card-name">A6</div>
         <div class="format-card-dims">105 × 148mm</div>
-        <div class="format-card-price">+2,00 €</div>
+        <div class="format-card-price">+1,50 €</div>
       </div>
     </div>
     <div style="display:flex;gap:10px;flex-direction:column">
@@ -4356,6 +4356,11 @@ let _tlLinksDebug = { lastSource:'init', lastCount:0, lastError:'' };
 let _shopifyThumbByHandle = {};
 let _shopifyBasePriceByRef = {};
 let _shopifyKnownHandles = new Set();
+let _shopifyKnownProductIds = new Set();
+let _shopifyCatalogLoaded = false;
+let _shopifyCatalogFailed = false;
+let _shopifyLinksLoaded = false;
+let _shopifyLinksFailed = false;
 let _shopifyProductMetaByHandle = {};
 
 // Clé unique pour identifier une combinaison mockup+vue
@@ -4428,10 +4433,23 @@ function _restoreViewLayers(mockupId, viewIdx, callback) {
 }
 
 
+function _isLiveShopifyLink(link) {
+  if (!_shopifyCatalogLoaded || _shopifyCatalogFailed) return true;
+  const handle = String(link?.handle || '').trim();
+  const productId = String(link?.product_id || '').replace(/^gid:\/\/shopify\/Product\//, '').trim();
+  return (handle && _shopifyKnownHandles.has(handle))
+    || (productId && _shopifyKnownProductIds.has(productId));
+}
+
+function _getVisibleShopifyProductLinks() {
+  return (Array.isArray(SHOPIFY_PRODUCT_LINKS) ? SHOPIFY_PRODUCT_LINKS : [])
+    .filter(_isLiveShopifyLink);
+}
+
 function _getLinkedProductsForActiveMockup() {
   const mid = String(STATE_mockup?.id || '');
   if (!mid) return [];
-  return SHOPIFY_PRODUCT_LINKS.filter(p => {
+  return _getVisibleShopifyProductLinks().filter(p => {
     const sameMockupId = String(p.mockup_id || '') === mid;
     const hasRef = (p.handle || p.product_id);
     const title = String(p.title || '').toLowerCase();
@@ -4457,7 +4475,11 @@ function _syncResolvedProductHandle() {
 let _productsPanelDismissed = false;
 
 function chooseShopifyProductHandle(ref) {
+  const previousRef = _resolvedProductHandle || window._TL_PRODUCT_HANDLE || '';
   _resolvedProductHandle = ref || '';
+  if (previousRef && _resolvedProductHandle && previousRef !== _resolvedProductHandle) {
+    window._TL_VARIANT_ID = '';
+  }
   // Marquer la fermeture comme volontaire AVANT les rerenders asynchrones
   // (refreshResolvedProductPrice → prefetchLinkedProductPrices → renderProductsPanel)
   // qui re-ouvriraient le panel sans ce flag.
@@ -4473,7 +4495,8 @@ async function loadShopifyProductLinks() {
   if (!window._TL_SHOP) return;
   try {
     const res = await fetch(`${window.location.origin}/api/product-links/public?shop=${encodeURIComponent(window._TL_SHOP)}`);
-    const data = res.ok ? await res.json() : [];
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
     SHOPIFY_PRODUCT_LINKS = (Array.isArray(data) ? data : [])
       .map(r => ({
         handle: r.shopify_product_handle || '',
@@ -4491,6 +4514,7 @@ async function loadShopifyProductLinks() {
         if (h === 'example-product') return false;
         return true;
       });
+    _shopifyLinksLoaded = true;
 
     // Les liaisons arrivent en async: re-synchroniser le produit résolu
     // puis rafraîchir le panneau mockup/produit pour afficher la sélection.
@@ -4543,6 +4567,8 @@ async function loadShopifyProductLinks() {
     updatePrice();
     prefetchLinkedProductPrices();
   } catch(e) {
+    _shopifyLinksLoaded = true;
+    _shopifyLinksFailed = true;
     _tlLinksDebug = { lastSource:'public', lastCount:0, lastError:String(e.message || e) };
     console.warn('[TL] loadShopifyProductLinks:', e.message);
     updateViewSwitcher();
@@ -4552,11 +4578,25 @@ async function loadShopifyProductLinks() {
 async function loadShopifyProductThumbs() {
   if (!window._TL_SHOP) return;
   try {
-    const res = await fetch(`${window.location.origin}/api/shopify/products?shop=${encodeURIComponent(window._TL_SHOP)}`);
-    const items = res.ok ? await res.json() : [];
+    if (_shopifyLinksLoaded && (_shopifyLinksFailed || !SHOPIFY_PRODUCT_LINKS.length)) {
+      _shopifyCatalogLoaded = true;
+      _shopifyCatalogFailed = _shopifyLinksFailed;
+      updateViewSwitcher();
+      renderMobileProductsList();
+      return;
+    }
+    const linkedIds = SHOPIFY_PRODUCT_LINKS
+      .map(link => String(link.product_id || '').replace(/^gid:\/\/shopify\/Product\//, '').trim())
+      .filter(id => /^\d+$/.test(id));
+    const params = new URLSearchParams({ shop: window._TL_SHOP });
+    if (linkedIds.length) params.set('ids', [...new Set(linkedIds)].join(','));
+    const res = await fetch(`${window.location.origin}/api/shopify/products?${params.toString()}`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const items = await res.json();
     const map = {};
     const meta = {};
     const handles = new Set();
+    const productIds = new Set();
     (Array.isArray(items) ? items : []).forEach(p => {
       // Image : couvre toutes les formes possibles (Storefront edges, Admin REST, normalisé)
       const img =
@@ -4568,6 +4608,8 @@ async function loadShopifyProductThumbs() {
         p?.images?.edges?.[0]?.node?.url ||
         '';
       if (p?.handle) handles.add(p.handle);
+      const productId = String(p?.id || '').replace(/^gid:\/\/shopify\/Product\//, '').trim();
+      if (productId) productIds.add(productId);
       if (p?.handle && img) map[p.handle] = img;
       if (p?.handle) {
         const variants = Array.isArray(p?.variants) ? p.variants : [];
@@ -4600,9 +4642,17 @@ async function loadShopifyProductThumbs() {
     });
     _shopifyThumbByHandle = map;
     _shopifyKnownHandles = handles;
+    _shopifyKnownProductIds = productIds;
+    _shopifyCatalogLoaded = true;
     _shopifyProductMetaByHandle = meta;
+    _syncResolvedProductHandle();
     updateViewSwitcher();
-  } catch(e) {}
+    renderMobileProductsList();
+  } catch(e) {
+    _shopifyCatalogLoaded = true;
+    _shopifyCatalogFailed = true;
+    updateViewSwitcher();
+  }
 }
 
 async function refreshResolvedProductPrice() {
@@ -4744,7 +4794,13 @@ function renderMobileProductsList() {
   const wrap = document.getElementById('mobile-products-list');
   if (!wrap) return;
 
-  const links = Array.isArray(SHOPIFY_PRODUCT_LINKS) ? SHOPIFY_PRODUCT_LINKS : [];
+  const links = _getVisibleShopifyProductLinks();
+  if (!links.length && window._TL_SHOP) {
+    wrap.innerHTML = `<div style="color:var(--text3);font-size:12px;text-align:center;padding:24px 12px">
+      Aucun produit personnalisable n’est disponible pour le moment.
+    </div>`;
+    return;
+  }
   if (!links.length) {
     // Mode local : 4 types génériques
     const generics = [
@@ -5143,10 +5199,25 @@ function updateViewSwitcher() {
     return;
   }
 
+  if (window._TL_SHOP && (!_shopifyLinksLoaded || !_shopifyCatalogLoaded)) {
+    if (switcherDesktop) switcherDesktop.innerHTML = '';
+    if (switcherMobile)  switcherMobile.innerHTML  = '';
+    return;
+  }
+
   let sections = [];
 
-  // ── Sélecteur mockup : toujours affiché dès qu'il y a au moins 1 mockup ──
-  const mockupBtns = allMockups.map((m, mi) => {
+  // En storefront Shopify, un mockup n'est proposé au client que s'il possède
+  // au moins un produit Shopify encore présent dans le catalogue. L'admin et le
+  // mode local conservent l'accès à tous les mockups configurés.
+  const visibleMockups = allMockups
+    .map((m, mi) => ({ m, mi }))
+    .filter(({ m }) => {
+      if (!window._TL_SHOP || _shopifyLinksFailed || _shopifyCatalogFailed) return true;
+      return _getVisibleShopifyProductLinks().some(link => String(link.mockup_id || '') === String(m.id || ''));
+    });
+
+  const mockupBtns = visibleMockups.map(({ m, mi }) => {
     const active = mi === _STATE_mockupIdx;
     return `<button onclick="switchMockupSelection(${mi})"
       style="padding:6px 12px;border-radius:10px;border:1px solid ${active ? 'var(--amber)' : 'var(--border)'};
@@ -5158,12 +5229,14 @@ function updateViewSwitcher() {
     </button>`;
   }).join('');
 
-  sections.push(`
-    <div style="padding:8px 8px 4px">
-      <div style="font-size:9px;color:#111;font-family:'DM Mono',monospace;
-                  text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Mockup</div>
-      <div style="display:flex;gap:5px;flex-wrap:wrap">${mockupBtns}</div>
-    </div>`);
+  if (mockupBtns) {
+    sections.push(`
+      <div style="padding:8px 8px 4px">
+        <div style="font-size:9px;color:#111;font-family:'DM Mono',monospace;
+                    text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Mockup</div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap">${mockupBtns}</div>
+      </div>`);
+  }
 
   // ── Sélecteur de face : affiché si le mockup courant a plusieurs vues ──
   if (STATE_mockup && STATE_mockup.views.length > 1) {
@@ -7166,20 +7239,10 @@ async function _checkoutShopifyDirect() {
   if (_previewImgUrl) propsObj['_preview_img'] = _previewImgUrl;
 
   try {
-    // Variante : priorité à celle sélectionnée sur la fiche produit (ID numérique
-    // passé en URL ?variant_id=) — fiable et déjà au bon format pour /cart/add.
-    // Fallback : résolution serveur via /api/shopify/product-variant (avec ?shop=).
+    // La variante doit venir de la fiche produit. Résoudre silencieusement la
+    // première variante ici ferait acheter une taille différente de celle voulue.
     let variantId = window._TL_VARIANT_ID || '';
-    if (!variantId) {
-      const _ref = (_resolvedProductHandle || window._TL_PRODUCT_HANDLE || '');
-      const _q = _ref.startsWith('id:')
-        ? `product_id=${encodeURIComponent(_ref.slice(3))}`
-        : `handle=${encodeURIComponent(_ref)}`;
-      const pRes = await fetch(`${APP_ORIGIN}/api/shopify/product-variant?${_q}&shop=${encodeURIComponent(window._TL_SHOP || '')}`);
-      const pData = pRes.ok ? await pRes.json() : null;
-      variantId = pData?.variant_id;
-    }
-    if (!variantId) throw new Error('Variante Shopify introuvable pour ce produit');
+    if (!variantId) throw new Error('Choisissez votre taille sur la fiche produit avant de personnaliser');
 
     // ── Résolution de la variante FINALE pré-tarifée (impression INCLUSE) ──────
     // CDC juin 2026 : UNE SEULE ligne panier. Plus de 2e ligne « Frais
@@ -7264,12 +7327,31 @@ async function _checkoutShopifyDirect() {
   }
 }
 
+function _returnToShopifyProductPage(ref) {
+  const handle = String(ref || '').startsWith('id:') ? '' : String(ref || '');
+  if (window.self !== window.top) {
+    window.parent.postMessage({ type: 'tl-open-product-page', product: handle }, '*');
+    return;
+  }
+  const base = (window._TL_SHOP_URL || ('https://' + window._TL_SHOP)).replace(/\/+$/, '');
+  const targetHandle = /^[a-z0-9][a-z0-9-]*$/i.test(handle) ? handle : 't-shirt-personnalisable';
+  window.location.assign(base + '/products/' + encodeURIComponent(targetHandle));
+}
+
 async function addToCart() {
   const product = PRODUCTS[STATE.product];
   if (!product) return showToast('❌ Produit introuvable');
 
-  // ── MODE SHOPIFY DIRECT — bypass panier interne ──────────────────────
-  if (window._TL_SHOP && (_resolvedProductHandle || window._TL_PRODUCT_HANDLE)) {
+  // Sur Shopify, l'ancien panier interne ne doit jamais prendre le relais : il
+  // ne connaît ni le produit ni la taille réels. Sans contexte complet, retour
+  // à la fiche produit pour sélectionner la variante avant personnalisation.
+  if (window._TL_SHOP) {
+    const ref = _resolvedProductHandle || window._TL_PRODUCT_HANDLE || '';
+    if (!ref || !window._TL_VARIANT_ID) {
+      showToast('⚠️ Choisissez d’abord votre taille sur la fiche produit.');
+      setTimeout(() => _returnToShopifyProductPage(ref), 500);
+      return;
+    }
     return _checkoutShopifyDirect();
   }
 
@@ -8616,8 +8698,7 @@ function init() {
         .catch(() => {});
     }
 
-    loadShopifyProductLinks();
-    loadShopifyProductThumbs();
+    loadShopifyProductLinks().then(loadShopifyProductThumbs);
 
     if (_urlMockupId) {
       // Trouver le mockup correspondant dans MOCKUPS_DATA
@@ -8637,6 +8718,14 @@ function init() {
       applyMockup(STATE.product, 0);
     }
     showMockupStatus();
+
+    // ── Templates produit ────────────────────────────────────────────────
+    // MOCKUPS_DATA est chargé ici : _tplApply peut retrouver le mockup du
+    // template. Le template est appliqué APRÈS la résolution automatique et
+    // la remplace (produit, couleur, mockup, format).
+    _tplInitAdminBar();
+    const _tplProductId = _up.get('product_id') || '';
+    if (_tplProductId) _tplLoadForProduct(_tplProductId);
   });
   initCanvas();
   initPalette();
@@ -8796,6 +8885,212 @@ async function apiFetch(path, opts = {}) {
     console.warn(`API ${path} failed:`, err.message);
     return null;
   }
+}
+
+// ============================================
+// TEMPLATES PRODUIT (metafield Shopify custom.tsl_template)
+// ============================================
+// Deux flux, tous deux inactifs par défaut :
+//
+//  • Admin (?admin=1&shop&host, studio ouvert en iframe depuis l'admin TSL) :
+//    prépare un design recto+verso, choisit un produit via le Resource Picker
+//    natif, et l'enregistre dans le metafield du produit.
+//
+//  • Client (?product_id=… , déjà utilisé par le studio pour résoudre le
+//    mockup) : si le produit porte un template, il est chargé et remplace le
+//    produit / la couleur / le mockup / le format résolus automatiquement.
+//
+// Sans ces paramètres, rien de ce bloc ne s'exécute — le flux client existant
+// est strictement inchangé.
+
+const TPL_VERSION = 1;
+
+// Mode admin : le paramètre seul ne suffit pas, App Bridge doit répondre
+// (il n'est injecté par le serveur que si ?admin=1&shop&host sont présents).
+function _tplAdminMode() {
+  return new URLSearchParams(window.location.search).get('admin') === '1'
+      && typeof window.shopify !== 'undefined';
+}
+
+// Session token Shopify frais (TTL ~60 s) — jamais mis en cache.
+async function _tplIdToken() {
+  for (let i = 0; i < 50 && (typeof window.shopify === 'undefined' || !window.shopify.idToken); i++) {
+    await new Promise(r => setTimeout(r, 100));
+  }
+  if (typeof window.shopify === 'undefined' || !window.shopify.idToken) return null;
+  try { return await window.shopify.idToken(); }
+  catch (e) { console.warn('[TPL] idToken:', e.message); return null; }
+}
+
+// ── Sérialisation ───────────────────────────────────────────────────────────
+// On repart de STATE.viewLayers (toutes les faces), pas de canvas.toJSON() qui
+// ne verrait que la face courante. STATE.viewThumbs est délibérément exclu :
+// ce sont des dataURL JPEG qui feraient exploser la taille du metafield.
+// La face active n'est pas stockée : c'est un état de session, le client
+// ouvrira toujours sur le recto.
+function _tplBuild() {
+  _saveCurrentViewLayers(); // fige la face en cours d'édition dans STATE.viewLayers
+  return {
+    v:           TPL_VERSION,
+    product:     STATE.product,
+    color:       STATE.textileColor,
+    format:      STATE.format,
+    mockupId:    STATE_mockup?.id ?? null,
+    viewFormats: STATE.viewFormats || {},
+    viewLayers:  STATE.viewLayers  || {},
+    savedAt:     new Date().toISOString(),
+  };
+}
+
+// Repère les visuels qui ne sont pas des URLs (dataURL base64) : ce sont eux
+// qui font dépasser la limite de 128 Ko du metafield JSON.
+function _tplCountInlineImages(tpl) {
+  let n = 0;
+  Object.values(tpl.viewLayers || {}).forEach(objs => {
+    (objs || []).forEach(o => { if (typeof o?.src === 'string' && o.src.startsWith('data:')) n++; });
+  });
+  return n;
+}
+
+// ── Enregistrement ──────────────────────────────────────────────────────────
+async function tplSaveAsTemplate() {
+  if (!_tplAdminMode()) return;
+
+  let selection;
+  try {
+    selection = await window.shopify.resourcePicker({ type: 'product', multiple: false });
+  } catch (e) {
+    return showToast('❌ Sélecteur produit indisponible : ' + e.message);
+  }
+  if (!selection || !selection.length) return; // annulé
+
+  const product = selection[0];
+  // On envoie l'ID NUMÉRIQUE, pas le GID : un "gid://…" encodé dans le chemin
+  // donne des %2F, que certains reverse-proxies normalisent ou refusent.
+  // Le serveur reconstruit le GID (_toProductGid).
+  const productId = String(product.id || '').replace(/\D/g, '');
+  const label     = product.title || productId;
+  if (!productId) return showToast('❌ Produit sans identifiant exploitable');
+
+  // Écrasement : prévenir avant de remplacer un template existant.
+  const existing = await apiFetch(`/api/products/${encodeURIComponent(productId)}/template`);
+  if (existing?.exists) {
+    const when = existing.updatedAt ? new Date(existing.updatedAt).toLocaleString('fr-FR') : '';
+    if (!confirm(`Un template existe déjà pour « ${label} »${when ? ` (enregistré le ${when})` : ''}.\n\nLe remplacer ?`)) return;
+  }
+
+  const tpl    = _tplBuild();
+  const inline = _tplCountInlineImages(tpl);
+  const koCalc = Math.round(JSON.stringify(tpl).length / 1024);
+  if (inline) {
+    if (!confirm(`${inline} visuel(s) ne viennent pas de la bibliothèque Shopify et sont intégrés en base64 (~${koCalc} Ko).\n\n`
+               + 'Shopify limite un template à 128 Ko : l\'enregistrement risque d\'échouer.\n\nContinuer quand même ?')) return;
+  }
+
+  showToast('⏳ Enregistrement du template…');
+  const token = await _tplIdToken();
+  if (!token) return showToast('❌ Session Shopify indisponible — rouvrez le studio depuis l\'admin');
+
+  try {
+    const res = await fetch(`${API_BASE}/api/admin/products/${encodeURIComponent(productId)}/template`, {
+      method: 'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${token}`,
+        ...(window._TL_SHOP ? { 'X-Shop-Domain': window._TL_SHOP } : {}),
+      },
+      body: JSON.stringify({ template: tpl }),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) return showToast('❌ ' + (out.error || `HTTP ${res.status}`));
+    showToast(`✅ Template enregistré sur « ${label} » (${Math.round((out.bytes || 0) / 1024)} Ko)`);
+  } catch (e) {
+    showToast('❌ ' + e.message);
+  }
+}
+
+// ── Bandeau admin ───────────────────────────────────────────────────────────
+function _tplInitAdminBar() {
+  if (!_tplAdminMode() || document.getElementById('tpl-admin-bar')) return;
+  const bar = document.createElement('div');
+  bar.id = 'tpl-admin-bar';
+  bar.style.cssText =
+    // bottom:84px — au-dessus de la barre d'onglets mobile et de la barre
+    // d'actions desktop, qui occupent toutes deux le bas de l'écran.
+    'position:fixed;left:50%;bottom:84px;transform:translateX(-50%);z-index:8000;'
+    + 'display:flex;align-items:center;gap:12px;padding:9px 14px;border-radius:999px;'
+    + 'background:rgba(20,20,26,.94);border:1px solid rgba(245,158,11,.5);'
+    + 'box-shadow:0 8px 28px rgba(0,0,0,.45);backdrop-filter:blur(8px);'
+    + 'font-family:\'DM Sans\',sans-serif;font-size:12.5px;color:#f0f0f5';
+  bar.innerHTML =
+    '<span style="display:flex;align-items:center;gap:6px;white-space:nowrap">'
+    + '<span style="width:7px;height:7px;border-radius:50%;background:#F59E0B;flex-shrink:0"></span>'
+    + 'Mode Admin — préparation d\'un template</span>'
+    + '<button id="tpl-save-btn" style="border:none;border-radius:999px;padding:7px 15px;'
+    + 'background:#F59E0B;color:#111;font-weight:700;font-size:12.5px;cursor:pointer;'
+    + 'font-family:\'DM Sans\',sans-serif;white-space:nowrap">Enregistrer comme template</button>';
+  document.body.appendChild(bar);
+  document.getElementById('tpl-save-btn').onclick = tplSaveAsTemplate;
+}
+
+// ── Chargement côté client ──────────────────────────────────────────────────
+// Le template fait autorité : il impose produit, couleur, mockup et format,
+// par-dessus ce que la résolution ?product_id= avait déjà appliqué.
+function _tplApply(tpl) {
+  if (!tpl || !tpl.viewLayers) return false;
+
+  // 1. viewFormats doit être posé AVANT applyMockup : il s'en sert pour
+  //    restaurer le format propre de la face affichée (petit recto / gros verso).
+  STATE.viewFormats = tpl.viewFormats || {};
+  if (tpl.product) STATE.product      = tpl.product;
+  if (tpl.color)   STATE.textileColor = tpl.color;
+  if (tpl.format)  STATE.format       = tpl.format;
+
+  // 2. Marquer le produit actif dans l'UI sans passer par selectProduct(),
+  //    qui rouvrirait le panneau « Produits disponibles » au chargement.
+  try {
+    document.querySelectorAll('[data-product]').forEach(el =>
+      el.classList.toggle('active', el.dataset.product === STATE.product));
+  } catch (_) {}
+
+  // 3. Retrouver le mockup d'origine : les clés de viewLayers valent
+  //    "<mockupId>_<viewIdx>", elles ne correspondront que sur le bon mockup.
+  let mockupIdxLocal = 0;
+  const forProduct = MOCKUPS_DATA.filter(m => m.product === STATE.product);
+  if (tpl.mockupId != null) {
+    const i = forProduct.findIndex(m => String(m.id) === String(tpl.mockupId));
+    if (i >= 0) mockupIdxLocal = i;
+    else console.warn('[TPL] mockup', tpl.mockupId, 'introuvable — repli sur le premier du produit');
+  }
+
+  // 4. Toujours ouvrir sur le recto : la face active n'est pas stockée.
+  STATE_viewIdx = 0;
+  applyMockup(STATE.product, 0, mockupIdxLocal);
+
+  // 5. Les calques sont injectés APRÈS applyMockup, jamais avant : son étape 1
+  //    appelle _saveCurrentViewLayers() (canvas encore vide → écraserait le
+  //    template) ou remet STATE.viewLayers à {} si le produit change. On pose
+  //    donc les calques une fois le mockup installé, puis on restaure le recto
+  //    explicitement. Même temporisation que loadDesignFromAPI (applyMockup
+  //    charge le PNG du vêtement de façon asynchrone).
+  setTimeout(() => {
+    STATE.viewLayers = tpl.viewLayers;
+    _restoreViewLayers(STATE_mockup?.id, 0, () => {
+      try { _reorderCanvasLayers(); } catch (_) {}
+      try { if (tpl.color) updateTextileColor(tpl.color); } catch (_) {}
+      try { updateLayerBar(); updateDesktopLayerPanel(); } catch (_) {}
+      try { updatePrice(); } catch (_) {}
+      try { canvas.requestRenderAll(); } catch (_) {}
+    });
+  }, 800);
+  return true;
+}
+
+async function _tplLoadForProduct(productId) {
+  if (!productId) return;
+  const data = await apiFetch(`/api/products/${encodeURIComponent(productId)}/template`);
+  if (!data?.exists || !data.template) return; // produit sans template → flux normal
+  if (_tplApply(data.template)) showToast('🎨 Design chargé — personnalisez-le');
 }
 
 // ── Charger les catégories produit depuis l'API et mettre à jour les noms dans l'UI ──
