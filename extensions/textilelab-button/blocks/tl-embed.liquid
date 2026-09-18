@@ -4,12 +4,26 @@
   backend de l'app INSTALLÉE sur cette boutique, qui injecte sa propre origin.
   Plus d'URL backend en dur → marche pour n'importe quel marchand.
 {% endcomment %}
+<script>
+  window.TL_CONFIG = window.TL_CONFIG || {};
+  window.TL_CONFIG.defaultProductHandle = {{ block.settings.default_product_handle | default: 't-shirt-personnalisable' | json }};
+</script>
+{% # theme-check-disable RemoteAsset %}
 <script src="/apps/textilelab/tl-modal.js" defer></script>
+{% # theme-check-enable RemoteAsset %}
 
 {% schema %}
 {
   "name": "TextileLab Script",
   "target": "head",
-  "settings": []
+  "settings": [
+    {
+      "type": "text",
+      "id": "default_product_handle",
+      "label": "Produit vierge par défaut",
+      "info": "Handle Shopify utilisé par les boutons génériques Personnaliser.",
+      "default": "t-shirt-personnalisable"
+    }
+  ]
 }
 {% endschema %}

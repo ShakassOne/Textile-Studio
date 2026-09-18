@@ -79,8 +79,20 @@ router.get('/products', async (req, res) => {
       return res.status(503).json({ error: 'Shopify non configuré — installez l\'app via OAuth', configured: false });
     }
 
+    const requestedIds = String(req.query?.ids || '')
+      .split(',')
+      .map(id => id.replace(/^gid:\/\/shopify\/Product\//, '').trim())
+      .filter(id => /^\d+$/.test(id))
+      .slice(0, 250);
+    const productsQuery = new URLSearchParams({
+      limit: '250',
+      status: 'active',
+      fields: 'id,title,handle,images,image,options,variants',
+    });
+    if (requestedIds.length) productsQuery.set('ids', requestedIds.join(','));
+
     const apiRes = await fetch(
-      `https://${shopRecord.shop_domain}/admin/api/2024-01/products.json?limit=250&fields=id,title,handle,images,image,options,variants`,
+      `https://${shopRecord.shop_domain}/admin/api/2024-01/products.json?${productsQuery.toString()}`,
       { headers: { 'X-Shopify-Access-Token': shopRecord.access_token } }
     );
 
@@ -236,7 +248,7 @@ router.post('/checkout', async (req, res) => {
   const db = getDB();
   let savedDesignId = design_id;
 
-  const EXTRA_PRICE  = { A3: 8, A4: 5, A5: 3, A6: 2 };
+  const EXTRA_PRICE  = { A3: 4, A4: 3, A5: 2, A6: 1.5 };
   const BASE_PRICE   = { tshirt: 19.90, hoodie: 39.90, cap: 24.90, totebag: 14.90 };
 
   // Prix unitaire total = base + (extra × vues_avec_contenu)

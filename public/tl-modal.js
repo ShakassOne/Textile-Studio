@@ -652,6 +652,11 @@
           closeModal();
           break;
 
+        case 'tl-open-product-page':
+          closeModal();
+          _tlGoToProductPage(e.data.product || '');
+          break;
+
         case 'tl-add-to-cart': {
           var _vid        = e.data.variantId;
           var _props      = e.data.properties || {};
@@ -740,10 +745,51 @@
   }
 
   // ── Interception des liens "Personnalisé" ───────────────────────────────────
+  function _tlDefaultProductHandle() {
+    var configured = window.TL_CONFIG && window.TL_CONFIG.defaultProductHandle;
+    var handle = String(configured || 't-shirt-personnalisable').trim().toLowerCase();
+    return /^[a-z0-9][a-z0-9-]*$/.test(handle) ? handle : 't-shirt-personnalisable';
+  }
+
+  function _tlProductPageUrl(handle) {
+    var clean = String(handle || '').trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(clean)) clean = _tlDefaultProductHandle();
+    return '/products/' + encodeURIComponent(clean);
+  }
+
+  function _tlGoToProductPage(handle) {
+    window.location.assign(_tlProductPageUrl(handle));
+  }
+
+  function _tlCurrentVariantId(link) {
+    var scope = link && link.closest
+      ? (link.closest('.shopify-section, product-info, main') || document)
+      : document;
+    var input = scope.querySelector('form[action*="/cart/add"] input[name="id"]')
+      || document.querySelector('form[action*="/cart/add"] input[name="id"]')
+      || document.querySelector('product-form input[name="id"]')
+      || document.querySelector('input[name="id"][value]');
+    var value = input && input.value ? String(input.value).trim() : '';
+    return /^\d+$/.test(value) ? value : '';
+  }
+
+  function _tlEditorRequest(href, link) {
+    try {
+      var url = new URL(href, window.location.origin);
+      var hasProduct = !!(url.searchParams.get('product_id') || url.searchParams.get('product'));
+      var variantId = _tlCurrentVariantId(link) || url.searchParams.get('variant_id');
+      if (variantId) url.searchParams.set('variant_id', variantId);
+      return { url: url.href, ready: hasProduct && !!variantId };
+    } catch (e) {
+      return { url: href, ready: false };
+    }
+  }
+
   function interceptLinks() {
     document.addEventListener('click', function(e) {
       var link = e.target.closest('a');
       if (!link) return;
+      if (link.hasAttribute('data-tsl-open')) return;
       var href = link.getAttribute('href') || '';
       var isTLEditor =
         link.dataset.tlEditor === 'true' ||
@@ -752,11 +798,12 @@
       if (!isTLEditor) return;
       e.preventDefault();
       e.stopPropagation();
-      var editorUrl = href;
-      if (!href.startsWith('http') && !href.startsWith('//')) {
-        editorUrl = new URL(href, window.location.origin).href;
+      var request = _tlEditorRequest(href, link);
+      if (!request.ready) {
+        _tlGoToProductPage('');
+        return;
       }
-      openModal(editorUrl);
+      openModal(request.url);
     }, true);
   }
 
@@ -800,14 +847,28 @@
       e.stopPropagation();
 
       var customUrl = btn.dataset.tslUrl;
-      var url = customUrl ? customUrl : buildStudioUrl(btn.getAttribute('data-tsl-open'));
-      openModal(url);
+      var ref = String(btn.getAttribute('data-tsl-open') || '').trim();
+      var url = customUrl ? customUrl : buildStudioUrl(ref);
+      var request = _tlEditorRequest(url, btn);
+      if (!request.ready) {
+        _tlGoToProductPage(/^[a-z0-9][a-z0-9-]*$/.test(ref) ? ref : '');
+        return;
+      }
+      openModal(request.url);
     }, true);
   }
 
-  // Helper exposé pour usage JS direct : TLModal.openProduct('123' | 'handle')
-  function openProduct(idOrHandle) {
-    openModal(buildStudioUrl(idOrHandle));
+  // Helper exposé pour usage JS direct. Sans variante, retour obligatoire par
+  // la fiche produit afin que le client choisisse réellement sa taille.
+  function openProduct(idOrHandle, variantId) {
+    var ref = String(idOrHandle || '').trim();
+    if (!variantId) {
+      _tlGoToProductPage(/^[a-z0-9][a-z0-9-]*$/.test(ref) ? ref : '');
+      return;
+    }
+    var url = new URL(buildStudioUrl(ref));
+    url.searchParams.set('variant_id', String(variantId));
+    openModal(url.href);
   }
 
   // ── Préférences marchand (apparence drawer) ────────────────────────────────

@@ -3174,22 +3174,22 @@
       <div class="format-card active" onclick="setFormat('A3');updateFormatCards()" data-fmt="A3">
         <div class="format-card-name">A3</div>
         <div class="format-card-dims">297 × 420mm</div>
-        <div class="format-card-price">+8,00 €</div>
+        <div class="format-card-price">+4,00 €</div>
       </div>
       <div class="format-card" onclick="setFormat('A4');updateFormatCards()" data-fmt="A4">
         <div class="format-card-name">A4</div>
         <div class="format-card-dims">210 × 297mm</div>
-        <div class="format-card-price">+5,00 €</div>
+        <div class="format-card-price">+3,00 €</div>
       </div>
       <div class="format-card" onclick="setFormat('A5');updateFormatCards()" data-fmt="A5">
         <div class="format-card-name">A5</div>
         <div class="format-card-dims">148 × 210mm</div>
-        <div class="format-card-price">+3,00 €</div>
+        <div class="format-card-price">+2,00 €</div>
       </div>
       <div class="format-card" onclick="setFormat('A6');updateFormatCards()" data-fmt="A6">
         <div class="format-card-name">A6</div>
         <div class="format-card-dims">105 × 148mm</div>
-        <div class="format-card-price">+2,00 €</div>
+        <div class="format-card-price">+1,50 €</div>
       </div>
     </div>
     <div style="display:flex;gap:10px;flex-direction:column">
@@ -4356,6 +4356,11 @@ let _tlLinksDebug = { lastSource:'init', lastCount:0, lastError:'' };
 let _shopifyThumbByHandle = {};
 let _shopifyBasePriceByRef = {};
 let _shopifyKnownHandles = new Set();
+let _shopifyKnownProductIds = new Set();
+let _shopifyCatalogLoaded = false;
+let _shopifyCatalogFailed = false;
+let _shopifyLinksLoaded = false;
+let _shopifyLinksFailed = false;
 let _shopifyProductMetaByHandle = {};
 
 // Clé unique pour identifier une combinaison mockup+vue
@@ -4428,10 +4433,23 @@ function _restoreViewLayers(mockupId, viewIdx, callback) {
 }
 
 
+function _isLiveShopifyLink(link) {
+  if (!_shopifyCatalogLoaded || _shopifyCatalogFailed) return true;
+  const handle = String(link?.handle || '').trim();
+  const productId = String(link?.product_id || '').replace(/^gid:\/\/shopify\/Product\//, '').trim();
+  return (handle && _shopifyKnownHandles.has(handle))
+    || (productId && _shopifyKnownProductIds.has(productId));
+}
+
+function _getVisibleShopifyProductLinks() {
+  return (Array.isArray(SHOPIFY_PRODUCT_LINKS) ? SHOPIFY_PRODUCT_LINKS : [])
+    .filter(_isLiveShopifyLink);
+}
+
 function _getLinkedProductsForActiveMockup() {
   const mid = String(STATE_mockup?.id || '');
   if (!mid) return [];
-  return SHOPIFY_PRODUCT_LINKS.filter(p => {
+  return _getVisibleShopifyProductLinks().filter(p => {
     const sameMockupId = String(p.mockup_id || '') === mid;
     const hasRef = (p.handle || p.product_id);
     const title = String(p.title || '').toLowerCase();
@@ -4457,7 +4475,11 @@ function _syncResolvedProductHandle() {
 let _productsPanelDismissed = false;
 
 function chooseShopifyProductHandle(ref) {
+  const previousRef = _resolvedProductHandle || window._TL_PRODUCT_HANDLE || '';
   _resolvedProductHandle = ref || '';
+  if (previousRef && _resolvedProductHandle && previousRef !== _resolvedProductHandle) {
+    window._TL_VARIANT_ID = '';
+  }
   // Marquer la fermeture comme volontaire AVANT les rerenders asynchrones
   // (refreshResolvedProductPrice → prefetchLinkedProductPrices → renderProductsPanel)
   // qui re-ouvriraient le panel sans ce flag.
@@ -4473,7 +4495,8 @@ async function loadShopifyProductLinks() {
   if (!window._TL_SHOP) return;
   try {
     const res = await fetch(`${window.location.origin}/api/product-links/public?shop=${encodeURIComponent(window._TL_SHOP)}`);
-    const data = res.ok ? await res.json() : [];
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
     SHOPIFY_PRODUCT_LINKS = (Array.isArray(data) ? data : [])
       .map(r => ({
         handle: r.shopify_product_handle || '',
@@ -4491,6 +4514,7 @@ async function loadShopifyProductLinks() {
         if (h === 'example-product') return false;
         return true;
       });
+    _shopifyLinksLoaded = true;
 
     // Les liaisons arrivent en async: re-synchroniser le produit résolu
     // puis rafraîchir le panneau mockup/produit pour afficher la sélection.
@@ -4543,6 +4567,8 @@ async function loadShopifyProductLinks() {
     updatePrice();
     prefetchLinkedProductPrices();
   } catch(e) {
+    _shopifyLinksLoaded = true;
+    _shopifyLinksFailed = true;
     _tlLinksDebug = { lastSource:'public', lastCount:0, lastError:String(e.message || e) };
     console.warn('[TL] loadShopifyProductLinks:', e.message);
     updateViewSwitcher();
@@ -4552,11 +4578,25 @@ async function loadShopifyProductLinks() {
 async function loadShopifyProductThumbs() {
   if (!window._TL_SHOP) return;
   try {
-    const res = await fetch(`${window.location.origin}/api/shopify/products?shop=${encodeURIComponent(window._TL_SHOP)}`);
-    const items = res.ok ? await res.json() : [];
+    if (_shopifyLinksLoaded && (_shopifyLinksFailed || !SHOPIFY_PRODUCT_LINKS.length)) {
+      _shopifyCatalogLoaded = true;
+      _shopifyCatalogFailed = _shopifyLinksFailed;
+      updateViewSwitcher();
+      renderMobileProductsList();
+      return;
+    }
+    const linkedIds = SHOPIFY_PRODUCT_LINKS
+      .map(link => String(link.product_id || '').replace(/^gid:\/\/shopify\/Product\//, '').trim())
+      .filter(id => /^\d+$/.test(id));
+    const params = new URLSearchParams({ shop: window._TL_SHOP });
+    if (linkedIds.length) params.set('ids', [...new Set(linkedIds)].join(','));
+    const res = await fetch(`${window.location.origin}/api/shopify/products?${params.toString()}`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const items = await res.json();
     const map = {};
     const meta = {};
     const handles = new Set();
+    const productIds = new Set();
     (Array.isArray(items) ? items : []).forEach(p => {
       // Image : couvre toutes les formes possibles (Storefront edges, Admin REST, normalisé)
       const img =
@@ -4568,6 +4608,8 @@ async function loadShopifyProductThumbs() {
         p?.images?.edges?.[0]?.node?.url ||
         '';
       if (p?.handle) handles.add(p.handle);
+      const productId = String(p?.id || '').replace(/^gid:\/\/shopify\/Product\//, '').trim();
+      if (productId) productIds.add(productId);
       if (p?.handle && img) map[p.handle] = img;
       if (p?.handle) {
         const variants = Array.isArray(p?.variants) ? p.variants : [];
@@ -4600,9 +4642,17 @@ async function loadShopifyProductThumbs() {
     });
     _shopifyThumbByHandle = map;
     _shopifyKnownHandles = handles;
+    _shopifyKnownProductIds = productIds;
+    _shopifyCatalogLoaded = true;
     _shopifyProductMetaByHandle = meta;
+    _syncResolvedProductHandle();
     updateViewSwitcher();
-  } catch(e) {}
+    renderMobileProductsList();
+  } catch(e) {
+    _shopifyCatalogLoaded = true;
+    _shopifyCatalogFailed = true;
+    updateViewSwitcher();
+  }
 }
 
 async function refreshResolvedProductPrice() {
@@ -4744,7 +4794,13 @@ function renderMobileProductsList() {
   const wrap = document.getElementById('mobile-products-list');
   if (!wrap) return;
 
-  const links = Array.isArray(SHOPIFY_PRODUCT_LINKS) ? SHOPIFY_PRODUCT_LINKS : [];
+  const links = _getVisibleShopifyProductLinks();
+  if (!links.length && window._TL_SHOP) {
+    wrap.innerHTML = `<div style="color:var(--text3);font-size:12px;text-align:center;padding:24px 12px">
+      Aucun produit personnalisable n’est disponible pour le moment.
+    </div>`;
+    return;
+  }
   if (!links.length) {
     // Mode local : 4 types génériques
     const generics = [
@@ -5143,10 +5199,25 @@ function updateViewSwitcher() {
     return;
   }
 
+  if (window._TL_SHOP && (!_shopifyLinksLoaded || !_shopifyCatalogLoaded)) {
+    if (switcherDesktop) switcherDesktop.innerHTML = '';
+    if (switcherMobile)  switcherMobile.innerHTML  = '';
+    return;
+  }
+
   let sections = [];
 
-  // ── Sélecteur mockup : toujours affiché dès qu'il y a au moins 1 mockup ──
-  const mockupBtns = allMockups.map((m, mi) => {
+  // En storefront Shopify, un mockup n'est proposé au client que s'il possède
+  // au moins un produit Shopify encore présent dans le catalogue. L'admin et le
+  // mode local conservent l'accès à tous les mockups configurés.
+  const visibleMockups = allMockups
+    .map((m, mi) => ({ m, mi }))
+    .filter(({ m }) => {
+      if (!window._TL_SHOP || _shopifyLinksFailed || _shopifyCatalogFailed) return true;
+      return _getVisibleShopifyProductLinks().some(link => String(link.mockup_id || '') === String(m.id || ''));
+    });
+
+  const mockupBtns = visibleMockups.map(({ m, mi }) => {
     const active = mi === _STATE_mockupIdx;
     return `<button onclick="switchMockupSelection(${mi})"
       style="padding:6px 12px;border-radius:10px;border:1px solid ${active ? 'var(--amber)' : 'var(--border)'};
@@ -5158,12 +5229,14 @@ function updateViewSwitcher() {
     </button>`;
   }).join('');
 
-  sections.push(`
-    <div style="padding:8px 8px 4px">
-      <div style="font-size:9px;color:#111;font-family:'DM Mono',monospace;
-                  text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Mockup</div>
-      <div style="display:flex;gap:5px;flex-wrap:wrap">${mockupBtns}</div>
-    </div>`);
+  if (mockupBtns) {
+    sections.push(`
+      <div style="padding:8px 8px 4px">
+        <div style="font-size:9px;color:#111;font-family:'DM Mono',monospace;
+                    text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Mockup</div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap">${mockupBtns}</div>
+      </div>`);
+  }
 
   // ── Sélecteur de face : affiché si le mockup courant a plusieurs vues ──
   if (STATE_mockup && STATE_mockup.views.length > 1) {
@@ -7166,20 +7239,10 @@ async function _checkoutShopifyDirect() {
   if (_previewImgUrl) propsObj['_preview_img'] = _previewImgUrl;
 
   try {
-    // Variante : priorité à celle sélectionnée sur la fiche produit (ID numérique
-    // passé en URL ?variant_id=) — fiable et déjà au bon format pour /cart/add.
-    // Fallback : résolution serveur via /api/shopify/product-variant (avec ?shop=).
+    // La variante doit venir de la fiche produit. Résoudre silencieusement la
+    // première variante ici ferait acheter une taille différente de celle voulue.
     let variantId = window._TL_VARIANT_ID || '';
-    if (!variantId) {
-      const _ref = (_resolvedProductHandle || window._TL_PRODUCT_HANDLE || '');
-      const _q = _ref.startsWith('id:')
-        ? `product_id=${encodeURIComponent(_ref.slice(3))}`
-        : `handle=${encodeURIComponent(_ref)}`;
-      const pRes = await fetch(`${APP_ORIGIN}/api/shopify/product-variant?${_q}&shop=${encodeURIComponent(window._TL_SHOP || '')}`);
-      const pData = pRes.ok ? await pRes.json() : null;
-      variantId = pData?.variant_id;
-    }
-    if (!variantId) throw new Error('Variante Shopify introuvable pour ce produit');
+    if (!variantId) throw new Error('Choisissez votre taille sur la fiche produit avant de personnaliser');
 
     // ── Résolution de la variante FINALE pré-tarifée (impression INCLUSE) ──────
     // CDC juin 2026 : UNE SEULE ligne panier. Plus de 2e ligne « Frais
@@ -7264,12 +7327,31 @@ async function _checkoutShopifyDirect() {
   }
 }
 
+function _returnToShopifyProductPage(ref) {
+  const handle = String(ref || '').startsWith('id:') ? '' : String(ref || '');
+  if (window.self !== window.top) {
+    window.parent.postMessage({ type: 'tl-open-product-page', product: handle }, '*');
+    return;
+  }
+  const base = (window._TL_SHOP_URL || ('https://' + window._TL_SHOP)).replace(/\/+$/, '');
+  const targetHandle = /^[a-z0-9][a-z0-9-]*$/i.test(handle) ? handle : 't-shirt-personnalisable';
+  window.location.assign(base + '/products/' + encodeURIComponent(targetHandle));
+}
+
 async function addToCart() {
   const product = PRODUCTS[STATE.product];
   if (!product) return showToast('❌ Produit introuvable');
 
-  // ── MODE SHOPIFY DIRECT — bypass panier interne ──────────────────────
-  if (window._TL_SHOP && (_resolvedProductHandle || window._TL_PRODUCT_HANDLE)) {
+  // Sur Shopify, l'ancien panier interne ne doit jamais prendre le relais : il
+  // ne connaît ni le produit ni la taille réels. Sans contexte complet, retour
+  // à la fiche produit pour sélectionner la variante avant personnalisation.
+  if (window._TL_SHOP) {
+    const ref = _resolvedProductHandle || window._TL_PRODUCT_HANDLE || '';
+    if (!ref || !window._TL_VARIANT_ID) {
+      showToast('⚠️ Choisissez d’abord votre taille sur la fiche produit.');
+      setTimeout(() => _returnToShopifyProductPage(ref), 500);
+      return;
+    }
     return _checkoutShopifyDirect();
   }
 
@@ -8616,8 +8698,7 @@ function init() {
         .catch(() => {});
     }
 
-    loadShopifyProductLinks();
-    loadShopifyProductThumbs();
+    loadShopifyProductLinks().then(loadShopifyProductThumbs);
 
     if (_urlMockupId) {
       // Trouver le mockup correspondant dans MOCKUPS_DATA
