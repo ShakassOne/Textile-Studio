@@ -41,9 +41,11 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'DM San
 /* ── NAV ── */
 #nav{width:220px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden}
 .nav-logo{padding:18px;border-bottom:1px solid var(--border)}
-.nav-logo .logo{font-family:'Syne',sans-serif;font-weight:800;font-size:17px}
-.nav-logo .logo span{color:var(--amber)}
-.nav-logo .badge{margin-top:4px;font-size:10px;color:var(--text3);font-family:'DM Mono',monospace}
+/* Logo Winshirt : fichier noir sur fond transparent → inversé en blanc sur le
+   thème sombre (défaut), laissé tel quel en mode clair. */
+.nav-logo .logo-img{display:block;width:118px;height:auto;filter:invert(1)}
+body.light-mode .nav-logo .logo-img{filter:none}
+.nav-logo .badge{margin-top:8px;font-size:10px;color:var(--text3);font-family:'DM Mono',monospace}
 .nav-section{padding:16px 10px 4px;font-size:9px;font-family:'DM Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px}
 .nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:9px;cursor:pointer;transition:all .15s;margin:1px 6px;color:var(--text2);font-size:13px;border:1px solid transparent}
 .nav-item svg{width:15px;height:15px;flex-shrink:0;opacity:.6}
@@ -127,6 +129,18 @@ tr:hover td{background:var(--glass)}
 .lib-sel-toolbar.visible{display:flex}
 .upload-zone{border:2px dashed var(--border);border-radius:14px;padding:30px;text-align:center;cursor:pointer;transition:all .2s}
 .upload-zone:hover,.upload-zone.drag{border-color:var(--amber);background:var(--amber-dim)}
+
+/* ── Modale « Fichiers Shopify » (bibliothèque hébergée sur le CDN Shopify) ── */
+.sf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px;max-height:46vh;overflow-y:auto;padding:2px}
+.sf-tile{position:relative;aspect-ratio:1;border:2px solid var(--border);border-radius:10px;overflow:hidden;cursor:pointer;background:var(--bg3);transition:border-color .15s,transform .1s}
+.sf-tile:hover{border-color:var(--amber);transform:translateY(-1px)}
+.sf-tile.sel{border-color:var(--amber);box-shadow:0 0 0 2px var(--amber-dim)}
+.sf-tile img{width:100%;height:100%;object-fit:contain;background:
+  repeating-conic-gradient(rgba(128,128,128,.14) 0% 25%,transparent 0% 50%) 50%/14px 14px}
+.sf-tile .sf-check{position:absolute;top:5px;right:5px;width:19px;height:19px;border-radius:50%;background:var(--amber);color:#111;font-size:12px;font-weight:700;display:none;align-items:center;justify-content:center}
+.sf-tile.sel .sf-check{display:flex}
+.sf-tile .sf-name{position:absolute;left:0;right:0;bottom:0;padding:3px 5px;font-size:9px;line-height:1.25;background:rgba(0,0,0,.66);color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sf-empty{grid-column:1/-1;text-align:center;padding:26px 10px;color:var(--text3);font-size:12px}
 
 /* ── COMPRESSEUR IMAGES ── */
 .compress-toggle-row{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg3);border-radius:10px;border:1px solid var(--border)}
@@ -292,7 +306,8 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
   <!-- NAV -->
   <nav id="nav">
     <div class="nav-logo">
-      <div class="logo">Textile<span>Lab</span> Studio</div>
+      <img class="logo-img" alt="Winshirt"
+           src="https://cdn.shopify.com/s/files/1/0927/6181/7424/files/Logo_Winshirt_14ca612c-0aaf-4f77-aaff-4e96d7c2a567.png?v=1789736445">
       <div class="badge">Administration</div>
     </div>
     <div style="flex:1;overflow-y:auto;padding:8px 0">
@@ -976,6 +991,7 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
 <input type="file" id="global-view-file-input" accept="image/*" style="display:none" onchange="handleViewImage(event)">
 <input type="file" id="lib-upload-file-input" accept="image/*,image/svg+xml" multiple style="display:none">
 <input type="file" id="lib-upload-folder-input" accept="image/*,image/svg+xml" multiple webkitdirectory style="display:none">
+<input type="file" id="sf-file-input" accept="image/*,image/svg+xml" multiple style="display:none">
 <div id="toast"></div>
 
 <script>
@@ -1564,7 +1580,388 @@ async function _confirmDeleteLibCat(cat) {
   }
 }
 
-function openUploadModal() {
+// ============================================
+// FICHIERS SHOPIFY (CDN) — source des visuels de la bibliothèque
+// ============================================
+// Le back-office n'héberge plus les visuels sur le disque Railway : ils vivent
+// dans Shopify → Contenu → Fichiers, et la bibliothèque TSL ne stocke que leur
+// URL CDN (cf. POST /api/library/external).
+//
+// Shopify n'expose AUCUN sélecteur de fichiers natif aux apps embedded — le
+// Resource Picker d'App Bridge ne gère que product / collection / variant. On
+// reconstruit donc la modale ici, au-dessus de l'Admin GraphQL API (proxy
+// /api/admin/graphql), avec les deux mêmes entrées que l'interface Shopify :
+// choisir un fichier existant, ou en téléverser un nouveau.
+//
+// Hors embed Shopify (dev local, back-office autonome), window.shopify est
+// absent → on retombe sur l'ancienne modale d'upload Railway.
+
+function _sfAvailable() {
+  return !!(window.__TL_EMBED && typeof window.shopify !== 'undefined');
+}
+
+// État de la modale (réinitialisé à chaque ouverture)
+let _sfFiles    = [];    // fichiers Shopify chargés (déjà normalisés)
+let _sfSelected = new Map(); // id → fichier
+let _sfCursor   = null;  // pagination
+let _sfHasNext  = false;
+let _sfLoading  = false;
+
+// ── Appel GraphQL Admin via le proxy serveur ────────────────────────────────
+async function _sfGraphQL(query, variables = {}) {
+  const res = await api('/api/admin/graphql', {
+    method: 'POST',
+    body: JSON.stringify({ query, variables }),
+  });
+  if (!res) throw new Error(window.__TL_LAST_API_ERROR || 'Appel Shopify échoué');
+  if (res.error) throw new Error(res.error);
+  return res.data;
+}
+
+// ── Normalise un noeud File Shopify → { id, url, thumb, name, mime } ────────
+function _sfNormalize(node) {
+  if (!node) return null;
+  const url   = node.image?.url || node.url || null;
+  if (!url) return null;
+  const thumb = node.image?.thumb || url;
+  const name  = node.alt || (url.split('/').pop() || '').split('?')[0];
+  return { id: node.id, url, thumb, name, mime: node.mimeType || 'image/*', status: node.fileStatus };
+}
+
+const _SF_LIST_QUERY = `
+  query TslListFiles($first: Int!, $after: String) {
+    files(first: $first, after: $after, sortKey: CREATED_AT, reverse: true, query: "media_type:IMAGE") {
+      pageInfo { hasNextPage endCursor }
+      edges { node {
+        id
+        fileStatus
+        alt
+        ... on MediaImage {
+          mimeType
+          image { url thumb: url(transform: { maxWidth: 320, maxHeight: 320 }) }
+        }
+        ... on GenericFile { mimeType url }
+      } }
+    }
+  }`;
+
+// ── Charge une page de fichiers ────────────────────────────────────────────
+async function _sfLoadPage(append = false) {
+  if (_sfLoading) return;
+  _sfLoading = true;
+  _sfRenderGrid();
+  try {
+    const data  = await _sfGraphQL(_SF_LIST_QUERY, { first: 48, after: append ? _sfCursor : null });
+    const conn  = data?.files;
+    const items = (conn?.edges || []).map(e => _sfNormalize(e.node)).filter(Boolean);
+    _sfFiles   = append ? _sfFiles.concat(items) : items;
+    _sfCursor  = conn?.pageInfo?.endCursor || null;
+    _sfHasNext = !!conn?.pageInfo?.hasNextPage;
+  } catch (e) {
+    _sfFiles = append ? _sfFiles : [];
+    showToast('❌ Fichiers Shopify : ' + e.message);
+  } finally {
+    _sfLoading = false;
+    _sfRenderGrid();
+  }
+}
+
+// ── Rendu de la grille ─────────────────────────────────────────────────────
+function _sfRenderGrid() {
+  const grid = document.getElementById('sf-grid');
+  if (!grid) return;
+
+  if (_sfLoading && !_sfFiles.length) {
+    grid.innerHTML = '<div class="sf-empty">⏳ Chargement des fichiers Shopify…</div>';
+  } else if (!_sfFiles.length) {
+    grid.innerHTML = '<div class="sf-empty">Aucune image dans Shopify → Contenu → Fichiers.<br>Utilisez « Téléverser » ci-dessous.</div>';
+  } else {
+    grid.innerHTML = '';
+    _sfFiles.forEach(f => {
+      const tile = document.createElement('div');
+      tile.className = 'sf-tile' + (_sfSelected.has(f.id) ? ' sel' : '');
+      tile.title = f.name;
+      const img = document.createElement('img');
+      img.src = f.thumb; img.alt = f.name; img.loading = 'lazy';
+      tile.appendChild(img);
+      const check = document.createElement('div');
+      check.className = 'sf-check'; check.textContent = '✓';
+      tile.appendChild(check);
+      const nm = document.createElement('div');
+      nm.className = 'sf-name'; nm.textContent = f.name;
+      tile.appendChild(nm);
+      tile.addEventListener('click', () => _sfToggle(f.id));
+      grid.appendChild(tile);
+    });
+  }
+
+  const more = document.getElementById('sf-more-btn');
+  if (more) more.style.display = _sfHasNext ? 'inline-flex' : 'none';
+  _sfRefreshFooter();
+}
+
+function _sfToggle(id) {
+  if (_sfSelected.has(id)) _sfSelected.delete(id);
+  else {
+    const f = _sfFiles.find(x => x.id === id);
+    if (f) _sfSelected.set(id, f);
+  }
+  _sfRenderGrid();
+}
+
+function _sfRefreshFooter() {
+  const btn   = document.getElementById('sf-confirm-btn');
+  const label = document.getElementById('sf-confirm-label');
+  if (!btn || !label) return;
+  const n = _sfSelected.size;
+  btn.disabled = n === 0;
+  btn.style.opacity = n === 0 ? '.4' : '1';
+  label.textContent = n === 0 ? 'Ajouter à la bibliothèque' : `Ajouter ${n} image(s)`;
+}
+
+// ── Téléversement vers Shopify Files ───────────────────────────────────────
+// stagedUploadsCreate → POST multipart direct vers le bucket → fileCreate →
+// attente du statut READY (le CDN ne sert l'URL qu'une fois le fichier traité).
+const _SF_STAGED_MUTATION = `
+  mutation TslStagedUpload($input: [StagedUploadInput!]!) {
+    stagedUploadsCreate(input: $input) {
+      stagedTargets { url resourceUrl parameters { name value } }
+      userErrors { field message }
+    }
+  }`;
+
+const _SF_CREATE_MUTATION = `
+  mutation TslFileCreate($files: [FileCreateInput!]!) {
+    fileCreate(files: $files) {
+      files {
+        id
+        fileStatus
+        alt
+        ... on MediaImage { mimeType image { url } }
+        ... on GenericFile { mimeType url }
+      }
+      userErrors { field message }
+    }
+  }`;
+
+const _SF_STATUS_QUERY = `
+  query TslFileStatus($id: ID!) {
+    node(id: $id) {
+      ... on MediaImage { id fileStatus alt mimeType image { url } }
+      ... on GenericFile { id fileStatus alt mimeType url }
+    }
+  }`;
+
+// Les SVG ne sont pas des MediaImage côté Shopify : ils sont stockés en
+// GenericFile (contentType FILE) et servis par GenericFile.url.
+function _sfContentType(mime) {
+  return mime === 'image/svg+xml' ? 'FILE' : 'IMAGE';
+}
+
+// Plafond de résolution avant envoi — même valeur que le réglage par défaut
+// de la modale d'upload locale (« 3000 px — Haute qualité »).
+const _SF_MAX_PX = 3000;
+
+async function _sfUploadOne(file, onStep) {
+  // Compression côté client AVANT l'envoi : inutile de pousser des originaux
+  // de 20 Mo sur Shopify Files. On réutilise compressImage() — la primitive
+  // du compresseur de la modale locale — plutôt que _runCompression(), qui
+  // pilote l'UI de cette modale-là et écrase son état _uploadCompressedFiles.
+  // compressImage() rend le fichier inchangé pour les SVG et quand la
+  // compression ne ferait pas gagner d'octets.
+  onStep?.('compression…');
+  const source = await compressImage(file, _SF_MAX_PX);
+  const mime   = source.type || 'application/octet-stream';
+
+  // 1. Cible d'upload signée
+  onStep?.('cible…');
+  const staged = await _sfGraphQL(_SF_STAGED_MUTATION, {
+    input: [{
+      filename:   source.name,
+      mimeType:   mime,
+      resource:   _sfContentType(mime),
+      httpMethod: 'POST',
+      fileSize:   String(source.size),
+    }],
+  });
+  const errs = staged?.stagedUploadsCreate?.userErrors || [];
+  if (errs.length) throw new Error(errs.map(e => e.message).join(' | '));
+  const target = staged?.stagedUploadsCreate?.stagedTargets?.[0];
+  if (!target?.url) throw new Error('Aucune cible d\'upload renvoyée par Shopify');
+
+  // 2. Envoi du binaire directement au bucket Shopify (le fichier ne passe
+  //    pas par Railway). L'ordre compte : les paramètres signés AVANT le file.
+  onStep?.('envoi…');
+  const form = new FormData();
+  (target.parameters || []).forEach(p => form.append(p.name, p.value));
+  form.append('file', source);
+  const up = await fetch(target.url, { method: 'POST', body: form });
+  if (!up.ok) throw new Error(`Upload Shopify refusé (HTTP ${up.status})`);
+
+  // 3. Enregistrement du fichier dans la boutique
+  onStep?.('finalisation…');
+  const created = await _sfGraphQL(_SF_CREATE_MUTATION, {
+    files: [{
+      originalSource: target.resourceUrl,
+      alt:            source.name,
+      contentType:    _sfContentType(mime),
+    }],
+  });
+  const cErrs = created?.fileCreate?.userErrors || [];
+  if (cErrs.length) throw new Error(cErrs.map(e => e.message).join(' | '));
+  const node = created?.fileCreate?.files?.[0];
+  if (!node?.id) throw new Error('Shopify n\'a pas renvoyé de fichier');
+
+  // 4. Attente du traitement (READY) pour obtenir l'URL CDN définitive
+  let ready = _sfNormalize(node);
+  for (let i = 0; i < 30 && (!ready || node.fileStatus !== 'READY'); i++) {
+    await new Promise(r => setTimeout(r, 1000));
+    onStep?.(`traitement… ${i + 1}s`);
+    const st = await _sfGraphQL(_SF_STATUS_QUERY, { id: node.id });
+    const n  = st?.node;
+    if (n?.fileStatus === 'FAILED') throw new Error('Shopify n\'a pas pu traiter le fichier');
+    if (n?.fileStatus === 'READY') { ready = _sfNormalize(n); break; }
+  }
+  if (!ready?.url) throw new Error('Fichier encore en traitement chez Shopify — réessayez dans un instant');
+  return ready;
+}
+
+async function _sfHandleUploadFiles(files) {
+  const list = Array.from(files || []).filter(f => f.type.startsWith('image/'));
+  if (!list.length) return;
+  const status = document.getElementById('sf-upload-status');
+  const btn    = document.getElementById('sf-confirm-btn');
+  if (btn) btn.disabled = true;
+
+  let ok = 0;
+  for (let i = 0; i < list.length; i++) {
+    const f = list[i];
+    try {
+      const uploaded = await _sfUploadOne(f, step => {
+        if (status) status.textContent = `⏳ ${i + 1}/${list.length} — ${f.name} : ${step}`;
+      });
+      // Le nouveau fichier arrive en tête de grille, déjà sélectionné.
+      _sfFiles.unshift(uploaded);
+      _sfSelected.set(uploaded.id, uploaded);
+      ok++;
+    } catch (e) {
+      showToast(`❌ ${f.name} : ${e.message}`);
+    }
+  }
+  if (status) status.textContent = ok ? `✅ ${ok}/${list.length} fichier(s) envoyés sur Shopify` : '';
+  _sfRenderGrid();
+}
+
+// ── Enregistrement des sélections dans la bibliothèque TSL ─────────────────
+async function _sfConfirmAdd() {
+  const picked = Array.from(_sfSelected.values());
+  if (!picked.length) return;
+  const cat   = document.getElementById('sf-cat-select')?.value || 'divers';
+  const btn   = document.getElementById('sf-confirm-btn');
+  const label = document.getElementById('sf-confirm-label');
+  if (btn) btn.disabled = true;
+
+  let done = 0;
+  for (let i = 0; i < picked.length; i++) {
+    const f = picked[i];
+    if (label) label.textContent = `⏳ ${i + 1}/${picked.length}…`;
+    const r = await api('/api/library/external', {
+      method: 'POST',
+      body: JSON.stringify({
+        url:       f.url,
+        thumb_url: f.thumb,
+        filename:  f.name,
+        category:  cat,
+        mimetype:  f.mime,
+      }),
+    });
+    if (r) done++;
+  }
+
+  document.getElementById('shopify-files-modal')?.remove();
+  _modalClose();
+  _sfSelected.clear();
+  showToast(`✅ ${done}/${picked.length} image(s) ajoutée(s) dans "${cat}"`);
+  await new Promise(r => setTimeout(r, 250));
+  await loadLibrary();
+  if (_libCats.includes(cat)) filterLib(cat);
+}
+
+// ── La modale ──────────────────────────────────────────────────────────────
+function openShopifyFilesModal(pendingFiles) {
+  document.getElementById('shopify-files-modal')?.remove();
+  _modalOpen();
+  _sfFiles = []; _sfSelected = new Map(); _sfCursor = null; _sfHasNext = false;
+
+  const opts  = _libCats.map(c => `<option value="${c}">${c}</option>`).join('');
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay open';
+  modal.id = 'shopify-files-modal';
+  modal.addEventListener('mousedown', e => { if (e.target === modal) { modal.remove(); _modalClose(); } });
+  modal.innerHTML = `
+    <div class="modal-box" style="width:min(620px,95vw)">
+      <div class="modal-header">
+        <div class="modal-title">🛍 Fichiers Shopify</div>
+        <button class="modal-close" onclick="document.getElementById('shopify-files-modal').remove();_modalClose()">×</button>
+      </div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:13px">
+        <div style="font-size:11px;color:var(--text3);line-height:1.45">
+          Les visuels sont hébergés sur le CDN Shopify (Contenu → Fichiers). La bibliothèque
+          TSL n'enregistre que leur adresse — rien n'est stocké sur le serveur TextileLab.
+          Les fichiers téléversés ici sont redimensionnés à ${_SF_MAX_PX} px max avant envoi.
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">Catégorie de destination</label>
+          <select id="sf-cat-select" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:9px 12px;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;outline:none">
+            ${opts || '<option value="divers">Divers</option>'}
+          </select>
+        </div>
+        <div class="sf-grid" id="sf-grid"></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn" style="font-size:12px" id="sf-upload-btn">⬆ Téléverser sur Shopify</button>
+          <button class="btn" style="font-size:12px;display:none" id="sf-more-btn">Charger plus</button>
+          <div id="sf-upload-status" style="font-size:11px;color:var(--text3);flex:1;text-align:right"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="document.getElementById('shopify-files-modal').remove();_modalClose()">Annuler</button>
+        <button class="btn btn-primary" id="sf-confirm-btn" disabled style="opacity:.4" onclick="_sfConfirmAdd()">
+          <span id="sf-confirm-label">Ajouter à la bibliothèque</span>
+        </button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  // Input file dédié : sert uniquement à alimenter Shopify Files.
+  const inp = document.getElementById('sf-file-input');
+  inp.value = '';
+  inp.onchange = async () => { const f = inp.files; inp.value = ''; await _sfHandleUploadFiles(f); };
+  document.getElementById('sf-upload-btn').onclick = e => { e.stopPropagation(); inp.click(); };
+  document.getElementById('sf-more-btn').onclick   = () => _sfLoadPage(true);
+
+  // Drag & drop directement dans la grille
+  const grid = document.getElementById('sf-grid');
+  grid.addEventListener('dragover',  e => { e.preventDefault(); e.stopPropagation(); });
+  grid.addEventListener('drop', e => {
+    e.preventDefault(); e.stopPropagation();
+    _sfHandleUploadFiles(e.dataTransfer.files);
+  });
+
+  _sfLoadPage(false);
+  // Fichiers déposés sur la zone de la page biblio : on les envoie directement.
+  if (pendingFiles && pendingFiles.length) _sfHandleUploadFiles(pendingFiles);
+}
+
+// Point d'entrée du bouton « + Ajouter des images ».
+// En embed Shopify → modale Fichiers Shopify (visuels hébergés sur le CDN).
+// Hors embed (dev local, back-office autonome) → ancienne modale d'upload
+// Railway, conservée telle quelle en fallback.
+function openUploadModal(pendingFiles) {
+  if (_sfAvailable()) return openShopifyFilesModal(pendingFiles);
+  return openLocalUploadModal();
+}
+
+function openLocalUploadModal() {
   document.getElementById('upload-modal')?.remove();
   _modalOpen();
   const opts = _libCats.map(c => `<option value="${c}">${c}</option>`).join('');
@@ -1927,8 +2324,10 @@ dropZone.addEventListener('drop', e => {
   e.preventDefault(); dropZone.classList.remove('drag');
   const droppedFiles = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
   if (!droppedFiles.length) return;
+  // En embed Shopify, les fichiers déposés partent directement sur Shopify Files.
+  if (_sfAvailable()) return openUploadModal(droppedFiles);
   // Ouvrir le modal upload, puis injecter les fichiers dans l'input pour déclencher la compression
-  openUploadModal();
+  openLocalUploadModal();
   requestAnimationFrame(() => {
     const inp = document.getElementById('lib-upload-file-input');
     if (!inp) return;

@@ -142,6 +142,41 @@ function processUpload(req, res) {
   }
 }
 
+// POST /api/library/external — enregistre un visuel déjà hébergé ailleurs
+// (Shopify Files / CDN). Aucun octet ne transite ni n'est stocké côté Railway :
+// on ne persiste que l'URL absolue renvoyée par Shopify. Utilisé par la modale
+// « Fichiers Shopify » du back-office (cf. public/textilelab-admin.html).
+router.post('/external', requireAuth, attachShopId, (req, res) => {
+  const url = String(req.body?.url || '').trim();
+  if (!/^https:\/\/[^\s]+$/i.test(url)) {
+    return res.status(400).json({ error: 'URL https absolue requise' });
+  }
+  const filename = String(req.body?.filename || '').trim() || url.split('/').pop().split('?')[0];
+  const cat      = String(req.body?.category || '').trim() || 'divers';
+  const thumbUrl = String(req.body?.thumb_url || '').trim() || url;
+  const mimetype = String(req.body?.mimetype || '').trim() || 'image/*';
+  const size     = Number(req.body?.size) || 0;
+
+  try {
+    const db = getDB();
+    // Idempotence : une même URL Shopify ne doit pas créer de doublon si
+    // l'admin la resélectionne dans la grille.
+    const existing = db.prepare('SELECT * FROM library WHERE shop_id=? AND url=?').get(req.shopId, url);
+    if (existing) return res.status(200).json({ ...existing, duplicate: true });
+
+    try { db.prepare('INSERT OR IGNORE INTO categories (shop_id, name) VALUES (?, ?)').run(req.shopId, cat); } catch {}
+
+    const info = db.prepare(
+      'INSERT INTO library (shop_id, filename, url, thumb_url, category, mimetype, size) VALUES (?,?,?,?,?,?,?)'
+    ).run(req.shopId, filename, url, thumbUrl, cat, mimetype, size);
+
+    res.status(201).json(db.prepare('SELECT * FROM library WHERE id=?').get(info.lastInsertRowid));
+  } catch (e) {
+    console.error('library/external error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.post('/',       requireAuth, attachShopId, (req, res) => handleUpload(req, res, err => { if(err) return res.status(400).json({error:err.message}); processUpload(req, res); }));
 router.post('/upload', requireAuth, attachShopId, (req, res) => handleUpload(req, res, err => { if(err) return res.status(400).json({error:err.message}); processUpload(req, res); }));
 
@@ -160,9 +195,15 @@ router.delete('/:id', requireAuth, attachShopId, (req, res) => {
   const db  = getDB();
   const row = db.prepare('SELECT * FROM library WHERE id=? AND shop_id=?').get(req.params.id, req.shopId);
   if (!row) return res.status(404).json({ error: 'Not found' });
-  try { fs.unlinkSync(path.join(__dirname, '..', row.url)); } catch {}
-  if (row.thumb_url) {
-    try { fs.unlinkSync(path.join(__dirname, '..', row.thumb_url)); } catch {}
+  // Visuel hébergé sur un CDN externe (Shopify Files) : rien à supprimer sur
+  // le disque. Le fichier reste dans Shopify → Contenu → Fichiers, où le
+  // marchand le gère lui-même (il peut être réutilisé ailleurs dans la boutique).
+  const isExternal = /^https?:\/\//i.test(row.url || '');
+  if (!isExternal) {
+    try { fs.unlinkSync(path.join(__dirname, '..', row.url)); } catch {}
+    if (row.thumb_url) {
+      try { fs.unlinkSync(path.join(__dirname, '..', row.thumb_url)); } catch {}
+    }
   }
   db.prepare('DELETE FROM library WHERE id=? AND shop_id=?').run(req.params.id, req.shopId);
   res.json({ deleted: true });
@@ -182,6 +223,7 @@ setTimeout(() => {
     fs.mkdirSync(thumbDir, { recursive: true });
     let ok = 0;
     for (const item of missing) {
+      if (/^https?:\/\//i.test(item.url || '')) continue; // visuel CDN externe
       const srcPath = path.join(__dirname, '..', item.url);
       if (!fs.existsSync(srcPath)) continue;
       const origExt   = path.extname(item.filename);

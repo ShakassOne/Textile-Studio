@@ -35,6 +35,10 @@ const {
 const DEFAULT_SCOPES = [
   'read_products',
   'read_orders',
+  // Bibliothèque de visuels hébergée sur Shopify Files (CDN) — lecture de la
+  // liste des fichiers + stagedUploadsCreate/fileCreate depuis le back-office.
+  'read_files',
+  'write_files',
 ].join(',');
 
 // ── Anti-CSRF nonce store (in-memory, TTL 10 min) ────────────────────────────

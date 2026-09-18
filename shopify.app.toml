@@ -45,7 +45,11 @@ prefix = "apps"
 #   resolveVariantForCustomization, stratégie C).
 # write_orders   : aucune mutation order dans le code → non demandé.
 # read_customers : non nécessaire, Shopify fournit l'email dans le payload GDPR.
-scopes = "read_products,read_orders,write_products"
+# read_files / write_files (09/2026) : REQUIS par la bibliothèque de visuels —
+#   les images de la biblio sont désormais hébergées sur Shopify Files (CDN)
+#   au lieu du disque Railway. read_files = lister les fichiers existants,
+#   write_files = stagedUploadsCreate + fileCreate. Cf. routes/admin-graphql.js.
+scopes = "read_products,read_orders,write_products,read_files,write_files"
 
 [auth]
 redirect_urls = [
