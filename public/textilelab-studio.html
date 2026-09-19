@@ -9121,23 +9121,42 @@ function _tplRemapToFrame(savedFrame) {
   if (!savedFrame || !cur || !(savedFrame.w > 0) || !(cur.w > 0)) return 0;
   const r = cur.w / savedFrame.w;
   if (!Number.isFinite(r) || r <= 0) return 0;
-  if (Math.abs(r - 1) < 0.001 && Math.abs(cur.x - savedFrame.x) < 0.5
-      && Math.abs(cur.y - savedFrame.y) < 0.5) return 0; // déjà au bon endroit
 
   let moved = 0;
   canvas.getObjects().forEach(o => {
     if (o.__isFrame || o.__isMockupBg || o.__isColorOverlay || o.__isPrintMask) return;
+    // Un objet n'est ancré QU'UNE FOIS. Le drapeau est ce qui rend la passe
+    // rejouable : applyMockup restaure les calques dans le callback de
+    // chargement du PNG du vêtement, donc APRÈS notre première passe quand le
+    // mockup est lourd ou le réseau lent (typiquement sur mobile). Les objets
+    // qu'il vient de reposer arrivent sans drapeau, aux coordonnées du
+    // template : la passe suivante les ancre à leur tour.
+    if (o.__tplAnchored) return;
     o.set({
       left:   cur.x + ((o.left || 0) - savedFrame.x) * r,
       top:    cur.y + ((o.top  || 0) - savedFrame.y) * r,
       scaleX: (o.scaleX || 1) * r,
       scaleY: (o.scaleY || 1) * r,
     });
+    o.__tplAnchored = true;
     o.setCoords();
     moved++;
   });
   if (moved) console.log(`[TPL] ${moved} calque(s) réancrés (ratio ${r.toFixed(3)})`);
   return moved;
+}
+
+// Rejoue l'ancrage tant que des calques non ancrés apparaissent. Sans cela, le
+// résultat dépendait d'un pari sur le temps de chargement du mockup : gagné sur
+// un desktop rapide, perdu sur mobile — où la restauration tardive d'applyMockup
+// écrasait l'ancrage et laissait le design décalé et surdimensionné.
+function _tplScheduleAnchoring(savedFrame) {
+  if (!savedFrame || !(savedFrame.w > 0)) return; // templates v1/v2 : rien à ancrer
+  [0, 250, 600, 1000, 1600, 2400, 3500, 5000].forEach(delay => {
+    setTimeout(() => {
+      try { _tplRemapToFrame(savedFrame); } catch (e) { console.warn('[TPL] anchor:', e.message); }
+    }, delay);
+  });
 }
 
 // ── Chargement côté client ──────────────────────────────────────────────────
@@ -9173,6 +9192,9 @@ function _tplApply(tpl) {
   // 4. Toujours ouvrir sur le recto : la face active n'est pas stockée.
   STATE_viewIdx = 0;
   applyMockup(STATE.product, 0, mockupIdxLocal);
+  // La cascade démarre tout de suite : applyMockup peut restaurer les calques
+  // avant notre propre passe si le mockup est déjà en cache.
+  _tplScheduleAnchoring(tpl.frame);
 
   // 5. Les calques sont injectés APRÈS applyMockup, jamais avant : son étape 1
   //    appelle _saveCurrentViewLayers() (canvas encore vide → écraserait le
@@ -9183,9 +9205,10 @@ function _tplApply(tpl) {
   setTimeout(() => {
     STATE.viewLayers = tpl.viewLayers;
     _restoreViewLayers(STATE_mockup?.id, 0, () => {
-      // Réancrage AVANT tout le reste : le design doit retrouver sa place dans
-      // la zone d'impression de CET écran (cf. _tplRemapToFrame).
-      try { _tplRemapToFrame(tpl.frame); } catch (e) { console.warn('[TPL] remap:', e.message); }
+      // Réancrage : le design doit retrouver sa place dans la zone d'impression
+      // de CET écran. Rejoué en cascade — applyMockup peut reposer les calques
+      // après nous (cf. _tplScheduleAnchoring).
+      try { _tplScheduleAnchoring(tpl.frame); } catch (e) { console.warn('[TPL] remap:', e.message); }
       try { updateAllClipPaths(); } catch (_) {}
       try { _reorderCanvasLayers(); } catch (_) {}
       try { if (tpl.color) updateTextileColor(tpl.color); } catch (_) {}

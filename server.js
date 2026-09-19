@@ -502,6 +502,12 @@ app.use((req, res, next) => {
     '/api/shopify/resolve-variant', // ← variante pré-tarifée storefront (impression incluse, une seule ligne)
     '/api/shopify/fee-variant',   // ← DÉPRÉCIÉ (410) — conservé pour neutraliser les appels résiduels
     '/api/shopify/products',
+    // Template produit : lu par le studio CLIENT sur la fiche produit. Un
+    // client final ne souscrit pas — le rediriger vers /billing/subscribe
+    // renvoie du HTML à la place du JSON et le design ne se charge pas.
+    // (N'était pas atteint depuis le studio, qui envoie X-Shop-Domain et non
+    // ?shop=, mais tout appel avec ?shop= tombait dedans.)
+    '/api/products/',
     '/api/shop-settings/style/public',
     '/textilelab-studio.html',
     '/tl-modal.js',
