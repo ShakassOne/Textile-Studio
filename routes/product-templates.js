@@ -127,6 +127,79 @@ router.post(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /api/admin/templates — liste les produits porteurs d'un template (admin)
+// ─────────────────────────────────────────────────────────────────────────────
+// Alimente l'onglet « Templates » du back-office : un coup d'oeil pour savoir
+// quels produits sont préparés, dans quelle version, et depuis quand.
+// On ne renvoie PAS le JSON complet des templates (plusieurs dizaines de Ko
+// chacun) — seulement leur fiche signalétique.
+router.get('/admin/templates', requireAuth, requireShopifySession, async (req, res) => {
+  const shop  = req.shopDomain;
+  const token = req.shopRecord?.access_token;
+  if (!shop || !token) {
+    return res.status(403).json({ error: 'Contexte shop manquant — token OAuth introuvable' });
+  }
+
+  const first = Math.min(parseInt(req.query.limit, 10) || 100, 250);
+  const query = `
+    query TslListTemplates($first: Int!) {
+      products(first: $first, sortKey: UPDATED_AT, reverse: true) {
+        edges { node {
+          id
+          title
+          handle
+          status
+          featuredImage { url }
+          options { name }
+          metafield(namespace: "${NAMESPACE}", key: "${KEY}") { value updatedAt }
+        } }
+      }
+    }`;
+
+  try {
+    const out   = await adminGraphQL(shop, token, query, { first });
+    const edges = out?.data?.products?.edges || [];
+    const items = [];
+
+    for (const { node } of edges) {
+      const raw = node?.metafield?.value;
+      if (!raw) continue; // produit sans template → hors liste
+
+      let tpl = null;
+      try { tpl = JSON.parse(raw); } catch { /* template illisible */ }
+
+      const faces = tpl?.viewLayers
+        ? Object.values(tpl.viewLayers).filter(a => Array.isArray(a) && a.length).length
+        : 0;
+
+      items.push({
+        productId:  node.id,
+        numericId:  String(node.id).replace(/^gid:\/\/shopify\/Product\//, ''),
+        title:      node.title,
+        handle:     node.handle,
+        status:     node.status,
+        image:      node.featuredImage?.url || null,
+        updatedAt:  node.metafield.updatedAt,
+        // Version du format de template : 2 = référence de prix figée au save,
+        // 1 = ancien format, référence recalculée en repli (moins précis).
+        templateVersion: tpl?.v ?? 1,
+        broken:          tpl === null,
+        faces,
+        bytes:           Buffer.byteLength(raw, 'utf8'),
+        referenceAmount: PRINT.computeTemplatePrintAmount(tpl),
+        // Le produit est-il prêt pour la personnalisation tarifée ?
+        printOption: (node.options || []).find(o => PRINT.isPrintOptionName(o.name))?.name || null,
+      });
+    }
+
+    res.json({ count: items.length, scanned: edges.length, items });
+  } catch (err) {
+    console.error('❌  templates list:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/products/:productId/template — lit le template (public)
 // ─────────────────────────────────────────────────────────────────────────────
 // Toujours 200 quand la requête est valide : `exists: false` signifie « ce

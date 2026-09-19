@@ -330,6 +330,10 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
         Mockups & Zones
       </div>
+      <div class="nav-item" onclick="showView('templates')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Templates produit
+      </div>
       <div class="nav-item" onclick="showView('library')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
         Bibliothèque
@@ -655,6 +659,22 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
       </div>
     </div>
 
+    <!-- ══ TEMPLATES PRODUIT ══ -->
+    <div class="view" id="view-templates">
+      <div class="page-header">
+        <div><div class="page-title">Templates produit</div><div class="page-sub" id="tpl-count-label">—</div></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn" onclick="loadTemplatesList()">↻ Actualiser</button>
+          <button class="btn btn-primary" id="tpl-new-btn" onclick="openStudioTemplateMode()">+ Créer un template</button>
+        </div>
+      </div>
+      <div style="padding:0 24px 24px">
+        <div id="tpl-list">
+          <div style="color:var(--text3);font-size:12px;padding:24px;text-align:center">Chargement…</div>
+        </div>
+      </div>
+    </div>
+
     <!-- ══ SETTINGS ══ -->
     <div class="view" id="view-settings">
       <div class="page-header">
@@ -669,6 +689,12 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
             <button class="btn btn-primary" onclick="testAPIConnection()">Tester la connexion</button>
             <span id="api-test-result" style="font-size:12px;color:var(--text3);align-self:center"></span>
           </div>
+        </div>
+        <div class="table-card" style="padding:20px">
+          <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:16px">🏷 Version déployée</h3>
+          <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Build actuellement en ligne sur ce backend</div>
+          <div style="font-size:13px;font-family:'DM Mono',monospace;color:var(--amber);background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px" id="app-version-display">—</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:8px" id="app-version-sub"></div>
         </div>
         <div class="table-card" style="padding:20px">
           <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:16px">🔑 Changer le mot de passe</h3>
@@ -1131,12 +1157,121 @@ const API_BASE = (window.location.hostname==='localhost'||window.location.hostna
   ? 'http://localhost:3001' : '';
 const _apiUrlEl = document.getElementById('api-url-display');
 if (_apiUrlEl) _apiUrlEl.textContent = API_BASE || window.location.origin;
+loadAppVersion();
+
+// ── Version déployée ────────────────────────────────────────────────────────
+// Sans repère visible, impossible de savoir si un correctif poussé est bien en
+// ligne (ex. : un fix resté sur une branche non mergée — Railway ne déploie
+// que main). Affiché dans Paramètres.
+async function loadAppVersion() {
+  const el  = document.getElementById('app-version-display');
+  const sub = document.getElementById('app-version-sub');
+  if (!el) return;
+  try {
+    const r = await fetch(`${API_BASE}/api/version`, { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const v = await r.json();
+    el.textContent = 'v' + v.version + (v.commit ? ` · ${v.commit}` : '')
+                   + (v.branch ? ` · ${v.branch}` : '');
+    if (sub) {
+      const d = v.startedAt ? new Date(v.startedAt) : null;
+      sub.textContent = d ? `Backend démarré le ${d.toLocaleString('fr-FR')}` : '';
+    }
+  } catch (e) {
+    el.textContent = 'indisponible';
+    if (sub) sub.textContent = e.message;
+  }
+}
+
+// ── Liste des templates produit ─────────────────────────────────────────────
+let _tplItems = [];
+
+async function loadTemplatesList() {
+  const wrap  = document.getElementById('tpl-list');
+  const label = document.getElementById('tpl-count-label');
+  if (!wrap) return;
+  if (!window.__TL_EMBED) {
+    wrap.innerHTML = `<div style="color:var(--text3);font-size:12px;padding:24px;text-align:center">
+      Disponible uniquement depuis l'admin Shopify (lecture des metafields produit).</div>`;
+    if (label) label.textContent = '—';
+    return;
+  }
+  wrap.innerHTML = '<div style="color:var(--text3);font-size:12px;padding:24px;text-align:center">Chargement…</div>';
+
+  const data = await api('/api/admin/templates');
+  if (!data) {
+    wrap.innerHTML = `<div style="color:#ef4444;font-size:12px;padding:24px;text-align:center">
+      ❌ ${window.__TL_LAST_API_ERROR || 'Chargement impossible'}</div>`;
+    return;
+  }
+
+  _tplItems = data.items || [];
+  if (label) label.textContent = `${data.count} template(s) · ${data.scanned} produit(s) scannés`;
+
+  if (!_tplItems.length) {
+    wrap.innerHTML = `<div style="color:var(--text3);font-size:12px;padding:32px;text-align:center;line-height:1.7">
+      Aucun produit ne porte encore de template.<br>
+      Cliquez « Créer un template » : le studio s'ouvre en mode admin.</div>`;
+    return;
+  }
+
+  wrap.innerHTML = `
+    <div class="table-card">
+      <table>
+        <thead><tr>
+          <th style="width:52px"></th><th>Produit</th><th>Version</th><th>Faces</th>
+          <th>Impression incluse</th><th>Option Impression</th><th>Taille</th><th>Mis à jour</th><th></th>
+        </tr></thead>
+        <tbody>${_tplItems.map(_tplRow).join('')}</tbody>
+      </table>
+    </div>`;
+}
+
+function _tplRow(t) {
+  const img = t.image
+    ? `<img src="${t.image}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:7px;border:1px solid var(--border)">`
+    : `<div style="width:40px;height:40px;border-radius:7px;background:var(--bg3);border:1px solid var(--border)"></div>`;
+
+  // v1 = référence de prix recalculée en repli (approximative) → inviter à
+  // re-sauver depuis le studio pour figer la référence exacte.
+  const ver = t.broken
+    ? `<span style="color:#ef4444;font-weight:700">illisible</span>`
+    : (t.templateVersion >= 2
+        ? `<span style="color:#10b981;font-weight:700">v${t.templateVersion}</span>`
+        : `<span style="color:var(--amber);font-weight:700" title="Ancien format : la référence de prix est recalculée de façon approximative. Rouvrez et ré-enregistrez le template pour le figer.">v1 ⚠</span>`);
+
+  const opt = t.printOption
+    ? `<span style="color:#10b981">✓ ${t.printOption}</span>`
+    : `<span style="color:var(--amber)" title="Le produit n'est pas préparé pour la personnalisation tarifée">absente</span>`;
+
+  const maj = t.updatedAt ? new Date(t.updatedAt).toLocaleString('fr-FR') : '—';
+  const ko  = Math.max(1, Math.round(t.bytes / 1024));
+
+  return `<tr>
+    <td>${img}</td>
+    <td><div style="font-weight:600">${t.title || '—'}</div>
+        <div style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace">${t.numericId}${t.status && t.status !== 'ACTIVE' ? ' · ' + t.status : ''}</div></td>
+    <td>${ver}</td>
+    <td>${t.faces}</td>
+    <td style="font-family:'DM Mono',monospace">${Number(t.referenceAmount || 0).toFixed(2).replace('.', ',')} €</td>
+    <td>${opt}</td>
+    <td style="font-family:'DM Mono',monospace;color:var(--text3)">${ko} Ko</td>
+    <td style="font-size:11px;color:var(--text3)">${maj}</td>
+    <td><button class="btn btn-sm" onclick="editTemplate('${t.numericId}')">Modifier</button></td>
+  </tr>`;
+}
+
+// Rouvre le studio en mode admin sur ce produit : le template est rechargé,
+// modifiable, et ré-enregistrable (ce qui le repasse en v2 s'il était en v1).
+function editTemplate(productId) {
+  openStudioTemplateMode(productId);
+}
 
 // ── Templates produit : ouvrir le studio en mode admin ──────────────────────
 // On NAVIGUE l'iframe admin (pas de nouvel onglet) : App Bridge et le Resource
 // Picker n'existent que dans l'iframe de l'admin Shopify. shop et host sont
 // repris de l'URL courante — sans eux, server.js n'injecte pas App Bridge.
-function openStudioTemplateMode() {
+function openStudioTemplateMode(productId) {
   const p = new URLSearchParams(window.location.search);
   const shop = p.get('shop') || window.__TL_EMBED_SHOP || '';
   const host = p.get('host') || '';
@@ -1144,9 +1279,12 @@ function openStudioTemplateMode() {
     showToast('⚠ Disponible uniquement depuis l\'admin Shopify');
     return;
   }
+  // Avec un productId, le studio recharge le template existant pour édition.
+  const pid = String(productId || '').replace(/\D/g, '');
   window.location.href = 'textilelab-studio.html?admin=1'
     + '&shop=' + encodeURIComponent(shop)
-    + '&host=' + encodeURIComponent(host);
+    + '&host=' + encodeURIComponent(host)
+    + (pid ? '&product_id=' + encodeURIComponent(pid) : '');
 }
 
 function adminToggleTheme() {
@@ -1187,6 +1325,7 @@ function showView(name) {
   if (name === 'categories') loadCategoriesView();
   if (name === 'mockups')   loadMockupsView();
   if (name === 'library')   loadLibrary();
+  if (name === 'templates') loadTemplatesList();
   if (name === 'pricing')   { loadProductLinks(); loadPricingEditor(); loadVariantMapping(); }
   if (name === 'ai-styles') loadAiStyles();
   if (name === 'ai-creations') loadAiCreations('pending');

@@ -9055,7 +9055,23 @@ async function tplSaveAsTemplate() {
     });
     const out = await res.json().catch(() => ({}));
     if (!res.ok) return showToast('❌ ' + (out.error || `HTTP ${res.status}`));
-    showToast(`✅ Template enregistré sur « ${label} » (${Math.round((out.bytes || 0) / 1024)} Ko)`);
+
+    // Message détaillé : version du format, impression incluse dans le prix, et
+    // état de la préparation du produit (option « Impression »), pour que
+    // l'admin sache immédiatement si le produit est utilisable en l'état.
+    const _ref  = Number(out.referenceAmount || 0);
+    const _prep = out.prepared || {};
+    const _bits = [`v${TPL_VERSION}`, `${Math.round((out.bytes || 0) / 1024)} Ko`];
+    if (_ref > 0) _bits.push(`impression ${_ref.toFixed(2).replace('.', ',')} € incluse`);
+    if (_prep.created)      _bits.push('option Impression créée');
+    else if (_prep.already) _bits.push('option Impression déjà présente');
+    showToast(`✅ Template créé avec succès sur « ${label} » — ${_bits.join(' · ')}`);
+    if (_prep && _prep.ok === false) {
+      // Le template est bien enregistré, mais le produit n'est pas prêt à
+      // facturer un supplément : on le dit clairement plutôt que de laisser
+      // l'erreur surgir plus tard, à l'ajout au panier d'un client.
+      setTimeout(() => showToast('⚠️ Produit non préparé : ' + (_prep.error || 'option Impression absente')), 3200);
+    }
   } catch (e) {
     showToast('❌ ' + e.message);
   }

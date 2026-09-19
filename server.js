@@ -601,6 +601,22 @@ app.get('/api/stats', requireAuth, attachShopId, (req, res) => {
 // ── Health ─────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => res.json({ ok: true, version: '1.0.0', ts: new Date().toISOString() }));
 
+// ── GET /api/version — quelle build tourne réellement ? ──────────────────────
+// Affiché dans l'admin (Paramètres). Permet de voir d'un coup d'oeil si un
+// correctif poussé est bien déployé, sans deviner. Le SHA vient de Railway
+// quand il est disponible (RAILWAY_GIT_COMMIT_SHA), sinon absent.
+const _BOOT_TS = new Date().toISOString();
+app.get('/api/version', (_req, res) => {
+  const sha = process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_COMMIT_SHA || '';
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    version:   require('./package.json').version,
+    commit:    sha ? sha.slice(0, 7) : null,
+    branch:    process.env.RAILWAY_GIT_BRANCH || null,
+    startedAt: _BOOT_TS,
+  });
+});
+
 // ── Webhooks GDPR ───────────────────────────────────────────────────────────
 // Audit M1 — les 3 webhooks GDPR doublons ont été supprimés ici.
 // Les vraies routes sont dans routes/shopify.js (/shopify/gdpr/*) avec :
