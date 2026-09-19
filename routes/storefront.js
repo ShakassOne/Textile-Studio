@@ -863,42 +863,58 @@ const _MUT_ADD_PRINT_OPTION = `
     }
   }`;
 
+// Coeur métier, réutilisable hors HTTP : garantit que le produit porte bien
+// l'option « Impression ». Idempotent — si l'option existe déjà, ne touche à
+// rien (ni variantes, ni prix, ni SKU, ni stock : variantStrategy LEAVE_AS_IS).
+// Appelé par la route ci-dessous ET à l'enregistrement d'un template produit
+// (routes/product-templates.js), pour que le marchand n'ait rien à lancer
+// manuellement.
+// @returns {{ok:boolean, already?:boolean, created?:boolean, option?:string,
+//             error?:string, status?:number, needs_setup?:boolean}}
+async function ensurePrintOption(shopRecord, rawProductId) {
+  const productId = String(rawProductId || '')
+    .replace(/^gid:\/\/shopify\/Product\//, '').trim();
+  if (!/^\d+$/.test(productId)) {
+    return { ok: false, status: 400, error: 'product_id invalide (ID numérique attendu)' };
+  }
+  if (!shopRecord?.access_token) {
+    return { ok: false, status: 503, error: 'Boutique non installée (OAuth requis)' };
+  }
+
+  const product = await fetchAdminProductById(shopRecord, productId);
+  if (!product) return { ok: false, status: 404, error: 'Produit introuvable' };
+
+  // Déjà activé ?
+  const existing = (product.options || []).find(o => PRINT.isPrintOptionName(o.name));
+  if (existing) return { ok: true, already: true, option: existing.name };
+
+  // Shopify : 3 options max par produit.
+  if ((product.options || []).length >= 3) {
+    return {
+      ok: false, status: 409,
+      error: 'Le produit a déjà 3 options (max Shopify) — impossible d\'ajouter « Impression ».',
+    };
+  }
+
+  const data = await adminGraphQL(shopRecord, _MUT_ADD_PRINT_OPTION, {
+    productId: `gid://shopify/Product/${productId}`,
+    options: [{ name: 'Impression', values: [{ name: 'Sans impression' }] }],
+  });
+  const ue = data?.productOptionsCreate?.userErrors || [];
+  if (ue.length) return { ok: false, status: 422, error: ue.map(e => e.message).join(', ') };
+
+  return { ok: true, created: true, option: 'Impression' };
+}
+
 router.post('/prepare-customization', requireAuth, attachShopId, async (req, res) => {
   try {
     const shopId = req.shopId;
     if (!shopId) return res.status(400).json({ error: 'Boutique introuvable' });
     const shopRecord = getShopRecord(shopId);
-    if (!shopRecord?.access_token) {
-      return res.status(503).json({ error: 'Boutique non installée (OAuth requis)' });
-    }
-    const productId = String(req.body?.product_id || '')
-      .replace(/^gid:\/\/shopify\/Product\//, '').trim();
-    if (!/^\d+$/.test(productId)) {
-      return res.status(400).json({ error: 'product_id invalide (ID numérique attendu)' });
-    }
 
-    const product = await fetchAdminProductById(shopRecord, productId);
-    if (!product) return res.status(404).json({ error: 'Produit introuvable' });
-
-    // Déjà activé ?
-    const existing = (product.options || []).find(o => PRINT.isPrintOptionName(o.name));
-    if (existing) return res.json({ ok: true, already: true, option: existing.name });
-
-    // Shopify : 3 options max par produit.
-    if ((product.options || []).length >= 3) {
-      return res.status(409).json({
-        error: 'Le produit a déjà 3 options (max Shopify) — impossible d\'ajouter « Impression ».',
-      });
-    }
-
-    const data = await adminGraphQL(shopRecord, _MUT_ADD_PRINT_OPTION, {
-      productId: `gid://shopify/Product/${productId}`,
-      options: [{ name: 'Impression', values: [{ name: 'Sans impression' }] }],
-    });
-    const ue = data?.productOptionsCreate?.userErrors || [];
-    if (ue.length) return res.status(422).json({ error: ue.map(e => e.message).join(', ') });
-
-    return res.json({ ok: true, created: true });
+    const out = await ensurePrintOption(shopRecord, req.body?.product_id);
+    if (!out.ok) return res.status(out.status || 500).json({ error: out.error });
+    return res.json(out);
   } catch (err) {
     console.error('prepare-customization error:', err.status || '', err.message);
     const needs_setup = err.status === 401 || err.status === 403 || /access|scope|403|401/i.test(err.message);
@@ -909,3 +925,4 @@ router.post('/prepare-customization', requireAuth, attachShopId, async (req, res
 module.exports = router;
 module.exports.getVariantId = getVariantId;
 module.exports.resolveVariantForCustomization = resolveVariantForCustomization;
+module.exports.ensurePrintOption = ensurePrintOption;

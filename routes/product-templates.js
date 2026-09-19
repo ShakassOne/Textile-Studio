@@ -22,6 +22,7 @@ const { requireShopifySession } = require('./shopify-session');
 const { attachShopId }          = require('./_shop-context');
 const { getDB }                 = require('../db/database');
 const { adminGraphQL }          = require('./admin-graphql');
+const PRINT                     = require('../utils/print-tiers');
 
 const NAMESPACE = 'custom';
 const KEY       = 'tsl_template';
@@ -95,10 +96,27 @@ router.post(
       if (errs.length) {
         return res.status(400).json({ error: errs.map(e => e.message).join(' | ') });
       }
+      // ── Préparation automatique du produit ────────────────────────────
+      // Enregistrer un template suffit à rendre le produit utilisable : on
+      // garantit ici l'option « Impression » (idempotent, variantes et prix
+      // conservés). Non bloquant — le template est déjà sauvé, on remonte
+      // seulement le statut pour que l'admin sache s'il reste une action.
+      let prepared = null;
+      try {
+        // require paresseux : storefront.js require déjà ce module au boot.
+        const { ensurePrintOption } = require('./storefront');
+        prepared = await ensurePrintOption(req.shopRecord, gid);
+      } catch (e) {
+        console.warn('template save — ensurePrintOption:', e.message);
+        prepared = { ok: false, error: e.message };
+      }
+
       res.status(201).json({
         saved:     true,
         productId: gid,
         bytes,
+        referenceAmount: PRINT.computeTemplatePrintAmount(template),
+        prepared,
         metafield: out?.data?.metafieldsSet?.metafields?.[0] || null,
       });
     } catch (err) {
@@ -153,6 +171,9 @@ router.get('/products/:productId/template', attachShopId, async (req, res) => {
       handle:    prod.handle,
       title:     prod.title,
       updatedAt: prod.metafield.updatedAt,
+      // Coût d'impression DÉJÀ inclus dans le prix Shopify du produit : le
+      // studio ne facturera que ce que le client ajoute au-delà.
+      referenceAmount: PRINT.computeTemplatePrintAmount(template),
       template,
     });
   } catch (err) {

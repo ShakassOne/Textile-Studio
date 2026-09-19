@@ -74,6 +74,72 @@ function isPrintOptionName(name) {
   return /impr|print|perso|finition/i.test(String(name || ''));
 }
 
+/**
+ * Coût d'impression de RÉFÉRENCE d'un template produit (custom.tsl_template).
+ * ──────────────────────────────────────────────────────────────────────────
+ * Ce montant est déjà inclus dans le prix Shopify du produit : le client ne
+ * paie que ce qu'il ajoute AU-DELÀ (cf. extraDue ci-dessous).
+ *
+ * Deux sources, dans cet ordre :
+ *
+ *  1. template.pricingReference.amount (templates v2) — calculé par le studio
+ *     au moment du save avec _computeSurcharge(), c'est-à-dire EXACTEMENT la
+ *     fonction qui produira le coût final côté client. Cohérence garantie.
+ *
+ *  2. Recalcul depuis viewLayers + viewFormats (templates v1, sans
+ *     pricingReference). Best-effort : le studio affine le format de la face
+ *     courante par bounding box des objets Fabric (_faceCumulFormat), ce qui
+ *     n'est pas reproductible hors canvas. On retombe donc sur le format
+ *     propre de chaque face — le même repli que le studio applique aux faces
+ *     non courantes. Un v1 dont une face cumulait plusieurs visuels peut donc
+ *     être sous-évalué ; le client paiera alors une petite différence, jamais
+ *     un prix inférieur au prix Shopify (extraDue est borné à 0).
+ *
+ * Fonction PURE : aucun accès DB, réseau ou DOM.
+ *
+ * @param {object} template  le JSON du metafield
+ * @param {object} [faceSurcharges]  barème par face (défaut : FACE_SURCHARGES)
+ * @returns {number} montant en € (0 si indéterminable)
+ */
+function computeTemplatePrintAmount(template, faceSurcharges = FACE_SURCHARGES) {
+  if (!template || typeof template !== 'object') return 0;
+
+  // ── 1. Référence figée par le studio (v2) ────────────────────────────────
+  const ref = template.pricingReference;
+  if (ref && typeof ref === 'object') {
+    const n = Number(ref.amount);
+    if (Number.isFinite(n) && n >= 0) return Math.round(n * 100) / 100;
+  }
+
+  // ── 2. Repli v1 : somme des faces AYANT du contenu ───────────────────────
+  const layers = template.viewLayers;
+  if (!layers || typeof layers !== 'object') return 0;
+  const formats = (template.viewFormats && typeof template.viewFormats === 'object')
+    ? template.viewFormats : {};
+  const fallbackFormat = template.format;
+
+  let total = 0;
+  for (const key of Object.keys(layers)) {
+    const objs = layers[key];
+    if (!Array.isArray(objs) || objs.length === 0) continue; // face vide → non facturée
+    const fmt = formats[key] || fallbackFormat;
+    const extra = faceSurcharges[fmt];
+    if (Number.isFinite(extra)) total += extra;
+  }
+  return Math.round(total * 100) / 100;
+}
+
+/**
+ * Surcoût réellement dû par le client :  max(0, final - référence).
+ * Le prix Shopify du produit n'est JAMAIS réduit — un design plus léger que
+ * le template d'origine reste au prix de base.
+ */
+function extraDue(finalAmount, referenceAmount) {
+  const f = Math.round(Number(finalAmount || 0) * 100) / 100;
+  const r = Math.round(Number(referenceAmount || 0) * 100) / 100;
+  return Math.max(0, Math.round((f - r) * 100) / 100);
+}
+
 /** Une valeur d'option Shopify ("+7,00 €") → montant numérique, ou null. */
 function amountFromOptionValue(value) {
   const v = norm(value);
@@ -85,6 +151,8 @@ function amountFromOptionValue(value) {
 
 module.exports = {
   FACE_SURCHARGES,
+  computeTemplatePrintAmount,
+  extraDue,
   norm,
   fmtAmount,
   amountLabel,

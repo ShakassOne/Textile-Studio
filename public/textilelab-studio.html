@@ -5390,15 +5390,25 @@ function updatePrice() {
   }
 
   const { total: surcharge, detail } = _computeSurcharge();
-  const total = base + surcharge;
+  // Produit avec template : l'impression de référence est déjà comprise dans le
+  // prix Shopify — on n'ajoute que le surcoût. Sans template la référence vaut
+  // 0, donc extraDue === surcharge et l'affichage est inchangé.
+  const extra = _tplExtraDue(surcharge);
+  const total = base + extra;
 
   const el = document.getElementById('stat-price');
   if (!el) return;
   el.textContent = total.toFixed(2).replace('.', ',') + ' €';
-  el.title = detail.length
-    ? `${base.toFixed(2).replace('.',',')}€ + ` +
-      detail.map(d => `${d.name} ${d.format} ${d.extra.toFixed(2).replace('.',',')}€`).join(' + ')
-    : '';
+  const _fmtEur = (n) => n.toFixed(2).replace('.', ',') + '€';
+  if (TPL_REFERENCE_AMOUNT > 0) {
+    el.title = `${_fmtEur(base)} (impression ${_fmtEur(TPL_REFERENCE_AMOUNT)} incluse)`
+             + (extra > 0 ? ` + supplément ${_fmtEur(extra)}` : '');
+  } else {
+    el.title = detail.length
+      ? `${base.toFixed(2).replace('.',',')}€ + ` +
+        detail.map(d => `${d.name} ${d.format} ${d.extra.toFixed(2).replace('.',',')}€`).join(' + ')
+      : '';
+  }
 }
 
 // ============================================
@@ -7199,8 +7209,11 @@ async function _checkoutShopifyDirect() {
   // ── Surcharge d'impression → choix de la VARIANTE pré-tarifée (montant) ─────
   // Une seule ligne panier, prix d'impression INCLUS dans la variante choisie.
   // Ces props NE modifient PAS le prix : elles servent à la production.
-  const _printAmount  = _surchargeTotal;                 // € surcharge totale
-  const _printLabel   = _tlAmountLabel(_printAmount);     // "+7,00 €" ou "Sans impression"
+  const _printAmount  = _surchargeTotal;                 // € coût d'impression TOTAL du design
+  // Ce qui est réellement facturé : le surcoût au-delà du design de référence
+  // porté par le template (0 pour un produit sans template → identique à avant).
+  const _extraDue     = _tplExtraDue(_printAmount);
+  const _printLabel   = _tlAmountLabel(_extraDue);        // "+7,00 €" ou "Sans impression"
   const _printSides   = _sc.detail.length >= 2 ? 'recto-verso'
                        : (_sc.detail.length === 1 ? 'recto' : 'none');
   const _printFormats = _sc.detail.map(d => `${d.name}:${d.format}`); // ex "Recto:A4 + Verso:A3"
@@ -7213,7 +7226,9 @@ async function _checkoutShopifyDirect() {
     '_faces':     String(viewsCount),
     '_surcharge': _surchargeTotal.toFixed(2),
     // ── Infos PRODUCTION (n'affectent pas le prix) ──
-    '_print_amount': _printAmount.toFixed(2),   // surcharge € (info)
+    '_print_amount': _printAmount.toFixed(2),   // coût d'impression total (info)
+    '_print_reference': TPL_REFERENCE_AMOUNT.toFixed(2), // déjà inclus dans le prix Shopify
+    '_print_extra_due': _extraDue.toFixed(2),   // surcoût réellement facturé
     '_print_label':  _printLabel,               // "+7,00 €" / "Sans impression"
     '_print_sides':  _printSides,               // none / recto / recto-verso
     '_print_format': _printFormats.join(' + ') || '',
@@ -7252,10 +7267,13 @@ async function _checkoutShopifyDirect() {
     //   • sinon table de mapping admin.
     // Si aucune variante → on N'AJOUTE RIEN et on affiche une erreur claire.
     let finalVariantId = String(variantId);
-    if (_printAmount > 0) {
+    // On résout sur le SURCOÛT, pas sur le coût total : pour un produit à
+    // template dont le client n'ajoute rien, _extraDue vaut 0 → on garde la
+    // variante de base et son prix Shopify (impression déjà incluse).
+    if (_extraDue > 0) {
       const _params = new URLSearchParams({
         base_variant_id: String(variantId),
-        amount: _printAmount.toFixed(2),
+        amount: _extraDue.toFixed(2),
         shop: window._TL_SHOP || '',
       });
       const _ref2 = (_resolvedProductHandle || window._TL_PRODUCT_HANDLE || '');
@@ -7272,11 +7290,15 @@ async function _checkoutShopifyDirect() {
         // Variante manquante → AUCUN ajout panier + log détaillé pour Alan.
         console.error('[TextileLab] Variante d\'impression introuvable — ajout panier annulé.', {
           product: STATE.product, color: STATE.textileColor,
-          amount: _printAmount, label: _printLabel, sides: _printSides,
+          amount: _printAmount, reference: TPL_REFERENCE_AMOUNT, extraDue: _extraDue,
+          label: _printLabel, sides: _printSides,
           formats: _printFormats, base_variant_id: String(variantId),
           server: rData || null,
         });
-        showToast('⚠️ Cette combinaison taille / impression n\'est pas encore configurée.');
+        // Message fidèle à la cause réelle : le serveur distingue « option
+        // Impression absente » de « création de la variante échouée ». On ne
+        // parle de combinaison non configurée que dans le second cas.
+        showToast('⚠️ ' + (rData?.error || 'Impossible de préparer cette personnalisation — réessayez.'));
         allBtns.forEach(b => { if (b.tagName === 'BUTTON') { b.disabled = false; b.textContent = '🛒 Ajouter au panier'; } });
         return;
       }
@@ -8903,7 +8925,25 @@ async function apiFetch(path, opts = {}) {
 // Sans ces paramètres, rien de ce bloc ne s'exécute — le flux client existant
 // est strictement inchangé.
 
-const TPL_VERSION = 1;
+// v2 : ajoute pricingReference (coût d'impression déjà inclus dans le prix
+// Shopify). Les templates v1, sans ce champ, restent lus normalement — le
+// serveur recalcule alors une référence best-effort (utils/print-tiers.js,
+// computeTemplatePrintAmount).
+const TPL_VERSION = 2;
+
+// Coût d'impression déjà inclus dans le prix Shopify du produit courant.
+// 0 pour un produit sans template → le client paie la totalité, comme avant.
+let TPL_REFERENCE_AMOUNT = 0;
+
+// Surcoût réellement dû : ce que le client ajoute AU-DELÀ du design de
+// référence. MIROIR de utils/print-tiers.js extraDue() — garder les deux
+// cohérents. Jamais négatif : un design plus léger que le template ne réduit
+// pas le prix Shopify.
+function _tplExtraDue(finalAmount) {
+  const f = Math.round(Number(finalAmount || 0) * 100) / 100;
+  const r = Math.round(Number(TPL_REFERENCE_AMOUNT || 0) * 100) / 100;
+  return Math.max(0, Math.round((f - r) * 100) / 100);
+}
 
 // Mode admin : le paramètre seul ne suffit pas, App Bridge doit répondre
 // (il n'est injecté par le serveur que si ?admin=1&shop&host sont présents).
@@ -8930,6 +8970,12 @@ async function _tplIdToken() {
 // ouvrira toujours sur le recto.
 function _tplBuild() {
   _saveCurrentViewLayers(); // fige la face en cours d'édition dans STATE.viewLayers
+  // Coût d'impression du design de référence, figé ICI avec _computeSurcharge(),
+  // la fonction même qui calculera le coût final chez le client — donc aucun
+  // écart possible entre référence et final. Le recalculer côté serveur depuis
+  // viewLayers serait infidèle : _faceCumulFormat affine le format de la face
+  // courante par bounding box des objets Fabric, ce qui n'existe pas hors canvas.
+  const _sc = _computeSurcharge();
   return {
     v:           TPL_VERSION,
     product:     STATE.product,
@@ -8938,6 +8984,12 @@ function _tplBuild() {
     mockupId:    STATE_mockup?.id ?? null,
     viewFormats: STATE.viewFormats || {},
     viewLayers:  STATE.viewLayers  || {},
+    // v2 — ce montant est DÉJÀ inclus dans le prix Shopify du produit.
+    pricingReference: {
+      amount: _sc.total,
+      faces:  _sc.detail.length,
+      detail: _sc.detail.map(d => ({ name: d.name, format: d.format, extra: d.extra })),
+    },
     savedAt:     new Date().toISOString(),
   };
 }
@@ -9090,7 +9142,12 @@ async function _tplLoadForProduct(productId) {
   if (!productId) return;
   const data = await apiFetch(`/api/products/${encodeURIComponent(productId)}/template`);
   if (!data?.exists || !data.template) return; // produit sans template → flux normal
+  // Coût d'impression déjà payé dans le prix Shopify : seul le surcoût au-delà
+  // sera facturé (cf. _tplExtraDue).
+  const ref = Number(data.referenceAmount);
+  TPL_REFERENCE_AMOUNT = Number.isFinite(ref) && ref > 0 ? Math.round(ref * 100) / 100 : 0;
   if (_tplApply(data.template)) showToast('🎨 Design chargé — personnalisez-le');
+  try { updatePrice(); } catch (_) {}
 }
 
 // ── Charger les catégories produit depuis l'API et mettre à jour les noms dans l'UI ──
