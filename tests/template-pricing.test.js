@@ -161,9 +161,15 @@ test('le studio et utils/print-tiers appliquent la même règle de surcoût', ()
   assert.match(studio, /if \(_extraDue > 0\) \{/);
   assert.match(studio, /amount: _extraDue\.toFixed\(2\)/);
 
-  // Les templates écrits par le studio portent la référence de prix (v2).
-  assert.match(studio, /const TPL_VERSION = 2;/);
+  // Les templates écrits par le studio portent la référence de prix et la zone
+  // d'impression. Le numéro de version n'est pas figé ici : il évolue à chaque
+  // ajout de champ, seule la présence des champs compte.
+  assert.match(studio, /const TPL_VERSION = \d+;/);
   assert.match(studio, /pricingReference: \{/);
+  // v3 : le cadre d'impression, sans lequel un template créé sur desktop
+  // s'affiche décalé et surdimensionné sur mobile.
+  assert.match(studio, /frame: STATE\.frameCoords \? \{ \.\.\.STATE\.frameCoords \} : null,/);
+  assert.match(studio, /function _tplRemapToFrame\(savedFrame\)/);
 });
 
 // ── Reproduction du miroir studio sur toute la grille des paliers ──────────
