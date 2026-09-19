@@ -989,6 +989,86 @@
     } catch (e) { /* silencieux */ }
   }
 
+  // ── Libellé adaptatif des boutons TSL ──────────────────────────────────────
+  // Un produit porteur d'un design (metafield custom.tsl_template) n'est pas
+  // « à personnaliser » : il est déjà dessiné, le client vient le retoucher.
+  //   template présent → « Modifier ce visuel »
+  //   template absent  → « Personnaliser »
+  // Les deux libellés sont posés explicitement, sans que le marchand ait à
+  // modifier son thème.
+  //
+  // Personnalisable via attributs, sur le bouton ou sur <body> :
+  //   data-tsl-label-template="Modifier ce visuel"
+  //   data-tsl-label-plain="Personnaliser"
+  var TL_LABEL_TEMPLATE = 'Modifier ce visuel'; // produit AVEC design
+  var TL_LABEL_PLAIN    = 'Personnaliser';      // produit SANS design
+  var _tlTemplateCache  = {};   // productId → bool
+
+  function _tlSetButtonLabel(btn, label) {
+    // Remplace le LIBELLÉ en préservant les icônes. Une icône emoji est un
+    // noeud texte comme un autre ("🎨 ") : viser le premier noeud non vide
+    // écraserait l'emoji et laisserait l'ancien libellé à côté. On ne retient
+    // donc que le premier noeud contenant une LETTRE, et on y remplace la
+    // portion lettrée en gardant les espaces autour.
+    var walker = document.createTreeWalker(btn, NodeFilter.SHOW_TEXT, null);
+    var node, target = null;
+    while ((node = walker.nextNode())) {
+      if (/[A-Za-zÀ-ÿ]/.test(node.nodeValue || '')) { target = node; break; }
+    }
+    if (target) {
+      target.nodeValue = target.nodeValue.replace(/[A-Za-zÀ-ÿ][\s\S]*[A-Za-zÀ-ÿ]|[A-Za-zÀ-ÿ]/, label);
+      // Un thème peut répéter le libellé dans un noeud suivant (icône + texte
+      // dupliqué pour l'accessibilité) : on vide les autres noeuds lettrés.
+      while ((node = walker.nextNode())) {
+        if (/[A-Za-zÀ-ÿ]/.test(node.nodeValue || '')) node.nodeValue = '';
+      }
+      return true;
+    }
+    btn.textContent = label; // bouton sans texte : on en pose un
+    return true;
+  }
+
+  function _tlHasTemplate(productId) {
+    if (Object.prototype.hasOwnProperty.call(_tlTemplateCache, productId)) {
+      return Promise.resolve(_tlTemplateCache[productId]);
+    }
+    var shop = (window.Shopify && window.Shopify.shop) || window._TL_SHOP || '';
+    var url  = TSL_BACKEND_ORIGIN + '/api/products/' + encodeURIComponent(productId)
+             + '/template?shop=' + encodeURIComponent(shop);
+    return fetch(url, { credentials: 'omit' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        var has = !!(d && d.exists);
+        _tlTemplateCache[productId] = has;
+        return has;
+      })
+      .catch(function () { return false; }); // réseau KO → libellé d'origine
+  }
+
+  function _tlRelabelTemplateButtons() {
+    var btns = [].slice.call(document.querySelectorAll('[data-tsl-open]'));
+    if (!btns.length) return;
+
+    btns.forEach(function (btn) {
+      if (btn.getAttribute('data-tsl-relabelled')) return;
+      var pid = String(btn.getAttribute('data-tsl-open') || '').replace(/\D/g, '');
+      if (!pid) return; // bouton générique (handle) → pas de template à chercher
+      btn.setAttribute('data-tsl-relabelled', '1');
+
+      _tlHasTemplate(pid).then(function (has) {
+        // Les deux cas sont écrits explicitement : un produit sans design doit
+        // dire « Personnaliser », même si le thème affichait autre chose.
+        var attr  = has ? 'data-tsl-label-template' : 'data-tsl-label-plain';
+        var label = btn.getAttribute(attr)
+                 || (document.body && document.body.getAttribute(attr))
+                 || (has ? TL_LABEL_TEMPLATE : TL_LABEL_PLAIN);
+        _tlSetButtonLabel(btn, label);
+        // Crochet CSS pour qui voudrait différencier visuellement les deux cas.
+        btn.setAttribute('data-tsl-has-template', has ? '1' : '0');
+      });
+    });
+  }
+
   // ── Init ────────────────────────────────────────────────────────────────────
   function init() {
     injectDOM();
@@ -999,9 +1079,13 @@
     _tlLoadStyleSettings();
     _tlGatePersonaliseButtons();
     _tlHidePrintOption();
+    _tlRelabelTemplateButtons();
     // Les sélecteurs de variante peuvent se rendre tardivement (thèmes JS).
     setTimeout(_tlHidePrintOption, 800);
     setTimeout(_tlHidePrintOption, 2000);
+    // Idem pour les boutons rendus après coup (sections AJAX, quick view).
+    setTimeout(_tlRelabelTemplateButtons, 900);
+    setTimeout(_tlRelabelTemplateButtons, 2200);
   }
 
   // ── Synchronisation persistante des images du panier ───────────────────────
