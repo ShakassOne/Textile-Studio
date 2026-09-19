@@ -8925,11 +8925,14 @@ async function apiFetch(path, opts = {}) {
 // Sans ces paramètres, rien de ce bloc ne s'exécute — le flux client existant
 // est strictement inchangé.
 
+// v3 : ajoute frame (zone d'impression au moment du save) — indispensable pour
+//      replacer le design à l'identique sur un écran de taille différente.
 // v2 : ajoute pricingReference (coût d'impression déjà inclus dans le prix
-// Shopify). Les templates v1, sans ce champ, restent lus normalement — le
-// serveur recalcule alors une référence best-effort (utils/print-tiers.js,
-// computeTemplatePrintAmount).
-const TPL_VERSION = 2;
+//      Shopify).
+// v1 : format d'origine. Les anciens templates restent lus : sans
+//      pricingReference le serveur recalcule une référence best-effort, sans
+//      frame le design est restauré tel quel (positions de l'écran d'origine).
+const TPL_VERSION = 3;
 
 // Coût d'impression déjà inclus dans le prix Shopify du produit courant.
 // 0 pour un produit sans template → le client paie la totalité, comme avant.
@@ -8984,6 +8987,12 @@ function _tplBuild() {
     mockupId:    STATE_mockup?.id ?? null,
     viewFormats: STATE.viewFormats || {},
     viewLayers:  STATE.viewLayers  || {},
+    // v3 — zone d'impression à l'écran au moment du save. Les coordonnées des
+    // calques sont en pixels canvas ABSOLUS, or la largeur du canvas dépend de
+    // l'écran (getCanvasSize : ~340 px sur mobile, jusqu'à 1000 px sur desktop).
+    // Sans ce repère, un template créé sur desktop se retrouve décalé et
+    // surdimensionné sur mobile. Cf. _tplRemapToFrame().
+    frame: STATE.frameCoords ? { ...STATE.frameCoords } : null,
     // v2 — ce montant est DÉJÀ inclus dans le prix Shopify du produit.
     pricingReference: {
       amount: _sc.total,
@@ -9101,6 +9110,36 @@ function _tplInitAdminBar() {
   document.getElementById('tpl-save-btn').onclick = tplSaveAsTemplate;
 }
 
+// Replace les calques du template sur la zone d'impression COURANTE.
+// Même transformation que resizeCanvas() : les coordonnées Fabric sont en
+// pixels canvas absolus, on les réancre sur le cadre actuel avec le ratio de
+// variation de sa largeur. Sans ça, un template sauvé sur un canvas de 500 px
+// s'affiche décalé et 2× trop grand sur un canvas mobile de 340 px.
+// Sans cadre de référence (templates v1/v2), on ne touche à rien.
+function _tplRemapToFrame(savedFrame) {
+  const cur = STATE.frameCoords;
+  if (!savedFrame || !cur || !(savedFrame.w > 0) || !(cur.w > 0)) return 0;
+  const r = cur.w / savedFrame.w;
+  if (!Number.isFinite(r) || r <= 0) return 0;
+  if (Math.abs(r - 1) < 0.001 && Math.abs(cur.x - savedFrame.x) < 0.5
+      && Math.abs(cur.y - savedFrame.y) < 0.5) return 0; // déjà au bon endroit
+
+  let moved = 0;
+  canvas.getObjects().forEach(o => {
+    if (o.__isFrame || o.__isMockupBg || o.__isColorOverlay || o.__isPrintMask) return;
+    o.set({
+      left:   cur.x + ((o.left || 0) - savedFrame.x) * r,
+      top:    cur.y + ((o.top  || 0) - savedFrame.y) * r,
+      scaleX: (o.scaleX || 1) * r,
+      scaleY: (o.scaleY || 1) * r,
+    });
+    o.setCoords();
+    moved++;
+  });
+  if (moved) console.log(`[TPL] ${moved} calque(s) réancrés (ratio ${r.toFixed(3)})`);
+  return moved;
+}
+
 // ── Chargement côté client ──────────────────────────────────────────────────
 // Le template fait autorité : il impose produit, couleur, mockup et format,
 // par-dessus ce que la résolution ?product_id= avait déjà appliqué.
@@ -9144,6 +9183,10 @@ function _tplApply(tpl) {
   setTimeout(() => {
     STATE.viewLayers = tpl.viewLayers;
     _restoreViewLayers(STATE_mockup?.id, 0, () => {
+      // Réancrage AVANT tout le reste : le design doit retrouver sa place dans
+      // la zone d'impression de CET écran (cf. _tplRemapToFrame).
+      try { _tplRemapToFrame(tpl.frame); } catch (e) { console.warn('[TPL] remap:', e.message); }
+      try { updateAllClipPaths(); } catch (_) {}
       try { _reorderCanvasLayers(); } catch (_) {}
       try { if (tpl.color) updateTextileColor(tpl.color); } catch (_) {}
       try { updateLayerBar(); updateDesktopLayerPanel(); } catch (_) {}
