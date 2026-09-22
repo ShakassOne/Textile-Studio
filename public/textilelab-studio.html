@@ -2739,9 +2739,28 @@
         </div>
 
         <div class="tool-section">
+          <div class="tool-section-title">Photo de départ <span style="color:var(--text3);font-weight:400">— optionnel</span></div>
+          <div id="ai-photo-zone" onclick="_aiPickPhoto()"
+               style="border:1.5px dashed var(--border);border-radius:12px;padding:14px;text-align:center;cursor:pointer;transition:all .15s">
+            <div id="ai-photo-empty">
+              <div style="font-size:20px;margin-bottom:4px">🖼</div>
+              <div style="font-size:12px;font-weight:500">Ajouter une photo à transformer</div>
+              <div style="font-size:10px;color:var(--text3);margin-top:3px">Sans photo, l'IA crée le design de zéro</div>
+            </div>
+            <div id="ai-photo-preview" style="display:none;position:relative">
+              <img id="ai-photo-thumb" alt="" style="width:100%;max-height:150px;object-fit:contain;border-radius:8px">
+              <div style="display:flex;gap:6px;margin-top:8px">
+                <button class="btn-sm" style="flex:1" onclick="event.stopPropagation();_aiPickPhoto()">Changer</button>
+                <button class="btn-sm" style="flex:1" onclick="event.stopPropagation();_aiClearPhoto()">Retirer</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tool-section">
           <div class="tool-section-title">Description</div>
           <textarea class="input-field" id="ai-prompt" rows="3" placeholder="Ex: dragon stylisé avec flammes en aquarelle, fond blanc..." style="resize:none"></textarea>
-          <div style="font-size:10px;color:var(--text3);margin-top:6px;line-height:1.4">
+          <div style="font-size:10px;color:var(--text3);margin-top:6px;line-height:1.4" id="ai-prompt-hint">
             Décris librement ce que tu veux. Précise le style si tu en as un (cartoon, vintage, minimaliste, manga…) — sinon on te le demandera.
           </div>
         </div>
@@ -2764,6 +2783,7 @@
         <div id="photo-upload-zone" style="position:relative;border-radius:14px;overflow:hidden;margin-bottom:14px;background:var(--bg3);border:1.5px dashed var(--border);transition:border-color .2s;min-height:100px;display:flex;align-items:center;justify-content:center;cursor:pointer">
 
           <!-- Input transparent sur tout le div — pas de onclick sur le parent pour éviter le double déclenchement -->
+          <input type="file" id="ai-photo-input" accept="image/*" style="display:none" onchange="_aiOnPhotoPicked(event)">
           <input type="file" id="photo-file-input" accept="image/*"
             style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:3"
             onchange="_onPhotoSelected(event)">
@@ -6084,11 +6104,84 @@ async function _tlAskStyleIfMissing(promptText) {
   });
 }
 
+// ── Onglet IA : photo de départ optionnelle ─────────────────────────────────
+// Les deux sections (IA et Photo → Art) sont fusionnées ici : le client décrit
+// ce qu'il veut, et peut joindre une photo à transformer. Avec photo on passe
+// par /api/ai/transform (édition d'image guidée par sa consigne), sans photo
+// par /api/ai/dalle (création de zéro) — le comportement historique.
+let _aiSourcePhoto = null; // dataURL de la photo jointe, ou null
+
+// Mobile : switchMobileToolTab clone le panneau et préfixe les ids par « m- ».
+function _aiEl(id) {
+  return document.getElementById('m-' + id) || document.getElementById(id);
+}
+
+function _aiPickPhoto() {
+  const inp = _aiEl('ai-photo-input');
+  if (!inp) return;
+  inp.value = '';
+  inp.click();
+}
+
+async function _aiOnPhotoPicked(e) {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (!file.type.startsWith('image/')) return showToast('⚠ Choisissez une image');
+  try {
+    const raw = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = ev => res(ev.target.result);
+      r.onerror = () => rej(new Error('lecture impossible'));
+      r.readAsDataURL(file);
+    });
+    // Même réduction que l'upload d'image classique : une photo de téléphone
+    // fait plusieurs Mo et le backend plafonne le corps de requête à 10 Mo.
+    _aiSourcePhoto = await _downscaleDataURL(raw, 1600);
+    _aiRefreshPhotoUI();
+    showToast('📷 Photo jointe — décrivez la transformation');
+  } catch (err) {
+    showToast('❌ ' + err.message);
+  }
+}
+
+function _aiClearPhoto() {
+  _aiSourcePhoto = null;
+  _aiRefreshPhotoUI();
+}
+
+// Reflète l'état sur les DEUX copies du panneau (desktop et clone mobile).
+function _aiRefreshPhotoUI() {
+  ['', 'm-'].forEach(p => {
+    const empty   = document.getElementById(p + 'ai-photo-empty');
+    const preview = document.getElementById(p + 'ai-photo-preview');
+    const thumb   = document.getElementById(p + 'ai-photo-thumb');
+    const hint    = document.getElementById(p + 'ai-prompt-hint');
+    const btn     = document.getElementById(p + 'ai-generate-btn');
+    if (empty)   empty.style.display   = _aiSourcePhoto ? 'none'  : 'block';
+    if (preview) preview.style.display = _aiSourcePhoto ? 'block' : 'none';
+    if (thumb && _aiSourcePhoto) thumb.src = _aiSourcePhoto;
+    if (hint) {
+      hint.textContent = _aiSourcePhoto
+        ? 'Dites ce que l\'IA doit faire de cette photo. Ex : « transforme-la en illustration cartoon », « style manga noir et blanc ».'
+        : 'Décris librement ce que tu veux. Précise le style si tu en as un (cartoon, vintage, minimaliste, manga…) — sinon on te le demandera.';
+    }
+    if (btn && !btn.disabled) {
+      btn.innerHTML = _aiSourcePhoto ? '✨ Transformer la photo' : '✨ Générer le design';
+    }
+  });
+}
+
 async function generateAI() {
   // Mobile : l'ID est préfixé m- après clonage dans switchMobileToolTab
   const promptEl = document.getElementById('m-ai-prompt') || document.getElementById('ai-prompt');
   const prompt = promptEl ? promptEl.value.trim() : '';
-  if (!prompt) { showToast('Décrivez votre design d\'abord'); return; }
+  if (!prompt) {
+    showToast(_aiSourcePhoto
+      ? 'Dites ce que l\'IA doit faire de cette photo'
+      : 'Décrivez votre design d\'abord');
+    return;
+  }
 
   // ── Quota par session (anti-spam frontend) ────────────────────────────
   if (_tlAiGenCount() >= TL_AI_USER_GEN_LIMIT) {
@@ -6097,8 +6190,9 @@ async function generateAI() {
     return;
   }
 
-  // ── Si l'utilisateur n'a pas mentionné de style, popup pour en proposer un
-  const askedStyle = await _tlAskStyleIfMissing(prompt);
+  // Avec une photo jointe, la consigne du client EST le prompt : on ne lui
+  // redemande pas un style, il vient de l'exprimer.
+  const askedStyle = _aiSourcePhoto ? '' : await _tlAskStyleIfMissing(prompt);
 
   const btn = document.getElementById('m-ai-generate-btn') || document.getElementById('ai-generate-btn');
   btn.innerHTML = '<span class="loading-spinner"></span> Génération...';
@@ -6112,14 +6206,27 @@ async function generateAI() {
   const finalPrompt = `T-shirt print design${styleClause}: ${prompt}. White background, transparent-ready, bold graphic, print-ready, no text unless explicitly requested.`;
 
   try {
-    // ── Mode GPT Image — via backend proxy ──
-    const dalleSize = window._dalleSize || '1024x1024';
     const _aiHdr = window._TL_SHOP ? { 'X-Shop-Domain': window._TL_SHOP } : {};
-    const response = await fetch('/api/ai/dalle', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ..._aiHdr },
-      body: JSON.stringify({ prompt: finalPrompt, size: dalleSize }),
-    });
+    let response;
+    if (_aiSourcePhoto) {
+      // ── Photo jointe : édition d'image guidée par la consigne du client ──
+      // Le backend combine la photo et le prompt libre (routes/ai.js,
+      // buildTransformPrompt) et renvoie un PNG à fond transparent.
+      btn.innerHTML = '<span class="loading-spinner"></span> Transformation...';
+      response = await fetch('/api/ai/transform', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ..._aiHdr },
+        body: JSON.stringify({ imageBase64: _aiSourcePhoto, prompt, style: 'cartoon' }),
+      });
+    } else {
+      // ── Sans photo : création de zéro, comportement historique ──
+      const dalleSize = window._dalleSize || '1024x1024';
+      response = await fetch('/api/ai/dalle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ..._aiHdr },
+        body: JSON.stringify({ prompt: finalPrompt, size: dalleSize }),
+      });
+    }
     const data = await response.json();
     if (data.error) throw new Error(data.error);
     // Le backend renvoie `data.base64` (data URL PNG). On accepte aussi
@@ -6146,8 +6253,8 @@ async function generateAI() {
     const msg = (e && e.message) ? String(e.message) : 'erreur réseau';
     showToast('❌ Génération IA indisponible : ' + msg.slice(0, 80));
   } finally {
-    btn.innerHTML = '✨ Générer le design';
     btn.disabled = false;
+    btn.innerHTML = _aiSourcePhoto ? '✨ Transformer la photo' : '✨ Générer le design';
   }
 }
 

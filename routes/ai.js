@@ -244,8 +244,12 @@ async function loadStyleCoverInput(imageUrl) {
 // hasStyleReference=true → prompt structuré Image A (identité) / Image B (style),
 // sinon fallback texte seul (point 5). Le prompt custom du style est conservé
 // puis enrichi (point 9) avec les contraintes d'identité et de rendu.
-function buildTransformPrompt(customPrompt, hasStyleReference) {
-  const base = (customPrompt || STYLE_PROMPTS_FALLBACK.cartoon).trim();
+function buildTransformPrompt(customPrompt, hasStyleReference, userPrompt) {
+  // La consigne libre du client prime sur le prompt du style : c'est elle qui
+  // exprime son intention (« transforme cette photo en affiche vintage »).
+  // Sans consigne, on retombe sur le prompt du style, comportement historique.
+  const free = String(userPrompt || '').trim();
+  const base = free || (customPrompt || STYLE_PROMPTS_FALLBACK.cartoon).trim();
   const commonRules = [
     'Keep the EXACT number of people present in the source photo.',
     "Preserve each person's likeness: face, glasses, beard, hairstyle and hair length, and smile/expression.",
@@ -349,6 +353,10 @@ router.post('/dalle', requireAIContext, attachShopId, aiIpRateLimiter, aiRateLim
 // Auth Shopify session token (App Bridge 4) + rate-limit par shop (audit B3)
 router.post('/transform', requireAIContext, attachShopId, aiIpRateLimiter, aiRateLimiter, async (req, res) => {
   const { imageBase64, style = 'cartoon' } = req.body;
+  // Consigne libre du client (onglet IA fusionné : « transforme cette photo
+  // en… »). Optionnelle — sans elle, le comportement est exactement celui
+  // d'avant : le prompt vient du style choisi.
+  const userPrompt = String(req.body.prompt || '').trim().slice(0, 1500);
   // Point 6 — comportement par défaut : la cover du style sert de référence de
   // style. Désactivable explicitement par requête (useCoverAsStyleReference:false).
   const useCoverAsStyleReference = req.body.useCoverAsStyleReference !== false;
@@ -376,7 +384,7 @@ router.post('/transform', requireAIContext, attachShopId, aiIpRateLimiter, aiRat
     const styleReferenceUsed = !!cover;
 
     // Point 3, 4, 5, 9 : prompt structuré (Image A/Image B) si cover, sinon texte seul.
-    const prompt = buildTransformPrompt(customPrompt, styleReferenceUsed);
+    const prompt = buildTransformPrompt(customPrompt, styleReferenceUsed, userPrompt);
 
     // FormData natif (Node 22) + Blob.
     const form = new FormData();
