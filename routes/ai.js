@@ -244,6 +244,32 @@ async function loadStyleCoverInput(imageUrl) {
 // hasStyleReference=true → prompt structuré Image A (identité) / Image B (style),
 // sinon fallback texte seul (point 5). Le prompt custom du style est conservé
 // puis enrichi (point 9) avec les contraintes d'identité et de rendu.
+// Règles de rendu communes à TOUTES les générations, quelle que soit la route.
+// Le cadrage est le premier point : sans consigne explicite, gpt-image-1 cadre
+// serré et rogne systématiquement le sujet (tête, pieds, bords du dessin).
+const COMMON_RENDER_RULES = [
+  'CRITICAL — FRAMING: the ENTIRE subject must be fully visible inside the image, nothing cropped.',
+  'Do NOT crop or cut off any part of the artwork: no cropped head, hair, ears, feet, hands, wings, tails, weapons or lettering.',
+  'Leave a comfortable empty margin on ALL FOUR sides (roughly 10% of the image): headroom above, footroom below, and space left and right.',
+  'Compose the subject fully zoomed out and centered. Never bleed off the edges, never let any element touch the border.',
+  'Clean illustration: avoid any greasy, oily, waxy or pasty over-rendered look — keep crisp, clean edges.',
+  'Fully transparent background (PNG alpha): no background scene, no backdrop, no canvas, no drop shadow.',
+  'Deliver a print-ready DTF transfer: high contrast, clean separated colors, no semi-transparent halo around the edges.',
+];
+
+// Prompt des générations de zéro (POST /dalle). On enrobe la demande du client
+// des mêmes règles que la transformation de photo — notamment le cadrage, qui
+// manquait ici : les visuels revenaient rognés sur les bords.
+function buildGenerationPrompt(userPrompt) {
+  const base = String(userPrompt || '').trim();
+  return [
+    base,
+    '',
+    'Strict requirements:',
+    ...COMMON_RENDER_RULES.map((r) => '- ' + r),
+  ].join('\n');
+}
+
 function buildTransformPrompt(customPrompt, hasStyleReference, userPrompt) {
   // La consigne libre du client prime sur le prompt du style : c'est elle qui
   // exprime son intention (« transforme cette photo en affiche vintage »).
@@ -253,10 +279,7 @@ function buildTransformPrompt(customPrompt, hasStyleReference, userPrompt) {
   const commonRules = [
     'Keep the EXACT number of people present in the source photo.',
     "Preserve each person's likeness: face, glasses, beard, hairstyle and hair length, and smile/expression.",
-    'Clean illustration: avoid any greasy, oily, waxy or pasty over-rendered look — keep crisp, clean edges.',
-    'Fully transparent background (PNG alpha): no background scene, no backdrop, no canvas, no drop shadow.',
-    'Frame the whole subject with comfortable margins: do NOT crop the hair at the top, do NOT crop the feet or the bottom of the artwork; leave headroom and footroom.',
-    'Deliver a print-ready DTF transfer: high contrast, clean separated colors, no semi-transparent halo around the edges.',
+    ...COMMON_RENDER_RULES,
   ];
   if (hasStyleReference) {
     return [
@@ -319,13 +342,17 @@ router.delete('/settings/openai', requireAuth, attachShopId, (req, res) => {
 router.post('/dalle', requireAIContext, attachShopId, aiIpRateLimiter, aiRateLimiter, async (req, res) => {
   const { prompt, size = '1024x1024', quality = 'high', transparent = true } = req.body;
   if (!prompt) return res.status(400).json({ error: 'prompt requis' });
+  // Enrobage serveur : la demande du client seule laissait gpt-image-1 cadrer
+  // serré et rogner le sujet. Fait ici et non côté studio pour que toute
+  // génération en bénéficie, quel que soit l'appelant.
+  const finalPrompt = buildGenerationPrompt(prompt);
 
   const apiKey = resolveOpenAIKey(req.shopId);
   if (!apiKey) return res.status(500).json({ error: 'Clé OpenAI non configurée — rendez-vous dans Paramètres → IA' });
 
   try {
     const body = {
-      model: 'gpt-image-1', prompt, n: 1, size, quality, output_format: 'png',
+      model: 'gpt-image-1', prompt: finalPrompt, n: 1, size, quality, output_format: 'png',
     };
     if (transparent) body.background = 'transparent';
 
