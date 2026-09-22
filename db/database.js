@@ -267,6 +267,27 @@ function initDB() {
   `);
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_ai_creations_shop_status ON ai_creations(shop_id, status)"); } catch {}
 
+  // ── Table: ai_quota (compteur de générations IA par identité) ───────────────
+  // identity : "customer:<id>" (connecté, via App Proxy — fiable),
+  //            "email:<mail>"  (reconnu par une commande),
+  //            "visitor:<uuid>" (navigateur, barrière douce).
+  // Le quota est mensuel (period = "AAAA-MM") ; un achat le recharge, ce que
+  // tracent last_order_period et last_order_used_at. Cf. utils/ai-quota.js.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ai_quota (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      shop_id            INTEGER NOT NULL REFERENCES shops(id),
+      identity           TEXT    NOT NULL,
+      used               INTEGER NOT NULL DEFAULT 0,
+      period             TEXT    NOT NULL,
+      last_order_period  TEXT,
+      last_order_used_at INTEGER,
+      updated_at         TEXT    DEFAULT (datetime('now')),
+      UNIQUE(shop_id, identity)
+    )
+  `);
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_ai_quota_shop_identity ON ai_quota(shop_id, identity)"); } catch {}
+
   // ── Table: qr_frames (habillages QR code — cadres réseaux sociaux, etc.) ─────
   db.exec(`
     CREATE TABLE IF NOT EXISTS qr_frames (

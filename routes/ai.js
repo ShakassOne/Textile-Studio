@@ -337,9 +337,122 @@ router.delete('/settings/openai', requireAuth, attachShopId, (req, res) => {
   res.json({ ok: true });
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// QUOTA DE GÉNÉRATIONS — persistance et application
+// ═══════════════════════════════════════════════════════════════════════════
+// Les règles vivent dans utils/ai-quota.js (module pur, testé). Ici on ne fait
+// que lire/écrire l'état et refuser la requête le cas échéant.
+//
+// Le compteur côté studio (sessionStorage) reste comme repère d'interface :
+// il s'efface en navigation privée, il ne protège rien. La barrière est ici.
+const QUOTA = require('../utils/ai-quota');
+
+// Identité de l'appelant, de la plus fiable à la plus faible.
+// customerId ne doit JAMAIS venir du corps de requête brut : il est posé par
+// une route App Proxy, où Shopify le signe en HMAC (cf. routes/app-proxy.js).
+function _resolveIdentity(req) {
+  const signedCustomer = req.tlCustomerId || null;
+  if (signedCustomer) {
+    const key = QUOTA.identityKey('customer', signedCustomer);
+    if (key) return { key, type: 'customer' };
+  }
+  const visitor = req.get('X-TL-Visitor') || req.body?.visitorId || '';
+  const key = QUOTA.identityKey('visitor', visitor);
+  if (key) return { key, type: 'anonymous' };
+  // Sans identité exploitable, on retombe sur l'IP : un visiteur qui bloque
+  // tout stockage reste limité, sans pour autant être bloqué d'emblée.
+  const ipKey = QUOTA.identityKey('visitor', 'ip-' + String(req.ip || '').replace(/[^a-z0-9]/gi, '').slice(0, 40));
+  return { key: ipKey || 'visitor:inconnu', type: 'anonymous' };
+}
+
+function _quotaRow(shopId, identity) {
+  try {
+    return getDB().prepare('SELECT * FROM ai_quota WHERE shop_id=? AND identity=?').get(shopId, identity) || null;
+  } catch (e) { console.warn('ai_quota read:', e.message); return null; }
+}
+
+// Middleware : refuse la génération si le quota est épuisé.
+// En cas d'erreur DB on laisse passer — mieux vaut une génération de trop
+// qu'un studio bloqué pour tout le monde.
+function checkAiQuota(req, res, next) {
+  try {
+    const shopId = req.shopId;
+    if (!shopId) return next();
+    const ident = _resolveIdentity(req);
+    const state = QUOTA.evaluate(_quotaRow(shopId, ident.key), ident.type);
+    req.tlQuota = { ...state, identity: ident.key, identityType: ident.type };
+    if (!state.allowed) {
+      return res.status(429).json({
+        error:      QUOTA.refusalMessage(state),
+        quota:      { used: state.used, limit: state.limit, remaining: 0, period: state.period },
+        needsLogin: state.needsLogin,
+      });
+    }
+    next();
+  } catch (e) {
+    console.warn('checkAiQuota:', e.message);
+    next();
+  }
+}
+
+// À appeler APRÈS une génération réussie : une tentative qui échoue (erreur
+// OpenAI, réseau) ne doit pas être décomptée au client.
+function consumeAiQuota(req) {
+  try {
+    const shopId = req.shopId;
+    const q = req.tlQuota;
+    if (!shopId || !q) return;
+    getDB().prepare(`
+      INSERT INTO ai_quota (shop_id, identity, used, period, updated_at)
+      VALUES (?, ?, 1, ?, datetime('now'))
+      ON CONFLICT(shop_id, identity) DO UPDATE SET
+        used       = CASE WHEN ai_quota.period = excluded.period THEN ai_quota.used + 1 ELSE 1 END,
+        period     = excluded.period,
+        updated_at = datetime('now')
+    `).run(shopId, q.identity, q.period);
+  } catch (e) { console.warn('consumeAiQuota:', e.message); }
+}
+
+// Recharge le quota d'une identité après un achat (appelé par le webhook
+// orders/paid) : le compteur repart de zéro, le client retrouve donc la
+// totalité de ses générations pour le mois en cours.
+function grantAiQuotaOnOrder(shopId, identities = []) {
+  const period = QUOTA.periodKey();
+  let granted = 0;
+  for (const raw of identities) {
+    if (!raw) continue;
+    try {
+      // used = 0 : l'achat rend le quota PLEIN pour le mois en cours.
+      getDB().prepare(`
+        INSERT INTO ai_quota (shop_id, identity, used, period, last_order_period, updated_at)
+        VALUES (?, ?, 0, ?, ?, datetime('now'))
+        ON CONFLICT(shop_id, identity) DO UPDATE SET
+          used              = 0,
+          period            = excluded.period,
+          last_order_period = excluded.last_order_period,
+          updated_at        = datetime('now')
+      `).run(shopId, raw, period, period);
+      granted++;
+    } catch (e) { console.warn('grantAiQuotaOnOrder:', e.message); }
+  }
+  if (granted) console.log(`🎁  Quota IA rechargé après achat — ${granted} identité(s)`);
+  return granted;
+}
+
+// ── GET /api/ai/quota — état du quota, pour l'affichage dans le studio ──────
+router.get('/quota', attachShopId, (req, res) => {
+  const ident = _resolveIdentity(req);
+  const state = QUOTA.evaluate(_quotaRow(req.shopId, ident.key), ident.type);
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    used: state.used, limit: state.limit, remaining: state.remaining,
+    period: state.period, identityType: ident.type, needsLogin: state.needsLogin,
+  });
+});
+
 // ── POST /api/ai/dalle — Génération IA depuis texte (scopé shop) ────────
 // Auth Shopify session token (App Bridge 4) + rate-limit par shop (audit B3)
-router.post('/dalle', requireAIContext, attachShopId, aiIpRateLimiter, aiRateLimiter, async (req, res) => {
+router.post('/dalle', requireAIContext, attachShopId, aiIpRateLimiter, aiRateLimiter, checkAiQuota, async (req, res) => {
   const { prompt, size = '1024x1024', quality = 'high', transparent = true } = req.body;
   if (!prompt) return res.status(400).json({ error: 'prompt requis' });
   // Enrobage serveur : la demande du client seule laissait gpt-image-1 cadrer
@@ -368,7 +481,11 @@ router.post('/dalle', requireAIContext, attachShopId, aiIpRateLimiter, aiRateLim
     const b64 = data.data?.[0]?.b64_json;
     if (!b64) return res.status(500).json({ error: "Pas d'image retournée" });
 
-    res.json({ base64: `data:image/png;base64,${b64}`, model: 'gpt-image-1', quality, transparent });
+    consumeAiQuota(req); // uniquement après une génération réussie
+    res.json({
+      base64: `data:image/png;base64,${b64}`, model: 'gpt-image-1', quality, transparent,
+      quota: { used: (req.tlQuota?.used || 0) + 1, limit: req.tlQuota?.limit },
+    });
 
   } catch (e) {
     console.error('GPT Image error:', e);
@@ -378,7 +495,7 @@ router.post('/dalle', requireAIContext, attachShopId, aiIpRateLimiter, aiRateLim
 
 // ── POST /api/ai/transform — Photo → Art (scopé shop) ─────────────
 // Auth Shopify session token (App Bridge 4) + rate-limit par shop (audit B3)
-router.post('/transform', requireAIContext, attachShopId, aiIpRateLimiter, aiRateLimiter, async (req, res) => {
+router.post('/transform', requireAIContext, attachShopId, aiIpRateLimiter, aiRateLimiter, checkAiQuota, async (req, res) => {
   const { imageBase64, style = 'cartoon' } = req.body;
   // Consigne libre du client (onglet IA fusionné : « transforme cette photo
   // en… »). Optionnelle — sans elle, le comportement est exactement celui
@@ -444,11 +561,13 @@ router.post('/transform', requireAIContext, attachShopId, aiIpRateLimiter, aiRat
     const b64 = data.data?.[0]?.b64_json;
     if (!b64) return res.status(500).json({ error: "Pas d'image retournée" });
 
+    consumeAiQuota(req); // uniquement après une transformation réussie
     res.json({
       base64:               `data:image/png;base64,${b64}`,
       style,
       model:                'gpt-image-1',
       style_reference_used: styleReferenceUsed,
+      quota:                { used: (req.tlQuota?.used || 0) + 1, limit: req.tlQuota?.limit },
     });
 
   } catch (e) {
@@ -673,3 +792,6 @@ router.delete('/creations/:id', requireAuth, attachShopId, (req, res) => {
 });
 
 module.exports = router;
+// Utilisé par le webhook orders/paid (routes/shopify.js) pour recharger le
+// quota du client et de l'e-mail de la commande.
+module.exports.grantAiQuotaOnOrder = grantAiQuotaOnOrder;

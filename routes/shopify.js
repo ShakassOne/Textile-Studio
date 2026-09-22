@@ -299,6 +299,22 @@ function handleOrderPaid(payload, shopDomain) {
   const newOrderId = info.lastInsertRowid;
   console.log(`✅  Order #${newOrderId} (shop ${shopId}) from ${customerEmail} saved (design #${design_id})`);
 
+  // ── Recharger le quota IA : un achat redonne des générations ──────────
+  // Deux identités possibles — le compte client s'il était connecté, et
+  // l'e-mail de la commande, qui rattrape le cas du visiteur non connecté au
+  // moment où il créait son design.
+  try {
+    const { grantAiQuotaOnOrder } = require('./ai');
+    const { identityKey } = require('../utils/ai-quota');
+    const ids = [
+      identityKey('customer', customer.id || ''),
+      identityKey('email',    customerEmail || ''),
+    ].filter(Boolean);
+    if (ids.length) grantAiQuotaOnOrder(shopId, ids);
+  } catch (e) {
+    console.warn('quota IA après achat:', e.message);
+  }
+
   // Envoyer l'email de confirmation automatiquement
   if (customerEmail) {
     const { sendEmail, buildOrderConfirmationHTML } = require('./email');
