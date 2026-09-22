@@ -3724,8 +3724,8 @@ window.addEventListener('resize', () => {
 
 function drawPrintFrame() {
   // Remove old frame
-  const old = canvas.getObjects().find(o => o.__isFrame);
-  if (old) canvas.remove(old);
+  // Idem : on retire tous les cadres existants (cf. drawPrintFrameFromMockup).
+  canvas.getObjects().filter(o => o.__isFrame).forEach(o => canvas.remove(o));
 
   const fmt = FORMATS[STATE.format];
   const cw = canvas.getWidth();
@@ -3774,7 +3774,25 @@ function animateFrame(frame) {
 
 // Réordonner les calques dans le bon ordre :
 // bgMockup(0) → colorOverlay(1) → calques utilisateur → masques hors-zone → frame (top)
+// Ne garde qu'UN exemplaire de chaque objet système (le plus récent, donc le
+// dernier ajouté) et supprime les doublons. C'est le filet de sécurité : même
+// si une nouvelle course en produisait, ils seraient éliminés au prochain
+// réordonnancement — appelé à chaque changement de face, restauration de
+// calques et chargement de mockup.
+function _dedupeSystemObjects() {
+  if (!canvas) return 0;
+  let removed = 0;
+  ['__isMockupBg', '__isFrame', '__isColorOverlay'].forEach(flag => {
+    const list = canvas.getObjects().filter(o => o[flag]);
+    // On conserve le dernier : c'est celui que le rendu courant vient de poser.
+    for (let i = 0; i < list.length - 1; i++) { canvas.remove(list[i]); removed++; }
+  });
+  if (removed) console.warn(`[Canvas] ${removed} objet(s) système en double supprimé(s)`);
+  return removed;
+}
+
 function _reorderCanvasLayers() {
+  _dedupeSystemObjects();
   // bg en bas
   const bg = canvas.getObjects().find(o => o.__isMockupBg);
   if (bg) canvas.sendToBack(bg);
@@ -3788,8 +3806,7 @@ function _reorderCanvasLayers() {
 
   // masques puis frame TOUT en haut (après les calques user)
   canvas.getObjects().filter(o => o.__isPrintMask).forEach(m => canvas.bringToFront(m));
-  const frame = canvas.getObjects().find(o => o.__isFrame);
-  if (frame) canvas.bringToFront(frame);
+  canvas.getObjects().filter(o => o.__isFrame).forEach(f => canvas.bringToFront(f));
 }
 
 // ── Clip dur : empêche les calques utilisateur de déborder hors zone d'impression
@@ -5090,6 +5107,10 @@ function applyMockup(productKey, viewIdx, mockupIdx, userAction = false) {
     });
 
     canvas.setBackgroundColor('transparent', () => {});
+    // Purger un éventuel fond résiduel avant d'ajouter le nouveau : deux
+    // chargements concurrents (changement de face pendant qu'un mockup charge,
+    // resize au même instant) laissaient deux vêtements superposés à l'écran.
+    canvas.getObjects().filter(o => o.__isMockupBg).forEach(o => canvas.remove(o));
     canvas.add(img);
     canvas.sendToBack(img);
     drawPrintFrameFromMockup(view, img, scale, left, top);
@@ -5113,9 +5134,12 @@ function applyMockup(productKey, viewIdx, mockupIdx, userAction = false) {
 
 
 function drawPrintFrameFromMockup(view, img, scale, imgLeft, imgTop) {
-  // Remove old frame
-  const old = canvas.getObjects().find(o => o.__isFrame);
-  if (old) canvas.remove(old);
+  // Supprimer TOUS les anciens cadres, pas seulement le premier : avec un
+  // .find() un doublon déjà présent n'était jamais retiré, et chaque passage
+  // en ajoutait un de plus. D'où les cadres pointillés superposés et décalés —
+  // et le clip qui se calait ensuite sur le mauvais, laissant le visuel
+  // déborder de la zone d'impression.
+  canvas.getObjects().filter(o => o.__isFrame).forEach(o => canvas.remove(o));
 
   // Zone unique (nouveau format) ou compat ancienne structure multi-formats
   const zoneData = view.zone || view.zones?.A3 || view.zones?.A4 || view.zones?.A5 || view.zones?.A6;
