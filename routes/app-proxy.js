@@ -253,6 +253,55 @@ router.get('/tl-modal.js', requireProxyHMAC, (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /proxy/whoami — identité du client connecté, sous forme de jeton signé
+// ─────────────────────────────────────────────────────────────────────────────
+// Le studio est une iframe servie par Railway : il ne voit pas la session
+// Shopify. Mais l'App Proxy, lui, reçoit logged_in_customer_id de Shopify, dans
+// un query string signé en HMAC (requireProxyHMAC ci-dessus l'a déjà vérifié).
+// On transforme donc cette identité vérifiée en un petit jeton signé par NOUS,
+// à durée de vie courte, que le studio joindra à ses appels IA.
+//
+// Un identifiant client transmis en clair par le navigateur serait falsifiable
+// en une seconde ; ce jeton ne l'est pas — il faudrait le secret de l'app.
+const CUSTOMER_TOKEN_TTL_MS = 2 * 60 * 60 * 1000; // 2 h : la durée d'une session de design
+
+function _signCustomerToken(customerId, shop) {
+  const secret = process.env.SHOPIFY_API_SECRET || '';
+  if (!secret || !customerId) return null;
+  const exp     = Date.now() + CUSTOMER_TOKEN_TTL_MS;
+  const payload = `${customerId}.${exp}.${shop}`;
+  const sig     = crypto.createHmac('sha256', secret).update(payload).digest('hex').slice(0, 32);
+  return `${customerId}.${exp}.${sig}`;
+}
+
+// Vérifie un jeton produit ci-dessus. Retourne l'id client, ou null.
+// Exporté : c'est routes/ai.js qui s'en sert pour attribuer le quota.
+function verifyCustomerToken(token, shop) {
+  const secret = process.env.SHOPIFY_API_SECRET || '';
+  if (!secret || !token) return null;
+  const parts = String(token).split('.');
+  if (parts.length !== 3) return null;
+  const [customerId, exp, sig] = parts;
+  if (!/^\d+$/.test(customerId) || !/^\d+$/.test(exp)) return null;
+  if (Number(exp) < Date.now()) return null; // expiré
+  const expected = crypto.createHmac('sha256', secret)
+    .update(`${customerId}.${exp}.${shop}`).digest('hex').slice(0, 32);
+  try {
+    if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+  } catch { return null; }
+  return customerId;
+}
+
+router.get('/whoami', requireProxyHMAC, (req, res) => {
+  const shop       = String(req.query.shop || '');
+  const customerId = String(req.query.logged_in_customer_id || '').trim();
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  if (!customerId) return res.json({ loggedIn: false });
+  res.json({ loggedIn: true, token: _signCustomerToken(customerId, shop) });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /proxy/health — Vérification que le proxy est actif (Shopify vérifie)
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/health', (req, res) => {
@@ -260,3 +309,4 @@ router.get('/health', (req, res) => {
 });
 
 module.exports = router;
+module.exports.verifyCustomerToken = verifyCustomerToken;

@@ -6043,15 +6043,38 @@ function _tlAddUserAiCreation(url, prompt) {
   }
 }
 function _tlUpdateAiQuotaUI() {
+  // Repère immédiat pendant que le serveur répond ; il fait foi ensuite.
   const left = Math.max(0, TL_AI_USER_GEN_LIMIT - _tlAiGenCount());
+  _tlRenderQuota({ remaining: left, limit: TL_AI_USER_GEN_LIMIT, provisoire: true });
+  _tlRefreshQuotaFromServer();
+}
+
+// Le serveur est seul juge du quota (utils/ai-quota.js) : le compteur local
+// s'efface en navigation privée et ne reflète ni l'identité du client, ni un
+// rechargement obtenu après un achat.
+async function _tlRefreshQuotaFromServer() {
+  try {
+    const r = await fetch(`${API_BASE}/api/ai/quota`, { headers: _aiHeaders(), cache: 'no-store' });
+    if (!r.ok) return;
+    const q = await r.json();
+    _tlRenderQuota(q);
+  } catch (_) { /* hors ligne : on garde le repère local */ }
+}
+
+function _tlRenderQuota(q) {
+  const reste = Math.max(0, Number(q.remaining || 0));
   ['ai-quota-info', 'm-ai-quota-info'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
-    if (left > 0) {
-      el.textContent = `${left} génération${left > 1 ? 's' : ''} restante${left > 1 ? 's' : ''} dans cette session`;
+    if (reste > 0) {
+      el.textContent = `${reste} génération${reste > 1 ? 's' : ''} restante${reste > 1 ? 's' : ''}`
+                     + (q.provisoire ? '' : ` ce mois-ci`);
       el.style.color = 'var(--text3)';
+    } else if (q.needsLogin) {
+      el.textContent = 'Essai gratuit utilisé — connectez-vous pour en obtenir 3 de plus.';
+      el.style.color = 'var(--amber)';
     } else {
-      el.textContent = `Quota atteint (${TL_AI_USER_GEN_LIMIT}/session) — réutilisez vos créations dans Images › ${TL_AI_USER_CAT_LABEL}`;
+      el.textContent = `Quota atteint (${q.limit} ce mois-ci) — il se recharge après un achat.`;
       el.style.color = 'var(--amber)';
     }
   });
@@ -6110,6 +6133,36 @@ async function _tlAskStyleIfMissing(promptText) {
 // par /api/ai/transform (édition d'image guidée par sa consigne), sans photo
 // par /api/ai/dalle (création de zéro) — le comportement historique.
 let _aiSourcePhoto = null; // dataURL de la photo jointe, ou null
+
+// Jeton d'identité signé, transmis par tl-modal.js dans ?ct= (cf. /proxy/whoami).
+// Présent seulement si le client est connecté à son compte Shopify : c'est lui
+// qui débloque le quota de générations réservé aux clients.
+const TL_CUSTOMER_TOKEN = (() => {
+  try { return new URLSearchParams(window.location.search).get('ct') || ''; }
+  catch (_) { return ''; }
+})();
+
+// En-têtes communs aux appels IA : boutique + identité éventuelle + un
+// identifiant de navigateur, qui sert de repère pour les visiteurs non connectés.
+function _aiHeaders() {
+  const h = { 'Content-Type': 'application/json' };
+  if (window._TL_SHOP)     h['X-Shop-Domain'] = window._TL_SHOP;
+  if (TL_CUSTOMER_TOKEN)   h['X-TL-Customer'] = TL_CUSTOMER_TOKEN;
+  h['X-TL-Visitor'] = _tlVisitorId();
+  return h;
+}
+
+function _tlVisitorId() {
+  try {
+    let v = localStorage.getItem('tl_visitor_id');
+    if (!v) {
+      v = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2))
+            .replace(/[^a-z0-9-]/gi, '').toLowerCase().slice(0, 40);
+      localStorage.setItem('tl_visitor_id', v);
+    }
+    return v;
+  } catch (_) { return 'anonyme-sans-stockage'; }
+}
 
 // Mobile : switchMobileToolTab clone le panneau et préfixe les ids par « m- ».
 function _aiEl(id) {
@@ -6206,7 +6259,7 @@ async function generateAI() {
   const finalPrompt = `T-shirt print design${styleClause}: ${prompt}. White background, transparent-ready, bold graphic, print-ready, no text unless explicitly requested.`;
 
   try {
-    const _aiHdr = window._TL_SHOP ? { 'X-Shop-Domain': window._TL_SHOP } : {};
+    const _aiHdr = _aiHeaders();
     let response;
     if (_aiSourcePhoto) {
       // ── Photo jointe : édition d'image guidée par la consigne du client ──
@@ -6215,7 +6268,7 @@ async function generateAI() {
       btn.innerHTML = '<span class="loading-spinner"></span> Transformation...';
       response = await fetch('/api/ai/transform', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ..._aiHdr },
+        headers: _aiHdr,
         body: JSON.stringify({ imageBase64: _aiSourcePhoto, prompt, style: 'cartoon' }),
       });
     } else {
@@ -6223,7 +6276,7 @@ async function generateAI() {
       const dalleSize = window._dalleSize || '1024x1024';
       response = await fetch('/api/ai/dalle', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ..._aiHdr },
+        headers: _aiHdr,
         body: JSON.stringify({ prompt: finalPrompt, size: dalleSize }),
       });
     }
@@ -6241,7 +6294,8 @@ async function generateAI() {
     _tlAddUserAiCreation(imageUrl, prompt + (askedStyle ? ' — ' + askedStyle : ''));
     try { apiFetch('/api/ai/creations', { method: 'POST', body: JSON.stringify({ image_base64: imageUrl, prompt: prompt + (askedStyle ? ' — ' + askedStyle : '') }) }); } catch (_) {}
     _tlIncAiGenCount();
-    _tlUpdateAiQuotaUI();
+    if (data.quota) _tlRenderQuota({ remaining: Math.max(0, (data.quota.limit || 0) - (data.quota.used || 0)), limit: data.quota.limit });
+    else _tlRefreshQuotaFromServer();
     // Rafraîchir la bibliothèque pour faire apparaître la nouvelle création
     try { loadLibrary(); } catch (_) {}
 

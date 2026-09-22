@@ -824,6 +824,26 @@
   // *.myshopify.com → embed iframe OK.
   var TSL_BACKEND_ORIGIN = 'https://textile-studio-production.up.railway.app';
 
+  // ── Identité du client connecté ─────────────────────────────────────────────
+  // Le studio tourne dans une iframe Railway : il ne voit pas la session
+  // Shopify. On demande donc à l'App Proxy un jeton signé (/apps/textilelab/
+  // whoami) et on le lui transmet. C'est ce jeton qui débloque le quota de
+  // générations IA réservé aux clients connectés.
+  var _tlCustomerToken = null;
+
+  function _tlFetchCustomerToken() {
+    if (_tlCustomerToken) return Promise.resolve(_tlCustomerToken);
+    // Chemin relatif : Shopify route vers le backend de l'app installée sur
+    // CETTE boutique et signe la requête en y ajoutant logged_in_customer_id.
+    return fetch('/apps/textilelab/whoami', { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        _tlCustomerToken = (d && d.loggedIn && d.token) ? d.token : null;
+        return _tlCustomerToken;
+      })
+      .catch(function () { return null; }); // non connecté ou proxy indisponible
+  }
+
   function buildStudioUrl(idOrHandle) {
     var shop = (window.Shopify && window.Shopify.shop)
             || window._TL_SHOP
@@ -836,6 +856,7 @@
         else                 params.set('product', v);
       }
     }
+    if (_tlCustomerToken) params.set('ct', _tlCustomerToken);
     return TSL_BACKEND_ORIGIN + '/textilelab-studio.html?' + params.toString();
   }
 
@@ -848,13 +869,19 @@
 
       var customUrl = btn.dataset.tslUrl;
       var ref = String(btn.getAttribute('data-tsl-open') || '').trim();
-      var url = customUrl ? customUrl : buildStudioUrl(ref);
-      var request = _tlEditorRequest(url, btn);
-      if (!request.ready) {
-        _tlGoToProductPage(/^[a-z0-9][a-z0-9-]*$/.test(ref) ? ref : '');
-        return;
-      }
-      openModal(request.url);
+      // L'URL est construite APRÈS la résolution du jeton, pour qu'il y figure.
+      // Le jeton est normalement déjà en cache (récupéré au chargement) ; on
+      // le réclame ici aussi pour couvrir le cas d'une connexion faite entre
+      // temps, sans bloquer l'ouverture si le proxy ne répond pas.
+      _tlFetchCustomerToken().then(function () {
+        var finalUrl = customUrl ? customUrl : buildStudioUrl(ref);
+        var request  = _tlEditorRequest(finalUrl, btn);
+        if (!request.ready) {
+          _tlGoToProductPage(/^[a-z0-9][a-z0-9-]*$/.test(ref) ? ref : '');
+          return;
+        }
+        openModal(request.url);
+      });
     }, true);
   }
 
@@ -1080,6 +1107,7 @@
     _tlGatePersonaliseButtons();
     _tlHidePrintOption();
     _tlRelabelTemplateButtons();
+    _tlFetchCustomerToken(); // en avance, pour que l'ouverture du studio soit immédiate
     // Les sélecteurs de variante peuvent se rendre tardivement (thèmes JS).
     setTimeout(_tlHidePrintOption, 800);
     setTimeout(_tlHidePrintOption, 2000);

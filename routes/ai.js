@@ -351,7 +351,18 @@ const QUOTA = require('../utils/ai-quota');
 // customerId ne doit JAMAIS venir du corps de requête brut : il est posé par
 // une route App Proxy, où Shopify le signe en HMAC (cf. routes/app-proxy.js).
 function _resolveIdentity(req) {
-  const signedCustomer = req.tlCustomerId || null;
+  // Jeton signé émis par /proxy/whoami : c'est la seule source d'identité
+  // client digne de confiance (cf. routes/app-proxy.js).
+  let signedCustomer = req.tlCustomerId || null;
+  if (!signedCustomer) {
+    const token = req.get('X-TL-Customer') || req.body?.customerToken || '';
+    if (token) {
+      try {
+        const { verifyCustomerToken } = require('./app-proxy');
+        signedCustomer = verifyCustomerToken(token, req.shopDomain || req.get('X-Shop-Domain') || '');
+      } catch (e) { console.warn('verifyCustomerToken:', e.message); }
+    }
+  }
   if (signedCustomer) {
     const key = QUOTA.identityKey('customer', signedCustomer);
     if (key) return { key, type: 'customer' };
