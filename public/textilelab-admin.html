@@ -697,6 +697,19 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
           <div style="font-size:11px;color:var(--text3);margin-top:8px" id="app-version-sub"></div>
         </div>
         <div class="table-card" style="padding:20px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px">🎨 Quota de générations IA</h3>
+            <button class="btn btn-sm" onclick="loadAiQuotaAdmin()">↻ Actualiser</button>
+          </div>
+          <div style="font-size:12px;color:var(--text2);margin-bottom:12px">
+            1 génération/mois pour un visiteur, 3 pour un client connecté. Un achat recharge le compteur.
+            Réinitialiser une ligne permet de retester sans attendre.
+          </div>
+          <div id="ai-quota-admin">
+            <div style="color:var(--text3);font-size:12px">Chargement…</div>
+          </div>
+        </div>
+        <div class="table-card" style="padding:20px">
           <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:16px">🔑 Changer le mot de passe</h3>
           <div style="display:flex;flex-direction:column;gap:10px">
             <input type="password" id="pw-old" placeholder="Ancien mot de passe" class="field-input" style="background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 14px;color:var(--text);font-size:13px;outline:none">
@@ -1183,6 +1196,55 @@ async function loadAppVersion() {
   }
 }
 
+// ── Quota IA : consultation et remise à zéro ────────────────────────────────
+// Le compteur vit côté serveur (table ai_quota) : sans ce panneau, il faudrait
+// attendre le mois suivant ou passer une commande pour retester le parcours.
+async function loadAiQuotaAdmin() {
+  const wrap = document.getElementById('ai-quota-admin');
+  if (!wrap) return;
+  const rows = await api('/api/ai/quota/admin');
+  if (!rows) {
+    wrap.innerHTML = `<div style="color:#ef4444;font-size:12px">❌ ${window.__TL_LAST_API_ERROR || 'Chargement impossible'}</div>`;
+    return;
+  }
+  if (!rows.length) {
+    wrap.innerHTML = '<div style="color:var(--text3);font-size:12px">Aucune génération enregistrée pour le moment.</div>';
+    return;
+  }
+  wrap.innerHTML = `
+    <table style="width:100%">
+      <thead><tr><th>Identité</th><th>Type</th><th>Utilisé</th><th>Restant</th><th>Période</th><th></th></tr></thead>
+      <tbody>${rows.map(_aiQuotaRow).join('')}</tbody>
+    </table>`;
+}
+
+function _aiQuotaRow(r) {
+  // Un customer: vient d'un compte Shopify ; un visitor: d'un navigateur.
+  const type = r.type === 'customer'
+    ? '<span style="color:#10b981">client</span>'
+    : '<span style="color:var(--text3)">visiteur</span>';
+  const reste = r.current ? r.remaining : r.limit; // période échue → quota neuf
+  const ident = String(r.identity || '');
+  return `<tr>
+    <td style="font-family:'DM Mono',monospace;font-size:11px;word-break:break-all">${ident}</td>
+    <td>${type}</td>
+    <td>${r.current ? r.used : 0}/${r.limit}</td>
+    <td style="color:${reste > 0 ? 'var(--text)' : 'var(--amber)'}">${reste}</td>
+    <td style="font-size:11px;color:var(--text3)">${r.period}${r.current ? '' : ' (échue)'}</td>
+    <td><button class="btn btn-sm" onclick="resetAiQuota('${ident.replace(/'/g, "\\'")}')">Réinitialiser</button></td>
+  </tr>`;
+}
+
+async function resetAiQuota(identity) {
+  if (!confirm(`Remettre à zéro le compteur de « ${identity} » ?`)) return;
+  const r = await api('/api/ai/quota/admin/reset', {
+    method: 'POST',
+    body:   JSON.stringify({ identity }),
+  });
+  if (r && r.ok) { showToast('♻️ Compteur réinitialisé'); loadAiQuotaAdmin(); }
+  else showToast('❌ ' + (window.__TL_LAST_API_ERROR || 'Échec'));
+}
+
 // ── Liste des templates produit ─────────────────────────────────────────────
 let _tplItems = [];
 
@@ -1326,6 +1388,7 @@ function showView(name) {
   if (name === 'mockups')   loadMockupsView();
   if (name === 'library')   loadLibrary();
   if (name === 'templates') loadTemplatesList();
+  if (name === 'settings')  loadAiQuotaAdmin();
   if (name === 'pricing')   { loadProductLinks(); loadPricingEditor(); loadVariantMapping(); }
   if (name === 'ai-styles') loadAiStyles();
   if (name === 'ai-creations') loadAiCreations('pending');

@@ -461,6 +461,56 @@ router.get('/quota', attachShopId, (req, res) => {
   });
 });
 
+// ── Administration du quota ────────────────────────────────────────────────
+// Sans ces deux routes, impossible de retester la mécanique : une fois son
+// quota épuisé, le marchand devrait attendre le mois suivant ou passer une
+// commande. Scopé au shop courant — on ne voit ni ne réinitialise jamais les
+// compteurs d'une autre boutique.
+
+// GET /api/ai/quota/admin — les compteurs du shop, les plus récents d'abord
+router.get('/quota/admin', requireAuth, attachShopId, (req, res) => {
+  try {
+    const rows = getDB().prepare(`
+      SELECT identity, used, period, last_order_period, updated_at
+      FROM ai_quota WHERE shop_id = ?
+      ORDER BY updated_at DESC LIMIT 200
+    `).all(req.shopId);
+    res.set('Cache-Control', 'no-store');
+    res.json(rows.map(r => {
+      const type = r.identity.startsWith('customer:') ? 'customer' : 'anonymous';
+      return {
+        ...r,
+        type,
+        limit:     QUOTA.limitFor(type),
+        remaining: Math.max(0, QUOTA.limitFor(type) - (r.period === QUOTA.periodKey() ? r.used : 0)),
+        current:   r.period === QUOTA.periodKey(),
+      };
+    }));
+  } catch (e) {
+    console.error('quota/admin:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/ai/quota/admin/reset — remet UN compteur à zéro
+// L'identité est passée dans le corps : elle contient « : » et parfois « @ »,
+// qui s'accommodent mal d'un paramètre d'URL.
+router.post('/quota/admin/reset', express.json(), requireAuth, attachShopId, (req, res) => {
+  const identity = String(req.body?.identity || '').trim();
+  if (!identity) return res.status(400).json({ error: 'identity requise' });
+  try {
+    const info = getDB()
+      .prepare('UPDATE ai_quota SET used = 0, updated_at = datetime(\'now\') WHERE shop_id = ? AND identity = ?')
+      .run(req.shopId, identity);
+    if (!info.changes) return res.status(404).json({ error: 'Compteur introuvable pour cette boutique' });
+    console.log(`♻️  Quota IA réinitialisé — ${identity} (shop ${req.shopId})`);
+    res.json({ ok: true, identity });
+  } catch (e) {
+    console.error('quota reset:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── POST /api/ai/dalle — Génération IA depuis texte (scopé shop) ────────
 // Auth Shopify session token (App Bridge 4) + rate-limit par shop (audit B3)
 router.post('/dalle', requireAIContext, attachShopId, aiIpRateLimiter, aiRateLimiter, checkAiQuota, async (req, res) => {
