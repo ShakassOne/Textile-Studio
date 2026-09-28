@@ -760,7 +760,25 @@
     letter-spacing: 0.3px;
   }
   .btn-primary:hover { background: var(--amber2); transform: translateY(-1px); }
-  .btn-primary:active { transform: translateY(0); }
+  .btn-primary:active { transform: translateY(0) scale(.97); filter: brightness(.88); }
+  /* Une génération prend 20 à 40 s. Sans état visible, l'appui semble sans
+     effet et l'on reclique — d'où ce rendu « occupé » explicite. */
+  .btn-primary:disabled,
+  .btn-primary[disabled] {
+    background: var(--bg3);
+    color: var(--text3);
+    cursor: progress;
+    box-shadow: none !important;
+    transform: none !important;
+  }
+  .btn-primary.is-busy {
+    background: linear-gradient(90deg, var(--amber) 0%, #fbbf24 50%, var(--amber) 100%);
+    background-size: 200% 100%;
+    animation: tl-busy-sweep 1.2s linear infinite;
+    color: #000;
+    cursor: progress;
+  }
+  @keyframes tl-busy-sweep { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 
   .btn-secondary {
     width: 100%;
@@ -2783,7 +2801,6 @@
         <div id="photo-upload-zone" style="position:relative;border-radius:14px;overflow:hidden;margin-bottom:14px;background:var(--bg3);border:1.5px dashed var(--border);transition:border-color .2s;min-height:100px;display:flex;align-items:center;justify-content:center;cursor:pointer">
 
           <!-- Input transparent sur tout le div — pas de onclick sur le parent pour éviter le double déclenchement -->
-          <input type="file" id="ai-photo-input" accept="image/*" style="display:none" onchange="_aiOnPhotoPicked(event)">
           <input type="file" id="photo-file-input" accept="image/*"
             style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:3"
             onchange="_onPhotoSelected(event)">
@@ -3253,6 +3270,10 @@
 </div>
 
 <!-- TOAST -->
+<!-- Input photo de l'onglet IA — DOIT rester hors des panneaux d'outils :
+     switchMobileToolTab clone le panneau en préfixant les id par « m- », un
+     input placé dedans serait dupliqué et l'original introuvable côté mobile. -->
+<input type="file" id="ai-photo-input" accept="image/*" style="display:none" onchange="_aiOnPhotoPicked(event)">
 <div id="toast"></div>
 
 <script>
@@ -6074,7 +6095,10 @@ function _tlRenderQuota(q) {
       el.textContent = 'Essai gratuit utilisé — connectez-vous pour en obtenir 3 de plus.';
       el.style.color = 'var(--amber)';
     } else {
-      el.textContent = `Quota atteint (${q.limit} ce mois-ci) — il se recharge après un achat.`;
+      // Réponse incomplète (hors ligne, serveur en redémarrage) : on reste
+      // compréhensible plutôt que d'afficher « undefined » au client.
+      const lim = Number.isFinite(Number(q.limit)) ? ` (${q.limit} ce mois-ci)` : '';
+      el.textContent = `Quota atteint${lim} — il se recharge après un achat.`;
       el.style.color = 'var(--amber)';
     }
   });
@@ -6170,8 +6194,9 @@ function _aiEl(id) {
 }
 
 function _aiPickPhoto() {
-  const inp = _aiEl('ai-photo-input');
-  if (!inp) return;
+  // Input global, jamais cloné : un seul et même élément desktop et mobile.
+  const inp = document.getElementById('ai-photo-input');
+  if (!inp) return showToast('❌ Sélecteur de fichier indisponible');
   inp.value = '';
   inp.click();
 }
@@ -6225,6 +6250,43 @@ function _aiRefreshPhotoUI() {
   });
 }
 
+// Pendant une génération (20 à 40 s), l'utilisateur doit voir qu'il se passe
+// quelque chose — sur le bouton ET juste en dessous, là où son regard est déjà.
+// Agit sur les DEUX copies, desktop et clone mobile.
+let _aiBusyTimer = null;
+
+function _aiSetBusy(on, etapes) {
+  ['', 'm-'].forEach(p => {
+    const btn = document.getElementById(p + 'ai-generate-btn');
+    if (!btn) return;
+    btn.disabled = !!on;
+    btn.classList.toggle('is-busy', !!on);
+    if (!on) btn.innerHTML = _aiSourcePhoto ? '✨ Transformer la photo' : '✨ Générer le design';
+  });
+  if (_aiBusyTimer) { clearInterval(_aiBusyTimer); _aiBusyTimer = null; }
+  if (!on) { _tlRefreshQuotaFromServer(); return; }
+
+  // Messages successifs : l'attente reste longue, mais elle devient lisible.
+  let i = 0;
+  const tick = () => {
+    const txt = etapes[Math.min(i, etapes.length - 1)];
+    ['', 'm-'].forEach(p => {
+      const btn = document.getElementById(p + 'ai-generate-btn');
+      if (btn) btn.innerHTML = `<span class="loading-spinner"></span> ${txt}`;
+      const info = document.getElementById(p + 'ai-quota-info');
+      if (info) {
+        info.textContent = i < etapes.length - 1
+          ? 'Cela prend une trentaine de secondes — ne fermez pas la fenêtre.'
+          : 'Encore un instant…';
+        info.style.color = 'var(--amber)';
+      }
+    });
+    i++;
+  };
+  tick();
+  _aiBusyTimer = setInterval(tick, 6000);
+}
+
 async function generateAI() {
   // Mobile : l'ID est préfixé m- après clonage dans switchMobileToolTab
   const promptEl = document.getElementById('m-ai-prompt') || document.getElementById('ai-prompt');
@@ -6248,8 +6310,9 @@ async function generateAI() {
   const askedStyle = _aiSourcePhoto ? '' : await _tlAskStyleIfMissing(prompt);
 
   const btn = document.getElementById('m-ai-generate-btn') || document.getElementById('ai-generate-btn');
-  btn.innerHTML = '<span class="loading-spinner"></span> Génération...';
-  btn.disabled = true;
+  _aiSetBusy(true, _aiSourcePhoto
+    ? ['Envoi de la photo…', 'Analyse de l\'image…', 'Transformation…', 'Finalisation…', 'Presque prêt…']
+    : ['Préparation…', 'Génération du design…', 'Mise en couleurs…', 'Finalisation…', 'Presque prêt…']);
 
   // Construire le prompt envoyé à GPT Image :
   //  - description utilisateur en clair (le client a saisi ce qu'il voulait)
@@ -6265,7 +6328,6 @@ async function generateAI() {
       // ── Photo jointe : édition d'image guidée par la consigne du client ──
       // Le backend combine la photo et le prompt libre (routes/ai.js,
       // buildTransformPrompt) et renvoie un PNG à fond transparent.
-      btn.innerHTML = '<span class="loading-spinner"></span> Transformation...';
       response = await fetch('/api/ai/transform', {
         method: 'POST',
         headers: _aiHdr,
@@ -6307,8 +6369,7 @@ async function generateAI() {
     const msg = (e && e.message) ? String(e.message) : 'erreur réseau';
     showToast('❌ Génération IA indisponible : ' + msg.slice(0, 80));
   } finally {
-    btn.disabled = false;
-    btn.innerHTML = _aiSourcePhoto ? '✨ Transformer la photo' : '✨ Générer le design';
+    _aiSetBusy(false);
   }
 }
 
