@@ -54,6 +54,40 @@ Constat d'Alan après test réel sur spreadshirt.fr/personnaliser-soi-meme : TSL
     - **V2 (plus tard, plus coûteuse)** : vignette mockup réellement rendue avec le design dessus + ajout au panier en un clic direct, nécessite un rendu serveur ou client du mockup alternatif.
     - À spécifier avant de coder : où le popup s'affiche (dans le drawer panier existant ou modal dédiée), quels produits proposer (tous les liés ? les plus vendus ?), comportement si le produit suggéré n'a pas de zone d'impression compatible avec le visuel actuel.
 
+---
+
+## 2bis. Spec — Upsell post-panier V2 (validée par Alan le 2026-09-29 : « on attaque directement une vraie V2 »)
+
+### Objectif
+Après l'ajout au panier d'un produit personnalisé, montrer 2-4 autres produits avec le **même visuel client réellement appliqué** sur leur mockup (vignette photoréaliste, pas juste le produit vierge), chacun ajoutable au panier en un clic — sur le modèle du modal « Vous aimeriez aussi » de Spreadshirt.
+
+### Ce qui existe déjà et qu'on réutilise (pas de nouvelle brique inutile)
+- **Rendu du visuel sur un mockup** : le studio sait déjà composer un design sur un mockup via Fabric.js, avec la zone d'impression définie par mockup (`mockups.views_json[i].printWidthMm` + coordonnées de la zone, cf. `_getPrintWidthMm()`/`_getPxPerMm()` dans `textilelab-studio.html`). On réutilise cette mécanique, pas besoin de réinventer un moteur de rendu.
+- **Tarification/variante** : `resolveVariantForCustomization` / `GET /api/shopify/resolve-variant` (`routes/storefront.js`) sait déjà retrouver ou créer la bonne variante pré-tarifée pour un produit + montant de surcharge.
+- **Ajout au panier** : le pipeline `/cart/add.json` + Section Rendering API déjà utilisé par `tl-modal.js` (props `_print_*`).
+- **Liaison produit ↔ mockup** : `product_mockup_links` (1 produit Shopify → 1 mockup).
+
+### Ce qui manque et doit être créé
+1. **Table `upsell_candidates`** (nouvelle, scoped par shop) : `id, shop_id, source_shopify_product_id, target_shopify_product_id, sort_order`. Curée à la main par l'admin (pas d'algorithme automatique au départ) — évite les suggestions absurdes (ex. proposer un bonnet pour un design pensé pour un tote bag). Convention identique aux tables existantes (`product_mockup_links`, `product_categories`).
+2. **Écran admin** « Produits suggérés » : sur la fiche d'un produit lié à un mockup, permettre d'associer 2-4 autres produits déjà liés à un mockup. Réutilise l'UI de sélection déjà existante pour lier produit↔mockup.
+3. **Fonction de rendu headless réutilisable** : extraire de `textilelab-studio.html` la logique « placer ces objets Fabric sur ce mockup, à cette échelle, zone X/Y » en une fonction autonome (actuellement mêlée à l'UI interactive du studio), appelable pour générer une vignette d'un mockup B avec le design de la session courante, sans ouvrir l'éditeur complet. **C'est le morceau le plus délicat** : le studio n'a aujourd'hui aucune notion de "generate a preview for a mockup I haven't opened".
+4. **Modal upsell** (nouveau composant front, dans `tl-modal.js` ou le studio) : affiché juste après un ajout panier réussi, avant ou à la place de l'ouverture immédiate du drawer. Vignettes générées par le point 3, prix résolu via `resolve-variant`, bouton « Ajouter » qui déclenche le même pipeline cart-add que le produit principal (taille par défaut = la même que le produit principal si compatible, sinon la plus vendue du produit cible — **à définir avec Alan**, faute de donnée aujourd'hui on prend la 1ʳᵉ taille disponible).
+5. **Flag** `upsell_after_cart_enabled` (pattern `readBoolSetting`/`setSetting`, défaut **désactivé**) pour pouvoir couper immédiatement si un souci apparaît en prod.
+6. **Fallback qualité** : si la zone d'impression du produit cible a un ratio très différent du visuel actuel (ex. visuel large sur un sticker étroit), soit on recadre en mode « couvrir » (cover), soit on exclut la suggestion de la liste — **à trancher** : je recommande d'exclure plutôt que de montrer un rendu moche, cohérent avec la conclusion de veille du jour sur la technique de rendu.
+7. **Tracking minimal** : logguer côté serveur impression / clic / ajout réussi depuis l'upsell (`_upsell_source=cross-sell` en propriété de ligne panier) pour mesurer l'effet réel sur l'AOV et le taux de conversion — sans ça on ne saura jamais si la fonctionnalité marche.
+
+### Découpage en étapes de build (même en visant la V2 directement, on livre et teste par petits blocs testables)
+1. Migration DB + endpoint admin CRUD pour `upsell_candidates` (petit, isolé, sans risque).
+2. Extraction de la fonction de rendu headless + test manuel isolé (générer une vignette d'un design existant sur un 2ᵉ mockup, sans UI upsell) — **valider que le rendu est correct avant de construire le modal autour**.
+3. Modal upsell (UI) branchée sur des données mockées le temps que 1-2 soient stables.
+4. Branchement réel : mockup rendu (2) + candidats admin (1) + ajout au panier + tracking (7).
+5. Test complet sur WinShirt derrière le flag désactivé par défaut, activation manuelle pour un test contrôlé avant diffusion large.
+
+### Décisions à prendre avec Alan avant/pendant le code (je propose une valeur par défaut pour chacune, à valider)
+- **Taille par défaut sur le produit suggéré** → proposition : reprendre la taille du produit principal si elle existe côté cible, sinon 1ʳᵉ taille dispo (pas de sélecteur dans le modal pour rester rapide — le client peut changer la taille depuis le panier ensuite).
+- **Le modal remplace-t-il l'ouverture immédiate du drawer panier ?** → proposition : oui, comme Spreadshirt (modal d'abord, bouton « Ouvrir mon panier » à la fin) — plus cohérent visuellement, évite d'empiler deux UI panier.
+- **Nombre de produits suggérés si l'admin n'en a configuré aucun pour ce produit** → proposition : ne rien afficher (pas de fallback automatique tant que l'admin n'a pas curé au moins une paire) plutôt que deviner.
+
 ### P1bis — Bibliothèque d'images (issu de la veille du 2026-09-29, voir §3)
 11. **Corriger la technique de rendu avant de rajouter du contenu.** L'échec des précédentes « compositions » vient très probablement du collage à plat (overlay simple) plutôt que d'un rendu qui épouse les plis du textile (displacement map). Un bug connu et déjà partiellement corrigé (`applyColorOverlay` écrasait les plis sur le noir pur, fix `#222222` plancher) touche le même mécanisme — à vérifier s'il affecte aussi les éléments sombres d'une composition uploadée, pas seulement le nuancier. Sans ce correctif, toute nouvelle image ajoutée à la bibliothèque rendra aussi mal que les précédentes.
 12. **Curer une bibliothèque réduite mais réellement licenciée**, plutôt que des visuels Pinterest ⚠️ (droits d'auteur non vérifiés, risque juridique réel en cas de revente sur produit imprimé). Creative Fabrica (licence POD incluse dans l'abonnement) est mieux adapté que Vecteezy seul pour ce cas d'usage ; Vecteezy reste utile en complément mais son quota gratuit (500 téléchargements/mois) est une limite **partagée par toute la boutique**, pas par client — à ne pas brancher tel quel derrière un flux à fort trafic.
