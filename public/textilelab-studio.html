@@ -1063,7 +1063,7 @@
     #bnav-ai { display: none !important; }
     /* ── Animation T-shirt quand drawer ouvert ──────────────────────── */
     #canvas-wrap { transition: transform .32s cubic-bezier(.32,.72,0,1); }
-    #canvas-wrap.canvas-up { transform: translateY(-44px) scale(1.06); }
+    #canvas-wrap.canvas-up { transform: translateY(-90px) scale(1.1); }
 
     /* MOBILE BOTTOM NAV — 6 boutons directs */
     #bottom-nav {
@@ -3312,6 +3312,14 @@ const PRODUCTS = {
   totebag: { name: 'Tote Bag',   emoji: '👜', base: 14.90 },
 };
 
+// Cadre PORTRAIT forcé sur mobile (indépendant de l'aspect natif du mockup,
+// carré en prod) pour agrandir le t-shirt à l'écran. Le cover-fit de
+// resizeCanvas() (scale = max(w/bgW, h/bgH)) recadre alors les marges
+// gauche/droite du mockup carré — pas le t-shirt lui-même, qui occupe déjà
+// la quasi-totalité de la largeur de l'image source. Ajuster cette seule
+// valeur pour retoucher le zoom (plus petit = plus de zoom).
+const MOBILE_CANVAS_ASPECT = 0.78;
+
 // Surcharges (extra) = ÉCHELLE CANONIQUE, alignée sur utils/print-tiers.js et sur
 // les variantes Shopify pré-tarifées. NE PAS la faire dériver depuis l'admin :
 // le montant calculé ici DOIT correspondre exactement à une valeur d'option
@@ -3433,11 +3441,9 @@ function getCanvasSize() {
   // si on partait de l'aspect PORTRAIT du format (A3 = 0.707) tant que le mockup
   // n'est pas chargé, `availH * aspect` rabotait la largeur (~540px → canvas plus
   // PETIT qu'avant). On ne lit l'aspect réel que si un mockup est déjà affiché.
-  let aspect = 1;
-  if (typeof canvas !== 'undefined' && canvas) {
-    const _bg = canvas.getObjects().find(o => o.__isMockupBg);
-    if (_bg && _bg.width && _bg.height) aspect = _bg.width / _bg.height;
-  }
+  // Sur mobile, getCanvasAspect() renvoie MOBILE_CANVAS_ASPECT (portrait forcé),
+  // pas l'aspect natif du mockup — voir commentaire sur la constante.
+  const aspect = getCanvasAspect();
   const isMobile = window.innerWidth <= 768;
   if (isMobile) {
     const vw = window.innerWidth - 20;
@@ -3457,17 +3463,22 @@ function getCanvasSize() {
   return Math.min(availW, availH * aspect, 1000);
 }
 
-// Aspect effectif du canvas = celui du mockup affiché (carré en prod), sinon
-// CARRÉ (1) par défaut. Règle unique partagée par initCanvas / resizeCanvas /
-// zoom : on ne retombe jamais sur l'aspect portrait du format tant qu'aucun
-// mockup n'est chargé, ce qui éviterait un canvas trop haut et tout décalage
-// width/height entre les fonctions.
+// Aspect effectif du canvas. Desktop : celui du mockup affiché (carré en
+// prod), sinon CARRÉ (1) par défaut — inchangé, zéro recadrage voulu (cf.
+// commentaire sur getCanvasSize desktop). Mobile : MOBILE_CANVAS_ASPECT
+// (portrait forcé) quel que soit l'aspect natif du mockup — le cover-fit de
+// resizeCanvas() recadre alors les marges du mockup carré pour agrandir le
+// t-shirt à l'écran (cf. commentaire sur la constante). Règle unique
+// partagée par initCanvas / resizeCanvas / zoom.
 function getCanvasAspect() {
+  const isMobile = window.innerWidth <= 768;
   if (typeof canvas !== 'undefined' && canvas) {
     const _bg = canvas.getObjects().find(o => o.__isMockupBg);
-    if (_bg && _bg.width && _bg.height) return _bg.width / _bg.height;
+    if (_bg && _bg.width && _bg.height) {
+      return isMobile ? MOBILE_CANVAS_ASPECT : (_bg.width / _bg.height);
+    }
   }
-  return 1;
+  return isMobile ? MOBILE_CANVAS_ASPECT : 1;
 }
 
 function initCanvas() {
