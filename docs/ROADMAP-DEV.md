@@ -39,11 +39,14 @@ Priorité donnée aux options qui aident directement à **vendre** : simplicité
 5. État de chargement clair partout où une action réseau peut sembler bloquée (sur le modèle du fix récent sur l'attente IA).
 6. Mise à jour de `LIAISON_CLAUDE_CODEX.md` pour refléter l'état réel (dernier changement documenté remonte à juin, alors que le quota IA de septembre n'y figure pas) — hygiène qui évite les régressions par méconnaissance de l'état réel.
 
+### P1bis — Bibliothèque d'images (issu de la veille du 2026-09-29, voir §3)
+11. **Corriger la technique de rendu avant de rajouter du contenu.** L'échec des précédentes « compositions » vient très probablement du collage à plat (overlay simple) plutôt que d'un rendu qui épouse les plis du textile (displacement map). Un bug connu et déjà partiellement corrigé (`applyColorOverlay` écrasait les plis sur le noir pur, fix `#222222` plancher) touche le même mécanisme — à vérifier s'il affecte aussi les éléments sombres d'une composition uploadée, pas seulement le nuancier. Sans ce correctif, toute nouvelle image ajoutée à la bibliothèque rendra aussi mal que les précédentes.
+12. **Curer une bibliothèque réduite mais réellement licenciée**, plutôt que des visuels Pinterest ⚠️ (droits d'auteur non vérifiés, risque juridique réel en cas de revente sur produit imprimé). Creative Fabrica (licence POD incluse dans l'abonnement) est mieux adapté que Vecteezy seul pour ce cas d'usage ; Vecteezy reste utile en complément mais son quota gratuit (500 téléchargements/mois) est une limite **partagée par toute la boutique**, pas par client — à ne pas brancher tel quel derrière un flux à fort trafic.
+13. **Ne pas lancer un assistant IA "génère le visuel fini sur tout le catalogue sans reprise" maintenant** — voir recommandation détaillée §3. Piste plus modeste : étendre l'IA Photo→Style existante pour qu'elle propose automatiquement une mise en page/couleur cohérente avec les assets déjà en bibliothèque, sans generation from scratch.
+
 ### P2 — Dépend d'une décision d'Alan ou d'un audit plus long
-7. Choix de banque(s) d'images pour la bibliothèque studio (Vecteezy seul vs multi-sources) — sujet de la Routine B (b).
-8. Fonctionnalités manquantes vs configurateurs qui convertissent — sujet de la Routine B (c), alimente ce backlog au fil de l'eau.
-9. Version minimale d'un assistant IA WinShirt utile (pas un chatbot gadget) — sujet de la Routine B (a), à ne proposer que si la preuve d'impact est solide.
-10. Vérifier si le plan WinShirt est Plus ou non (conditionne des options de tarification/Cart Transform) — point ouvert de longue date dans `LIAISON_CLAUDE_CODEX.md` §6.
+14. Fonctionnalités manquantes vs configurateurs qui convertissent (hors bibliothèque, déjà couvert ci-dessus) — sujet de la Routine B (c), alimente ce backlog au fil de l'eau.
+15. Vérifier si le plan WinShirt est Plus ou non (conditionne des options de tarification/Cart Transform) — point ouvert de longue date dans `LIAISON_CLAUDE_CODEX.md` §6.
 
 ### Hors périmètre (rappel)
 - Trafic (SEO, réseaux sociaux, redirections vers `/password`) : mesuré mais traité **après** la validation de TSL, pas d'action ici.
@@ -57,7 +60,7 @@ _Rien à date — cette section est remplie chaque jour à 12h par la Routine B 
 
 | Date | Question | Conclusion | Sources |
 |------|----------|------------|---------|
-| — | — | — | — |
+| 2026-09-29 | Bibliothèque d'images + assistant IA générateur de visuel (question (b)+(c) combinées, sur demande d'Alan) | **Ne pas construire un assistant "génère le visuel fini sur tout le catalogue sans reprise" maintenant** — en 2026 aucun outil du marché (Nano Banana 2/Pro, GPT Image 2, FashionMAC…) ne garantit la cohérence sur un catalogue entier sans retouches ; c'est un problème non résolu à l'échelle du secteur, pas une limite de TSL. **Prioriser d'abord la technique de rendu** (displacement map façon Dizzzign/Photoshop au lieu du collage à plat) — c'est la cause la plus probable de l'échec des « compositions » passées, indépendamment du nombre d'images. **Ensuite seulement**, curer une bibliothèque réduite et réellement licenciée POD (Creative Fabrica plutôt que des visuels Pinterest ⚠️ risque de droits) — les concurrents directs (Customily, Teeinblue) gagnent avec des bibliothèques de templates/cliparts curées, pas avec de la génération IA from-scratch. Revisiter l'assistant IA plein-catalogue dans 6-12 mois si la cohérence multi-image progresse (à surveiller : Nano Banana Pro, GPT Image 2). | [Kittl vs Placeit](https://blog.tshirt-factory.com/placeit-vs-kittl.html), [Creative Fabrica licence POD](https://www.creativefabrica.com/font-graphics-subscription-license/), [Vecteezy plans](https://www.vecteezy.com/), [Displacement map mockup (Medialoot)](https://medialoot.com/blog/how-to-create-a-photo-realistic-mockup/), [Dizzzign](https://dizzzign.com/), [Customily](https://www.customily.com/post/the-art-of-personalization-print-on-demand-simplified), [Consistance IA multi-catalogue (Creatsy)](https://creatsy.com/blog/1752128853-we-tested-every-ai-mockup-generator-in-2026-heres-what-actually-works-and-what-doesnt), [Coût génération image 2026 (Atlas Cloud)](https://www.atlascloud.ai/blog/guides/cheapest-ai-image-generation-api-2026), [Configurateurs et taux de conversion (Kickflip)](https://gokickflip.com/blog/ecommerce-product-configuration) |
 
 ---
 
