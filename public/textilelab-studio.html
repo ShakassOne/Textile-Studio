@@ -3318,7 +3318,31 @@ const PRODUCTS = {
 // gauche/droite du mockup carré — pas le t-shirt lui-même, qui occupe déjà
 // la quasi-totalité de la largeur de l'image source. Ajuster cette seule
 // valeur pour retoucher le zoom (plus petit = plus de zoom).
-const MOBILE_CANVAS_ASPECT = 0.78;
+// Aspect du canvas sur mobile. Le PNG des mockups est carré et le vêtement n'y
+// occupe qu'environ deux tiers de la largeur : à canvas carré, le t-shirt reste
+// petit et la moitié de la hauteur de l'écran est perdue. En forçant un canvas
+// portrait, le cover-fit agrandit le mockup jusqu'à remplir la largeur — le
+// vêtement devient nettement plus grand, au prix d'un rognage des marges
+// latérales vides du PNG.
+// 0.66 : mesuré pour que le vêtement atteigne presque exactement les bords
+// sans que les manches soient entamées — à 0.62 il débordait de 5 %. Valeur
+// plancher : l'aspect réel s'adapte à l'écran ci-dessous.
+const MOBILE_CANVAS_ASPECT = 0.66;
+
+// Hauteur utilisable sur mobile = écran moins topbar, barre de calques, barre
+// d'onglets et marges. Isolé ici pour rester cohérent entre getCanvasSize() et
+// le calcul d'aspect adaptatif.
+const MOBILE_CHROME_H = 52 + 40 + 64 + 20;
+
+// Aspect adaptatif : on vise la hauteur réellement disponible plutôt qu'une
+// valeur figée — un grand téléphone gagne un canvas plus haut, un petit n'est
+// pas écrasé. Borné pour ne jamais rogner le vêtement au-delà du raisonnable.
+function _mobileCanvasAspect() {
+  const vw = window.innerWidth - 20;
+  const vh = window.innerHeight - MOBILE_CHROME_H;
+  if (!(vw > 0) || !(vh > 0)) return MOBILE_CANVAS_ASPECT;
+  return Math.min(0.95, Math.max(MOBILE_CANVAS_ASPECT, vw / vh));
+}
 
 // Surcharges (extra) = ÉCHELLE CANONIQUE, alignée sur utils/print-tiers.js et sur
 // les variantes Shopify pré-tarifées. NE PAS la faire dériver depuis l'admin :
@@ -3449,9 +3473,10 @@ function getCanvasSize() {
     const vw = window.innerWidth - 20;
     // Available height: dvh - topbar - mobile-layers - bottom-nav - padding
     const vh = window.innerHeight - 52 - 40 - 64 - 20;
-    const maxByW = vw;
-    const maxByH = vh * aspect; // height = size/aspect ≤ vh
-    return Math.min(maxByW, maxByH, 560);
+    // La largeur prime : le canvas doit rester bord à bord. L'aspect étant
+    // déjà calé sur la hauteur disponible (_mobileCanvasAspect), la borner une
+    // seconde fois par la hauteur ne ferait que rétrécir le canvas pour rien.
+    return Math.max(240, vw);
   }
   // Desktop : aussi grand que possible. On tient entre les sidebars (availW) ET
   // dans la hauteur dispo (availH * aspect, = availH pour un mockup carré). Plafond
@@ -3475,10 +3500,10 @@ function getCanvasAspect() {
   if (typeof canvas !== 'undefined' && canvas) {
     const _bg = canvas.getObjects().find(o => o.__isMockupBg);
     if (_bg && _bg.width && _bg.height) {
-      return isMobile ? MOBILE_CANVAS_ASPECT : (_bg.width / _bg.height);
+      return isMobile ? _mobileCanvasAspect() : (_bg.width / _bg.height);
     }
   }
-  return isMobile ? MOBILE_CANVAS_ASPECT : 1;
+  return isMobile ? _mobileCanvasAspect() : 1;
 }
 
 function initCanvas() {
@@ -5135,13 +5160,20 @@ function applyMockup(productKey, viewIdx, mockupIdx, userAction = false) {
       return;
     }
 
-    // Adapter la hauteur du canvas à l'aspect du mockup pour l'afficher en
-    // entier : un mockup carré ne doit pas déborder d'un canvas portrait, sinon
-    // l'export PNG coupe les côtés. La largeur reste pilotée par getCanvasSize()
-    // et un canvas carré est toujours PLUS COURT qu'un portrait → pas de
-    // débordement vertical à l'écran.
+    // Hauteur du canvas = largeur / aspect EFFECTIF, et surtout pas l'aspect
+    // natif du PNG : sur mobile getCanvasAspect() impose un portrait pour
+    // exploiter la hauteur de l'écran, et prendre l'aspect de l'image (carrée
+    // en prod) annulait ce portrait à chaque chargement de mockup. C'est ce qui
+    // faisait « rapetisser » le t-shirt sur téléphone, alors qu'un simple
+    // redimensionnement de fenêtre — qui passe par resizeCanvas, lui correct —
+    // le rendait grand à nouveau.
     if (img.width && img.height) {
-      const _targetH = Math.round(canvas.getWidth() / (img.width / img.height));
+      // Desktop : aspect natif du mockup, comme avant — un mockup non carré
+      // doit rester affiché en entier, sans recadrage à l'export.
+      // Mobile : aspect portrait imposé, c'est tout l'intérêt.
+      const _isMobile = window.innerWidth <= 768;
+      const _aspect   = _isMobile ? getCanvasAspect() : (img.width / img.height);
+      const _targetH  = Math.round(canvas.getWidth() / (_aspect || 1));
       if (_targetH > 0 && canvas.getHeight() !== _targetH) canvas.setHeight(_targetH);
     }
     const cw = canvas.getWidth();
