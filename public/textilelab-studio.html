@@ -1096,7 +1096,12 @@
     #bnav-ai { display: none !important; }
     /* ── Animation T-shirt quand drawer ouvert ──────────────────────── */
     #canvas-wrap { transition: transform .32s cubic-bezier(.32,.72,0,1); }
-    #canvas-wrap.canvas-up { transform: translateY(-90px) scale(1.1); }
+    /* La remontée dégage le canvas de sous le panneau. Plus de scale ici :
+       l'agrandissement se fait désormais par l'aspect du canvas lui-même
+       (_mobileCanvasAspect), et cumuler les deux faisait déborder le t-shirt
+       hors de l'écran. Un scale CSS décalerait en plus les coordonnées de
+       pointeur de Fabric par rapport au rendu. */
+    #canvas-wrap.canvas-up { transform: translateY(-90px); }
 
     /* MOBILE BOTTOM NAV — 6 boutons directs */
     #bottom-nav {
@@ -6344,6 +6349,7 @@ function _aiRefreshPhotoUI() {
 // quelque chose — sur le bouton ET juste en dessous, là où son regard est déjà.
 // Agit sur les DEUX copies, desktop et clone mobile.
 let _aiBusyTimer = null;
+let _aiLastError = null; // dernier échec, affiché sous le bouton jusqu'au prochain essai
 
 function _aiSetBusy(on, etapes) {
   ['', 'm-'].forEach(p => {
@@ -6354,7 +6360,13 @@ function _aiSetBusy(on, etapes) {
     if (!on) btn.innerHTML = _aiSourcePhoto ? '✨ Transformer la photo' : '✨ Générer le design';
   });
   if (_aiBusyTimer) { clearInterval(_aiBusyTimer); _aiBusyTimer = null; }
-  if (!on) { _tlRefreshQuotaFromServer(); return; }
+  if (!on) {
+    // Ne pas effacer un message d'échec qui vient d'être écrit : le quota
+    // reprendra sa place au prochain essai.
+    if (!_aiLastError) _tlRefreshQuotaFromServer();
+    return;
+  }
+  _aiLastError = null;
 
   // Messages successifs : l'attente reste longue, mais elle devient lisible.
   let i = 0;
@@ -6455,9 +6467,18 @@ async function generateAI() {
   } catch (e) {
     console.error('AI error:', e);
     // PAS de SVG démo en fallback : l'utilisateur croyait que c'était son design.
-    // On affiche un message clair et on laisse la galerie inchangée.
     const msg = (e && e.message) ? String(e.message) : 'erreur réseau';
-    showToast('❌ Génération IA indisponible : ' + msg.slice(0, 80));
+    showToast('❌ ' + msg.slice(0, 90));
+    // Le toast s'efface au bout de quelques secondes et, sur mobile, le regard
+    // est sur le bouton : sans trace écrite l'échec passe pour « rien ne s'est
+    // passé ». On l'inscrit donc sous le bouton, où il reste.
+    ['', 'm-'].forEach(p => {
+      const info = document.getElementById(p + 'ai-quota-info');
+      if (!info) return;
+      info.textContent = '❌ ' + msg.slice(0, 120);
+      info.style.color = '#ef4444';
+    });
+    _aiLastError = msg;
   } finally {
     _aiSetBusy(false);
   }
@@ -7101,6 +7122,17 @@ function switchMobileToolTab(tab) {
     .replace(/onclick="addQRToCanvas\(\)"/g, 'onclick="addMobileQRCode()"');
 
   container.innerHTML = html;
+
+  // Le clone a des id neufs : les onglets qui se peuplent en JS doivent être
+  // ré-alimentés ici. switchTab() (desktop) le faisait, pas la version mobile —
+  // d'où la grille de styles figée sur « Chargement des styles… » et le quota
+  // jamais rafraîchi sur téléphone.
+  if (tab === 'photo') { try { loadPhotoStyles(); } catch (e) { console.warn('styles mobile:', e.message); } }
+  if (tab === 'ai')    {
+    try { _tlUpdateAiQuotaUI(); } catch (_) {}
+    try { _aiRefreshPhotoUI(); } catch (_) {}  // réafficher la photo déjà jointe
+  }
+  if (tab === 'qr')    { try { loadQRFrames(); } catch (_) {} }
 
   // Forcer l'initialisation du preview selon l'onglet
   if (tab === 'text') {
@@ -8408,10 +8440,27 @@ function selectPhotoStyle(style) {
 
 // Charger dynamiquement les styles (built-in + custom du shop) depuis le backend
 let _photoStylesLoaded = false;
+let _photoStylesHTML = '';   // rendu mémorisé, réinjecté dans les clones mobiles
+// Remplit les DEUX grilles : switchMobileToolTab clone le panneau avec des id
+// préfixés « m- », et le clone était figé sur « Chargement des styles… » —
+// loadPhotoStyles ne visait que la copie desktop, et _photoStylesLoaded
+// empêchait tout rechargement.
+function _photoStyleGrids() {
+  return ['photo-styles-grid', 'm-photo-styles-grid']
+    .map(id => document.getElementById(id))
+    .filter(Boolean);
+}
+
 async function loadPhotoStyles(force) {
-  if (_photoStylesLoaded && !force) return;
-  const grid = document.getElementById('photo-styles-grid');
-  if (!grid) return;
+  const grids = _photoStyleGrids();
+  if (!grids.length) return;
+  // Un clone fraîchement créé n'a pas encore ses styles : on réinjecte le
+  // rendu déjà obtenu plutôt que de refaire un appel réseau.
+  if (_photoStylesLoaded && !force) {
+    if (_photoStylesHTML) grids.forEach(g => { if (!g.dataset.filled) { g.innerHTML = _photoStylesHTML; g.dataset.filled = '1'; } });
+    return;
+  }
+  const grid = grids[0];
   try {
     const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
       ? 'http://localhost:3001' : '';
@@ -8427,7 +8476,7 @@ async function loadPhotoStyles(force) {
     const codes = styles.map(s => s.code);
     if (!codes.includes(_photoStyle)) _photoStyle = codes[0];
 
-    grid.innerHTML = styles.map(s => {
+    _photoStylesHTML = styles.map(s => {
       const img = s.image_url
         ? `<img src="${s.image_url}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;display:block;pointer-events:none">`
         : `<div style="width:100%;aspect-ratio:1;border-radius:6px;background:var(--bg3);display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:18px">🎨</div>`;
@@ -8438,10 +8487,13 @@ async function loadPhotoStyles(force) {
         <span style="margin-top:4px">${label}</span>
       </button>`;
     }).join('');
+    _photoStyleGrids().forEach(g => { g.innerHTML = _photoStylesHTML; g.dataset.filled = '1'; });
     _photoStylesLoaded = true;
   } catch (e) {
     console.warn('loadPhotoStyles:', e);
-    grid.innerHTML = '<div style="grid-column:1/-1;color:var(--text3);font-size:11px;text-align:center;padding:18px 0">Impossible de charger les styles</div>';
+    _photoStyleGrids().forEach(g => {
+      g.innerHTML = '<div style="grid-column:1/-1;color:#ef4444;font-size:11px;text-align:center;padding:18px 0">Impossible de charger les styles — réessayez</div>';
+    });
   }
 }
 
