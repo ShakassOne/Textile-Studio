@@ -3,7 +3,7 @@ const express   = require('express');
 const router    = express.Router();
 const path      = require('path');
 const fs        = require('fs');
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { requireAuth } = require('./auth');
 const { requireShopifySession } = require('./shopify-session');
 const { getDB } = require('../db/database');
@@ -25,7 +25,7 @@ function _designTokenOk(row, req) {
 const renderRateLimiter = rateLimit({
   windowMs:        60 * 60 * 1000,
   max:             200,
-  keyGenerator:    (req) => String(req.shopId || req.ip),
+  keyGenerator:    (req) => req.shopId ? String(req.shopId) : ipKeyGenerator(req.ip),
   standardHeaders: true,
   legacyHeaders:   false,
   message:         { error: 'Quota render dépassé (200/h) — réessayez dans une heure' },

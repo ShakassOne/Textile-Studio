@@ -2,7 +2,7 @@
 const express = require('express');
 const router  = express.Router();
 const crypto    = require('crypto');
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { requireAuth } = require('./auth');
 const { getDB } = require('../db/database');
 const { attachShopIdSoft, attachShopId } = require('./_shop-context');
@@ -14,7 +14,7 @@ try { getDB().prepare('ALTER TABLE designs ADD COLUMN edit_token TEXT').run(); }
 const createDesignLimiter = rateLimit({
   windowMs:        60 * 60 * 1000,
   max:             40,
-  keyGenerator:    (req) => `${req.shopId || '?'}:${req.ip}`,
+  keyGenerator:    (req) => `${req.shopId || '?'}:${ipKeyGenerator(req.ip)}`,
   standardHeaders: true,
   legacyHeaders:   false,
   message:         { error: 'Trop de créations de design — réessayez dans une heure' },

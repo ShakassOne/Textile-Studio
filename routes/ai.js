@@ -1,7 +1,7 @@
 'use strict';
 const express   = require('express');
 const router    = express.Router();
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const fs        = require('fs');
 const path      = require('path');
 const { requireAuth } = require('./auth');
@@ -61,7 +61,7 @@ function requireAIContext(req, res, next) {
 const aiRateLimiter = rateLimit({
   windowMs:        60 * 60 * 1000,        // 1 heure
   max:             50,                     // 50 requêtes/heure/shop
-  keyGenerator:    (req) => String(req.shopId || req.ip),
+  keyGenerator:    (req) => req.shopId ? String(req.shopId) : ipKeyGenerator(req.ip),
   standardHeaders: true,
   legacyHeaders:   false,
   message:         { error: 'Quota IA dépassé (50 générations/h) — réessayez dans une heure' },
@@ -73,7 +73,7 @@ const aiRateLimiter = rateLimit({
 const aiIpRateLimiter = rateLimit({
   windowMs:        60 * 60 * 1000,        // 1 heure
   max:             12,                     // 12 générations/heure/IP
-  keyGenerator:    (req) => req.ip,
+  keyGenerator:    (req) => ipKeyGenerator(req.ip),
   standardHeaders: true,
   legacyHeaders:   false,
   message:         { error: 'Trop de générations IA depuis cet appareil — réessayez dans une heure' },
