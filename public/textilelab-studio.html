@@ -166,6 +166,12 @@
   .stat-pill .dot.amber { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
   .stat-pill strong { color: var(--amber); }
 
+  /* Barre de prix sticky mobile (flag mobile_price_bar_enabled) — masquée par
+     défaut, révélée en JS (classe .tl-visible) uniquement sur mobile quand le
+     marchand active le flag. Sur mobile le prix du topbar (.stat-pill) est
+     masqué, cette barre lui sert d'équivalent pendant la personnalisation. */
+  #mobile-price-bar { display: none; }
+
   .topbar-right {
     display: flex;
     align-items: center;
@@ -1081,6 +1087,25 @@
       gap: 0 !important;
     }
     .topbar-stats { display: none !important; }
+    /* ── Barre de prix sticky mobile (flag, voir #mobile-price-bar plus haut) ── */
+    #mobile-price-bar.tl-visible {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      position: fixed;
+      left: 0; right: 0;
+      bottom: calc(var(--bottom-nav-h) + var(--safe-bottom));
+      height: 30px;
+      background: var(--bg2);
+      border-top: 1px solid var(--border);
+      font-family: 'DM Mono', monospace;
+      font-size: 12px;
+      color: var(--text2);
+      z-index: 340;
+      pointer-events: none;
+    }
+    #mobile-price-bar strong { color: var(--amber); }
     /* ── Overlay mobile : léger, sans blur ────────────────────────── */
     .drawer-overlay { background: rgba(0,0,0,0.18) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
     .stat-pill { display: none !important; }
@@ -2992,6 +3017,12 @@
 
       <!-- TAB: LAYERS déplacé dans sidebar gauche -->
     </aside>
+  </div>
+
+  <!-- Barre de prix sticky mobile (flag mobile_price_bar_enabled, révélée en JS) -->
+  <div id="mobile-price-bar" style="display:none">
+    <span>Total</span>
+    <strong id="stat-price-mobile">19,90 €</strong>
   </div>
 
   <!-- BOTTOM NAV (mobile only) -->
@@ -5664,6 +5695,8 @@ function updatePrice() {
   const el = document.getElementById('stat-price');
   if (!el) return;
   el.textContent = total.toFixed(2).replace('.', ',') + ' €';
+  const elMobile = document.getElementById('stat-price-mobile');
+  if (elMobile) elMobile.textContent = total.toFixed(2).replace('.', ',') + ' €';
   const _fmtEur = (n) => n.toFixed(2).replace('.', ',') + '€';
   if (TPL_REFERENCE_AMOUNT > 0) {
     el.title = `${_fmtEur(base)} (impression ${_fmtEur(TPL_REFERENCE_AMOUNT)} incluse)`
@@ -9219,6 +9252,14 @@ function init() {
           // activé par défaut côté serveur, masqué ici tant que le fetch n'a pas répondu.
           var _banner = document.getElementById('tl-reassurance-banner');
           if (_banner && cfg && cfg.reassurance_banner_enabled) _banner.style.display = 'block';
+          // Barre de prix sticky mobile : désactivée par défaut côté serveur
+          // (changement de mise en page, à valider sur un vrai mobile avant
+          // diffusion large) — uniquement révélée sur mobile si le flag est actif.
+          var _priceBar = document.getElementById('mobile-price-bar');
+          if (_priceBar && cfg && cfg.mobile_price_bar_enabled && window.innerWidth <= 768) {
+            _priceBar.style.display = '';
+            _priceBar.classList.add('tl-visible');
+          }
         })
         .catch(() => {});
     }

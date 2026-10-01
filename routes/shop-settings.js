@@ -17,6 +17,11 @@
  *      sécurisé / fabriqué à la demande) affiché dans le studio. Activé par
  *      défaut (affichage pur, aucune logique panier/paiement touchée) ;
  *      désactivable en un clic si besoin.
+ *    mobile_price_bar_enabled   bool  — barre de prix total sticky affichée
+ *      en bas de l'écran studio sur mobile (le prix du topbar y est masqué
+ *      aujourd'hui, aucun total n'est visible hors ouverture d'un drawer).
+ *      Désactivée par défaut : c'est un changement de mise en page mobile,
+ *      à valider sur un vrai téléphone avant diffusion large.
  *
  *  Cors public : Cross-origin (shop_domain.myshopify.com → textile-studio-production)
  *    → le storefront fait fetch direct, on autorise tout origin sur le GET public.
@@ -60,6 +65,9 @@ function coerceBool(v) {
 const AI_PHOTO_STYLES_DEFAULT = true;
 // Bandeau de réassurance affiché par défaut (pur affichage, sans risque).
 const REASSURANCE_BANNER_DEFAULT = true;
+// Barre de prix mobile désactivée par défaut (changement de mise en page,
+// activation manuelle une fois vérifiée sur un vrai mobile).
+const MOBILE_PRICE_BAR_DEFAULT = false;
 
 // ── GET /api/shop-settings/style — lecture admin ────────────────────────────
 router.get('/style', requireAuth, attachShopId, (req, res) => {
@@ -67,6 +75,7 @@ router.get('/style', requireAuth, attachShopId, (req, res) => {
     cart_drawer_bg_color:       getSetting(req.shopId, 'cart_drawer_bg_color') || '',
     ai_photo_styles_enabled:    readBoolSetting(req.shopId, 'ai_photo_styles_enabled', AI_PHOTO_STYLES_DEFAULT),
     reassurance_banner_enabled: readBoolSetting(req.shopId, 'reassurance_banner_enabled', REASSURANCE_BANNER_DEFAULT),
+    mobile_price_bar_enabled:   readBoolSetting(req.shopId, 'mobile_price_bar_enabled', MOBILE_PRICE_BAR_DEFAULT),
   });
 });
 
@@ -93,11 +102,16 @@ router.post('/style', requireAuth, attachShopId, express.json(), (req, res) => {
     setSetting(req.shopId, 'reassurance_banner_enabled', coerceBool(body.reassurance_banner_enabled) ? '1' : '0');
   }
 
+  if ('mobile_price_bar_enabled' in body) {
+    setSetting(req.shopId, 'mobile_price_bar_enabled', coerceBool(body.mobile_price_bar_enabled) ? '1' : '0');
+  }
+
   res.json({
     ok: true,
     cart_drawer_bg_color:       getSetting(req.shopId, 'cart_drawer_bg_color') || '',
     ai_photo_styles_enabled:    readBoolSetting(req.shopId, 'ai_photo_styles_enabled', AI_PHOTO_STYLES_DEFAULT),
     reassurance_banner_enabled: readBoolSetting(req.shopId, 'reassurance_banner_enabled', REASSURANCE_BANNER_DEFAULT),
+    mobile_price_bar_enabled:   readBoolSetting(req.shopId, 'mobile_price_bar_enabled', MOBILE_PRICE_BAR_DEFAULT),
   });
 });
 
@@ -114,6 +128,7 @@ router.get('/style/public', (req, res) => {
       cart_drawer_bg_color: '',
       ai_photo_styles_enabled: AI_PHOTO_STYLES_DEFAULT,
       reassurance_banner_enabled: REASSURANCE_BANNER_DEFAULT,
+      mobile_price_bar_enabled: MOBILE_PRICE_BAR_DEFAULT,
     });
   }
   const shopId = getShopIdByDomain(shopDomain);
@@ -122,12 +137,14 @@ router.get('/style/public', (req, res) => {
       cart_drawer_bg_color: '',
       ai_photo_styles_enabled: AI_PHOTO_STYLES_DEFAULT,
       reassurance_banner_enabled: REASSURANCE_BANNER_DEFAULT,
+      mobile_price_bar_enabled: MOBILE_PRICE_BAR_DEFAULT,
     });
   }
   res.json({
     cart_drawer_bg_color:       getSetting(shopId, 'cart_drawer_bg_color') || '',
     ai_photo_styles_enabled:    readBoolSetting(shopId, 'ai_photo_styles_enabled', AI_PHOTO_STYLES_DEFAULT),
     reassurance_banner_enabled: readBoolSetting(shopId, 'reassurance_banner_enabled', REASSURANCE_BANNER_DEFAULT),
+    mobile_price_bar_enabled:   readBoolSetting(shopId, 'mobile_price_bar_enabled', MOBILE_PRICE_BAR_DEFAULT),
   });
 });
 
