@@ -4,7 +4,7 @@
 > Portée : uniquement l'app TSL Shopify (Node/Express/SQLite/Fabric.js, Railway). Pas TSL 2.0, pas Shakass.com, pas Shakabot.
 > Règle du dépôt : tout se fait sur `dev`, rien ne part sur `main` sans validation explicite d'Alan.
 
-_Dernière mise à jour : 2026-09-29_
+_Dernière mise à jour : 2026-10-01_
 
 ---
 
@@ -121,3 +121,4 @@ _Chaque passage des Routines A/B/C ajoute une ligne ici (date, routine, résumé
 | Date | Routine | Résumé | Commit |
 |------|---------|--------|--------|
 | 2026-09-29 | Bootstrap | Création de cette roadmap + exploration initiale du dépôt (dev). 3 routines proposées, en attente de validation d'Alan avant création effective (voir rapport de session). | *(ce commit)* |
+| 2026-10-01 | Bootstrap (suivi) | Rien de nouveau côté dépôt/dev depuis le 29/09 (aucun commit, aucune issue). Toujours aucune trace de validation d'Alan sur les 3 routines proposées la veille. Par cohérence avec la décision du 2026-09-29, les routines ne sont **pas** créées à ce passage — les 3 prompts sont représentés tels quels (légèrement affinés pour coller au backlog à jour) dans le rapport de cette session, en attente d'un go explicite d'Alan. | *(ce commit)* |
