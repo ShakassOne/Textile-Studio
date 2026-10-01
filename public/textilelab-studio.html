@@ -2810,18 +2810,26 @@
 
         <div class="tool-section">
           <div class="tool-section-title">Photo de départ <span style="color:var(--text3);font-weight:400">— optionnel</span></div>
-          <div id="ai-photo-zone" onclick="_aiPickPhoto()"
-               style="border:1.5px dashed var(--border);border-radius:12px;padding:14px;text-align:center;cursor:pointer;transition:all .15s">
-            <div id="ai-photo-empty">
+          <!-- Même technique que l'onglet Photo, la seule fiable sur mobile :
+               un input transparent superposé plutôt qu'un input display:none
+               déclenché par .click(), que Chrome Android et Safari ignorent.
+               Le bouton « Changer » passe par un <label for>, natif lui aussi.
+               switchMobileToolTab réécrit id= ET for=, le clone reste cohérent. -->
+          <div id="ai-photo-zone"
+               style="position:relative;border:1.5px dashed var(--border);border-radius:12px;padding:14px;text-align:center;cursor:pointer;transition:all .15s">
+            <input type="file" id="ai-photo-input" accept="image/*"
+                   style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:3"
+                   onchange="_aiOnPhotoPicked(event)">
+            <div id="ai-photo-empty" style="pointer-events:none">
               <div style="font-size:20px;margin-bottom:4px">🖼</div>
               <div style="font-size:12px;font-weight:500">Ajouter une photo à transformer</div>
               <div style="font-size:10px;color:var(--text3);margin-top:3px">Sans photo, l'IA crée le design de zéro</div>
             </div>
-            <div id="ai-photo-preview" style="display:none;position:relative">
-              <img id="ai-photo-thumb" alt="" style="width:100%;max-height:150px;object-fit:contain;border-radius:8px">
+            <div id="ai-photo-preview" style="display:none;position:relative;z-index:4">
+              <img id="ai-photo-thumb" alt="" style="width:100%;max-height:150px;object-fit:contain;border-radius:8px;pointer-events:none">
               <div style="display:flex;gap:6px;margin-top:8px">
-                <button class="btn-sm" style="flex:1" onclick="event.stopPropagation();_aiPickPhoto()">Changer</button>
-                <button class="btn-sm" style="flex:1" onclick="event.stopPropagation();_aiClearPhoto()">Retirer</button>
+                <label class="btn-sm" for="ai-photo-input" style="flex:1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer">Changer</label>
+                <button class="btn-sm" type="button" style="flex:1" onclick="event.stopPropagation();_aiClearPhoto()">Retirer</button>
               </div>
             </div>
           </div>
@@ -3322,10 +3330,6 @@
 </div>
 
 <!-- TOAST -->
-<!-- Input photo de l'onglet IA — DOIT rester hors des panneaux d'outils :
-     switchMobileToolTab clone le panneau en préfixant les id par « m- », un
-     input placé dedans serait dupliqué et l'original introuvable côté mobile. -->
-<input type="file" id="ai-photo-input" accept="image/*" style="display:none" onchange="_aiOnPhotoPicked(event)">
 <div id="toast"></div>
 
 <script>
@@ -3389,6 +3393,67 @@ const MOBILE_CHROME_H = 52 + 40 + 64 + 20;
 // Aspect adaptatif : on vise la hauteur réellement disponible plutôt qu'une
 // valeur figée — un grand téléphone gagne un canvas plus haut, un petit n'est
 // pas écrasé. Borné pour ne jamais rogner le vêtement au-delà du raisonnable.
+// Largeur réelle du vêtement dans le PNG du mockup, en fraction de l'image.
+// Trois valeurs d'aspect ont été essayées à l'aveugle (0.78, 0.66, 0.70) sans
+// jamais convenir à tous les mockups : les manches débordent dès qu'elles sont
+// plus écartées que prévu. On mesure donc l'image au lieu de la deviner.
+//
+// On scanne les pixels pour trouver les colonnes extrêmes du vêtement : un
+// pixel compte s'il est opaque ET différent du fond (échantillonné dans les
+// coins). Un pixel sur quatre suffit — à 1500×1500 le scan prend quelques
+// millisecondes et le résultat est mémorisé par mockup.
+const _garmentWidthCache = new Map();
+
+function _measureGarmentWidth(img) {
+  const key = img && (img._element?.src || img.src || '').slice(-80);
+  if (key && _garmentWidthCache.has(key)) return _garmentWidthCache.get(key);
+  let ratio = null;
+  try {
+    const el = img._element || img;
+    const W = el.naturalWidth || el.width, H = el.naturalHeight || el.height;
+    if (!W || !H) return null;
+    // Analyse en basse résolution : la précision au pixel près est inutile.
+    const w = Math.min(300, W), h = Math.round(w * H / W);
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(el, 0, 0, w, h);
+    const d = ctx.getImageData(0, 0, w, h).data;
+    const at = (x, y) => { const i = (y * w + x) * 4; return [d[i], d[i+1], d[i+2], d[i+3]]; };
+    // Couleur de fond = coin haut gauche (transparent ou uni selon le mockup).
+    const [br, bg, bb, ba] = at(0, 0);
+    const estFond = (r, g, b, a) =>
+      (a < 12) || (ba > 12 && Math.abs(r-br) < 18 && Math.abs(g-bg) < 18 && Math.abs(b-bb) < 18);
+    let minX = w, maxX = -1, minY = h, maxY = -1;
+    for (let y = 0; y < h; y += 2) {
+      for (let x = 0; x < w; x += 2) {
+        const [r, g, b, a] = at(x, y);
+        if (estFond(r, g, b, a)) continue;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+    if (maxX > minX && maxY > minY) {
+      ratio = {
+        w: (maxX - minX + 1) / w,
+        h: (maxY - minY + 1) / h,
+        // Centre du visuel dans l'image : un mockup dont le vêtement n'est pas
+        // centré (tote bag avec anses en haut) doit être cadré sur LUI.
+        cx: ((minX + maxX) / 2) / w,
+        cy: ((minY + maxY) / 2) / h,
+      };
+    }
+  } catch (e) {
+    console.warn('[Mockup] mesure du visuel impossible:', e.message);
+  }
+  // Garde-fou : une mesure aberrante ne doit pas produire un cadrage délirant.
+  if (!ratio || !(ratio.w > 0.1 && ratio.w <= 1 && ratio.h > 0.1 && ratio.h <= 1)) ratio = null;
+  if (key) _garmentWidthCache.set(key, ratio);
+  return ratio;
+}
+
 function _mobileCanvasAspect() {
   const vw = window.innerWidth - 20;
   const vh = window.innerHeight - MOBILE_CHROME_H;
@@ -5230,10 +5295,47 @@ function applyMockup(productKey, viewIdx, mockupIdx, userAction = false) {
     }
     const cw = canvas.getWidth();
     const ch = canvas.getHeight();
-    // Cover : le mockup remplit le canvas bord à bord (aspects égaux → aucun crop)
-    const scale = Math.max(cw / img.width, ch / img.height);
-    const left = (cw - img.width * scale) / 2;
-    const top  = (ch - img.height * scale) / 2;
+    // Mise à l'échelle du mockup.
+    // Desktop : cover classique, aspects égaux → aucun recadrage.
+    // Mobile : on vise le VÊTEMENT, pas l'image. Le PNG est carré et le
+    // vêtement n'en occupe qu'une partie ; mesurer sa largeur réelle
+    // (_measureGarmentWidth) permet de le faire tenir exactement dans la
+    // largeur du canvas — assez grand pour être confortable, jamais assez
+    // pour que les manches sortent, quel que soit le mockup.
+    const _isMobileFit = window.innerWidth <= 768;
+    let scale = Math.max(cw / img.width, ch / img.height);
+    let left  = (cw - img.width * scale) / 2;
+    let top   = (ch - img.height * scale) / 2;
+
+    if (_isMobileFit) {
+      const vis = _measureGarmentWidth(img);  // { w, h, cx, cy } en fraction
+      if (vis) {
+        // Le canvas s'adapte au VISUEL : sa hauteur est recalculée pour que le
+        // produit, une fois à 99 % de la largeur, tienne pile dedans. Un polo
+        // étroit obtient donc un canvas plus haut qu'un tote bag large, et
+        // chacun exploite toute la largeur — quelle que soit la marge
+        // transparente laissée dans le PNG.
+        const cible   = cw * 0.99;
+        const voulu   = cible / (img.width * vis.w);           // échelle visée
+        const hVisuel = img.height * vis.h * voulu;            // hauteur obtenue
+        const hMax    = Math.max(0, window.innerHeight - MOBILE_CHROME_H);
+        const hCanvas = Math.min(Math.max(hVisuel, cw * 0.7), hMax || hVisuel);
+
+        if (Math.abs(canvas.getHeight() - Math.round(hCanvas)) > 1) {
+          canvas.setHeight(Math.round(hCanvas));
+        }
+        const CH = canvas.getHeight();
+
+        // Si le visuel ne tient toujours pas en hauteur (produit très allongé
+        // sur un petit écran), on réduit pour qu'il reste ENTIER : mieux vaut
+        // un peu moins large que des manches coupées.
+        scale = Math.min(voulu, (CH * 0.99) / (img.height * vis.h));
+
+        // Cadrage sur le centre du visuel, pas sur celui de l'image.
+        left = cw / 2 - (img.width  * vis.cx) * scale;
+        top  = CH / 2 - (img.height * vis.cy) * scale;
+      }
+    }
 
     img.set({
       left, top,
@@ -6288,12 +6390,11 @@ function _aiEl(id) {
   return document.getElementById('m-' + id) || document.getElementById(id);
 }
 
+// Conservé pour compatibilité : la sélection passe désormais par l'input
+// transparent et le <label for>, qui fonctionnent nativement sur mobile.
 function _aiPickPhoto() {
-  // Input global, jamais cloné : un seul et même élément desktop et mobile.
-  const inp = document.getElementById('ai-photo-input');
-  if (!inp) return showToast('❌ Sélecteur de fichier indisponible');
-  inp.value = '';
-  inp.click();
+  const inp = _aiEl('ai-photo-input');
+  if (inp) { inp.value = ''; inp.click(); }
 }
 
 async function _aiOnPhotoPicked(e) {
