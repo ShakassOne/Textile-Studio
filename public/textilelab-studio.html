@@ -3376,10 +3376,10 @@ const PRODUCTS = {
 // portrait, le cover-fit agrandit le mockup jusqu'à remplir la largeur — le
 // vêtement devient nettement plus grand, au prix d'un rognage des marges
 // latérales vides du PNG.
-// 0.66 : mesuré pour que le vêtement atteigne presque exactement les bords
-// sans que les manches soient entamées — à 0.62 il débordait de 5 %. Valeur
-// plancher : l'aspect réel s'adapte à l'écran ci-dessous.
-const MOBILE_CANVAS_ASPECT = 0.66;
+// 0.66 débordait encore sur les mockups dont les manches sont plus écartées
+// (retour Alan du 2026-09-30/10-01) : remonté à 0.70 pour laisser une marge.
+// Valeur plancher : l'aspect réel s'adapte à l'écran ci-dessous.
+const MOBILE_CANVAS_ASPECT = 0.70;
 
 // Hauteur utilisable sur mobile = écran moins topbar, barre de calques, barre
 // d'onglets et marges. Isolé ici pour rester cohérent entre getCanvasSize() et
