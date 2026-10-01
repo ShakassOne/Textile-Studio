@@ -12,7 +12,11 @@
  *        la couleur de fond de la preview drawer panier sur tous les thèmes.
  *
  *  Clés actuellement stockées (non sensibles, table `settings`) :
- *    cart_drawer_bg_color    string — hex "#000000" / "transparent" / ""
+ *    cart_drawer_bg_color      string — hex "#000000" / "transparent" / ""
+ *    reassurance_banner_enabled bool  — bandeau de réassurance (paiement
+ *      sécurisé / fabriqué à la demande) affiché dans le studio. Activé par
+ *      défaut (affichage pur, aucune logique panier/paiement touchée) ;
+ *      désactivable en un clic si besoin.
  *
  *  Cors public : Cross-origin (shop_domain.myshopify.com → textile-studio-production)
  *    → le storefront fait fetch direct, on autorise tout origin sur le GET public.
@@ -54,12 +58,15 @@ function coerceBool(v) {
 }
 // Styles IA (Photo → Illustration) activés par défaut côté storefront.
 const AI_PHOTO_STYLES_DEFAULT = true;
+// Bandeau de réassurance affiché par défaut (pur affichage, sans risque).
+const REASSURANCE_BANNER_DEFAULT = true;
 
 // ── GET /api/shop-settings/style — lecture admin ────────────────────────────
 router.get('/style', requireAuth, attachShopId, (req, res) => {
   res.json({
-    cart_drawer_bg_color:    getSetting(req.shopId, 'cart_drawer_bg_color') || '',
-    ai_photo_styles_enabled: readBoolSetting(req.shopId, 'ai_photo_styles_enabled', AI_PHOTO_STYLES_DEFAULT),
+    cart_drawer_bg_color:       getSetting(req.shopId, 'cart_drawer_bg_color') || '',
+    ai_photo_styles_enabled:    readBoolSetting(req.shopId, 'ai_photo_styles_enabled', AI_PHOTO_STYLES_DEFAULT),
+    reassurance_banner_enabled: readBoolSetting(req.shopId, 'reassurance_banner_enabled', REASSURANCE_BANNER_DEFAULT),
   });
 });
 
@@ -82,10 +89,15 @@ router.post('/style', requireAuth, attachShopId, express.json(), (req, res) => {
     setSetting(req.shopId, 'ai_photo_styles_enabled', coerceBool(body.ai_photo_styles_enabled) ? '1' : '0');
   }
 
+  if ('reassurance_banner_enabled' in body) {
+    setSetting(req.shopId, 'reassurance_banner_enabled', coerceBool(body.reassurance_banner_enabled) ? '1' : '0');
+  }
+
   res.json({
     ok: true,
-    cart_drawer_bg_color:    getSetting(req.shopId, 'cart_drawer_bg_color') || '',
-    ai_photo_styles_enabled: readBoolSetting(req.shopId, 'ai_photo_styles_enabled', AI_PHOTO_STYLES_DEFAULT),
+    cart_drawer_bg_color:       getSetting(req.shopId, 'cart_drawer_bg_color') || '',
+    ai_photo_styles_enabled:    readBoolSetting(req.shopId, 'ai_photo_styles_enabled', AI_PHOTO_STYLES_DEFAULT),
+    reassurance_banner_enabled: readBoolSetting(req.shopId, 'reassurance_banner_enabled', REASSURANCE_BANNER_DEFAULT),
   });
 });
 
@@ -98,15 +110,24 @@ router.get('/style/public', (req, res) => {
   res.set('Cache-Control', 'public, max-age=60'); // 1 min de cache CDN/browser
   const shopDomain = String(req.query.shop || '').toLowerCase().trim();
   if (!shopDomain) {
-    return res.json({ cart_drawer_bg_color: '', ai_photo_styles_enabled: AI_PHOTO_STYLES_DEFAULT });
+    return res.json({
+      cart_drawer_bg_color: '',
+      ai_photo_styles_enabled: AI_PHOTO_STYLES_DEFAULT,
+      reassurance_banner_enabled: REASSURANCE_BANNER_DEFAULT,
+    });
   }
   const shopId = getShopIdByDomain(shopDomain);
   if (!shopId) {
-    return res.json({ cart_drawer_bg_color: '', ai_photo_styles_enabled: AI_PHOTO_STYLES_DEFAULT });
+    return res.json({
+      cart_drawer_bg_color: '',
+      ai_photo_styles_enabled: AI_PHOTO_STYLES_DEFAULT,
+      reassurance_banner_enabled: REASSURANCE_BANNER_DEFAULT,
+    });
   }
   res.json({
-    cart_drawer_bg_color:    getSetting(shopId, 'cart_drawer_bg_color') || '',
-    ai_photo_styles_enabled: readBoolSetting(shopId, 'ai_photo_styles_enabled', AI_PHOTO_STYLES_DEFAULT),
+    cart_drawer_bg_color:       getSetting(shopId, 'cart_drawer_bg_color') || '',
+    ai_photo_styles_enabled:    readBoolSetting(shopId, 'ai_photo_styles_enabled', AI_PHOTO_STYLES_DEFAULT),
+    reassurance_banner_enabled: readBoolSetting(shopId, 'reassurance_banner_enabled', REASSURANCE_BANNER_DEFAULT),
   });
 });
 

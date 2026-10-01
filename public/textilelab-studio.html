@@ -2979,6 +2979,9 @@
 
       <!-- Bouton panier sticky desktop -->
       <div id="desktop-cart-btn-wrap" style="padding:12px 16px;border-top:1px solid var(--border);margin-top:auto;flex-shrink:0">
+        <div id="tl-reassurance-banner" style="display:none;margin-bottom:10px;font-size:11px;line-height:1.4;color:var(--text3);text-align:center">
+          🔒 Paiement sécurisé via Shopify · 🖨️ Fabriqué à la demande, juste pour vous · 💬 Une question ? Contactez-nous
+        </div>
         <button class="btn-cart-big" onclick="addToCart()" style="margin:0">
           🛒 Ajouter au panier
         </button>
@@ -9210,7 +9213,13 @@ function init() {
       // réponse en cache jusqu'à 60 s et la désactivation semble sans effet).
       fetch(`${window.location.origin}/api/shop-settings/style/public?shop=${encodeURIComponent(window._TL_SHOP)}&_=${Date.now()}`, { cache: 'no-store' })
         .then(r => r.ok ? r.json() : null)
-        .then(cfg => { if (cfg && cfg.ai_photo_styles_enabled) _revealPhotoStylesUI(); })
+        .then(cfg => {
+          if (cfg && cfg.ai_photo_styles_enabled) _revealPhotoStylesUI();
+          // Bandeau de réassurance (paiement sécurisé / fabrication à la demande) :
+          // activé par défaut côté serveur, masqué ici tant que le fetch n'a pas répondu.
+          var _banner = document.getElementById('tl-reassurance-banner');
+          if (_banner && cfg && cfg.reassurance_banner_enabled) _banner.style.display = 'block';
+        })
         .catch(() => {});
     }
 
