@@ -4,7 +4,7 @@
 > Portée : uniquement l'app TSL Shopify (Node/Express/SQLite/Fabric.js, Railway). Pas TSL 2.0, pas Shakass.com, pas Shakabot.
 > Règle du dépôt : tout se fait sur `dev`, rien ne part sur `main` sans validation explicite d'Alan.
 
-_Dernière mise à jour : 2026-10-01_
+_Dernière mise à jour : 2026-10-01 (2ᵉ passage)_
 
 ---
 
@@ -20,6 +20,7 @@ Fonctionnalités en place au 2026-09-29 (branche `dev`) :
 - **IA — Photo → Illustration** : styles activables/désactivables par boutique (flag `ai_photo_styles_enabled`), génération depuis une photo de départ.
 - **Quota IA** : quota de générations par identité (client connecté reconnu, sinon visiteur/IP), rechargé à l'achat, consultation/remise à zéro par l'admin, message d'attente lisible côté studio.
 - **Suivi qualité** : `node --test` sur `tests/*.test.js` (ai-quota, customer-token, pricing-source-sync, print-tiers, template-pricing).
+- **Mobile (29-30/09)** : corrections du studio sur mobile — le vêtement occupe toute la largeur du cadre, fin du double zoom, header compact, échec de génération IA affiché clairement, bouton IA visiblement en cours. Répond en partie au backlog P1 item 4 (passage studio → panier sur mobile), à considérer comme un point de départ plutôt qu'un audit tactile complet.
 
 Documents de contexte existants (à ne pas dupliquer) : `LIAISON_CLAUDE_CODEX.md` (journal de push partagé Claude/Codex — **daté du 2026-06-24, à remettre à jour**), `CDC_TEXTILELAB.md`, `AUDIT_TSL_2026-06-15.md`, `PROPOSITION_TARIFICATION.md`.
 
@@ -122,3 +123,4 @@ _Chaque passage des Routines A/B/C ajoute une ligne ici (date, routine, résumé
 |------|---------|--------|--------|
 | 2026-09-29 | Bootstrap | Création de cette roadmap + exploration initiale du dépôt (dev). 3 routines proposées, en attente de validation d'Alan avant création effective (voir rapport de session). | *(ce commit)* |
 | 2026-10-01 | Bootstrap (suivi) | Rien de nouveau côté dépôt/dev depuis le 29/09 (aucun commit, aucune issue). Toujours aucune trace de validation d'Alan sur les 3 routines proposées la veille. Par cohérence avec la décision du 2026-09-29, les routines ne sont **pas** créées à ce passage — les 3 prompts sont représentés tels quels (légèrement affinés pour coller au backlog à jour) dans le rapport de cette session, en attente d'un go explicite d'Alan. | *(ce commit)* |
+| 2026-10-01 | Bootstrap (2ᵉ passage) | 4 commits trouvés depuis le dernier passage (29-30/09, corrections mobile du studio) — ajoutés en §1. Toujours aucune validation d'Alan en chat sur les 3 routines : la création de 3 tâches planifiées récurrentes (qui codent et poussent sur `dev` sans supervision à chaque passage) relève d'une configuration permanente, donc d'un « oui » explicite d'Alan plutôt que d'une simple présence dans le dépôt. Les 3 prompts restent inchangés sur le fond (présentés dans le rapport de session) ; routines **non créées**. | *(ce commit)* |
