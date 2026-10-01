@@ -8570,7 +8570,11 @@ async function loadPhotoStyles(force) {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const styles = await res.json();
     if (!Array.isArray(styles) || !styles.length) {
-      grid.innerHTML = '<div style="grid-column:1/-1;color:var(--text3);font-size:11px;text-align:center;padding:18px 0">Aucun style configuré</div>';
+      // Sur TOUTES les grilles : n'écrire que dans la copie desktop laissait
+      // le clone mobile bloqué sur « Chargement des styles… » indéfiniment.
+      _photoStylesHTML = '<div style="grid-column:1/-1;color:var(--text3);font-size:11px;text-align:center;padding:18px 0">Aucun style configuré</div>';
+      _photoStyleGrids().forEach(g => { g.innerHTML = _photoStylesHTML; g.dataset.filled = '1'; });
+      _photoStylesLoaded = true;
       return;
     }
     // Restaurer la sélection courante si elle existe encore, sinon premier style
@@ -8592,9 +8596,10 @@ async function loadPhotoStyles(force) {
     _photoStylesLoaded = true;
   } catch (e) {
     console.warn('loadPhotoStyles:', e);
-    _photoStyleGrids().forEach(g => {
-      g.innerHTML = '<div style="grid-column:1/-1;color:#ef4444;font-size:11px;text-align:center;padding:18px 0">Impossible de charger les styles — réessayez</div>';
-    });
+    _photoStylesHTML = '<div style="grid-column:1/-1;color:#ef4444;font-size:11px;text-align:center;padding:18px 0">Impossible de charger les styles — réessayez</div>';
+    _photoStyleGrids().forEach(g => { g.innerHTML = _photoStylesHTML; });
+    // Pas de _photoStylesLoaded = true : un échec réseau doit pouvoir être
+    // retenté au prochain passage sur l'onglet.
   }
 }
 
