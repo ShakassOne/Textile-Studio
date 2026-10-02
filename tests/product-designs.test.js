@@ -31,9 +31,15 @@ const DONNEES = {
   visuels: [],
 };
 
+// Mémorise les paramètres passés à la dernière recherche de liaison produit,
+// pour vérifier qu'on interroge bien les deux écritures d'identifiant.
+let DERNIERE_RECHERCHE_LIEN = null;
+
 const faussebase = {
   prepare(sql) {
-    if (/FROM product_mockup_links/.test(sql)) return { get: () => DONNEES.lien };
+    if (/FROM product_mockup_links/.test(sql)) return {
+      get: (...args) => { DERNIERE_RECHERCHE_LIEN = args; return DONNEES.lien; },
+    };
     if (/FROM mockups/.test(sql))              return { get: () => DONNEES.mockup };
     if (/FROM library/.test(sql))              return { all: () => DONNEES.visuels };
     throw new Error('Requête inattendue : ' + sql);
@@ -188,4 +194,14 @@ test('une écriture dans la bibliothèque purge le cache', async () => {
   const corps = await r.json();
   assert.equal(corps.designs[0].nom, 'Après');
   assert.notEqual(corps.cached, true);
+});
+
+test('la liaison produit est cherchée sous ses deux écritures', async () => {
+  // La table mélange des identifiants numériques et des GID complets selon
+  // l'époque de la liaison, alors que le thème ne connaît que {{ product.id }}.
+  // Chercher une seule forme revenait à ne jamais trouver le mockup.
+  DONNEES.visuels = [visuel({ id: 1 })];
+  await catalogue('10743954145607');
+  assert.deepEqual(DERNIERE_RECHERCHE_LIEN,
+    [1, '10743954145607', 'gid://shopify/Product/10743954145607']);
 });

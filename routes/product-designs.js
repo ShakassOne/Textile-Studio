@@ -74,9 +74,15 @@ router.get('/products/:productId/designs', attachShopId, (req, res) => {
 
     // 1. Produit → mockup lié. Pas de liaison : aucun support à vérifier, on
     //    renvoie tout le catalogue actif.
+    //
+    //    La colonne mélange deux écritures selon l'époque de la liaison : des
+    //    identifiants numériques et des GID complets
+    //    ("gid://shopify/Product/10743954145607"). Le thème, lui, ne connaîtra
+    //    que {{ product.id }}, numérique. On interroge donc les deux formes.
     const lien = db.prepare(
-      'SELECT mockup_id FROM product_mockup_links WHERE shopify_product_id=? AND shop_id=?'
-    ).get(productId, req.shopId);
+      `SELECT mockup_id FROM product_mockup_links
+       WHERE shop_id=? AND (shopify_product_id=? OR shopify_product_id=?)`
+    ).get(req.shopId, productId, `gid://shopify/Product/${productId}`);
     const mockupId = lien?.mockup_id || null;
 
     // 2. Zone d'impression de la vue demandée.
