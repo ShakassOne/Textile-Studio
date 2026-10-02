@@ -643,6 +643,7 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
         </div>
         <div class="page-actions">
           <button class="btn" onclick="loadDisplayZones()">↺ Produits</button>
+          <button class="btn" id="dz-reset" onclick="resetDisplayZone()" style="display:none" title="Remettre un rectangle droit, en gardant la taille et la position actuelles">⬛ Redresser</button>
           <button class="btn btn-danger" id="dz-del" onclick="deleteDisplayZone()" style="display:none">🗑 Supprimer la zone</button>
           <button class="btn btn-primary" id="dz-save" onclick="saveDisplayZone()" disabled>💾 Enregistrer la zone</button>
         </div>
@@ -673,8 +674,9 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
                  l'étirement non uniforme du viewBox. -->
             <svg id="dz-poly" viewBox="0 0 100 100" preserveAspectRatio="none"
                  style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible">
-              <polygon points="" fill="rgba(245,158,11,.18)" stroke="var(--amber)" stroke-width="2"
-                       stroke-dasharray="3 2" vector-effect="non-scaling-stroke"></polygon>
+              <polygon id="dz-zone" points="" fill="rgba(245,158,11,.18)" stroke="var(--amber)" stroke-width="2"
+                       stroke-dasharray="3 2" vector-effect="non-scaling-stroke"
+                       style="pointer-events:auto;cursor:move;touch-action:none"></polygon>
             </svg>
           </div>
           <div class="no-img-msg" id="dz-vide">
@@ -3642,6 +3644,7 @@ async function selectDisplayZoneProduct(productId, depuisListe) {
   const badge = document.getElementById('dz-badge');
   document.getElementById('dz-save').disabled = true;
   document.getElementById('dz-del').style.display = 'none';
+  document.getElementById('dz-reset').style.display = 'none';
 
   if (depuisListe) document.getElementById('dz-product').value = productId;
 
@@ -3722,6 +3725,12 @@ function _dzPoserPoignees() {
     h.addEventListener('pointerdown', _dzDebutGlisse);
     stage.appendChild(h);
   });
+  const zone = document.getElementById('dz-zone');
+  if (zone && !zone.__dzLie) {
+    zone.addEventListener('pointerdown', _dzDebutDeplacement);
+    zone.__dzLie = true;
+  }
+  document.getElementById('dz-reset').style.display = '';
   _dzMajPolygone();
 }
 
@@ -3751,6 +3760,76 @@ function _dzDebutGlisse(e) {
   poignee.addEventListener('pointermove', bouger);
   poignee.addEventListener('pointerup', finir);
   poignee.addEventListener('pointercancel', finir);
+}
+
+/**
+ * Glisser l'intérieur de la zone la déplace d'un bloc.
+ *
+ * Sans ça, la seule prise sur la zone est ses quatre poignées : la bouger
+ * oblige à les déplacer une par une, ce qui la déforme à chaque fois. C'est
+ * exactement ce qu'Alan a rencontré en calibrant son premier produit.
+ */
+function _dzDebutDeplacement(e) {
+  e.preventDefault();
+  const img = document.getElementById('dz-img');
+  const r0  = img.getBoundingClientRect();
+  if (!r0.width || !r0.height) return;
+
+  const depart = _dzCorners.map(c => ({ ...c }));
+  const xDepart = e.clientX, yDepart = e.clientY;
+  const zone = e.currentTarget;
+  zone.setPointerCapture(e.pointerId);
+
+  const bouger = (ev) => {
+    const dx = ((ev.clientX - xDepart) / r0.width)  * 100;
+    const dy = ((ev.clientY - yDepart) / r0.height) * 100;
+    // On décale le quadrilatère entier, en le retenant au bord pour qu'il ne
+    // sorte jamais complètement de l'image.
+    const minX = Math.min(...depart.map(c => c.x)), maxX = Math.max(...depart.map(c => c.x));
+    const minY = Math.min(...depart.map(c => c.y)), maxY = Math.max(...depart.map(c => c.y));
+    const dxLim = Math.max(-10 - minX, Math.min(110 - maxX, dx));
+    const dyLim = Math.max(-10 - minY, Math.min(110 - maxY, dy));
+    _dzCorners = depart.map(c => ({
+      x: Math.round((c.x + dxLim) * 100) / 100,
+      y: Math.round((c.y + dyLim) * 100) / 100,
+    }));
+    _dzPositionnerPoignees();
+    _dzMajPolygone();
+  };
+  const finir = () => {
+    zone.removeEventListener('pointermove', bouger);
+    zone.removeEventListener('pointerup', finir);
+    zone.removeEventListener('pointercancel', finir);
+  };
+  zone.addEventListener('pointermove', bouger);
+  zone.addEventListener('pointerup', finir);
+  zone.addEventListener('pointercancel', finir);
+}
+
+/** Repositionne les poignées existantes sans les recréer. */
+function _dzPositionnerPoignees() {
+  document.querySelectorAll('#dz-stage .dz-handle').forEach(h => {
+    const c = _dzCorners[Number(h.dataset.i)];
+    if (!c) return;
+    h.style.left = c.x + '%';
+    h.style.top  = c.y + '%';
+  });
+}
+
+/**
+ * Redresse la zone en rectangle, à l'intérieur de son encombrement actuel.
+ * Utile après l'avoir déformée par mégarde, ou pour repartir d'une base
+ * droite sur un produit photographié de face.
+ */
+function resetDisplayZone() {
+  if (!_dzCorners) return;
+  const xs = _dzCorners.map(c => c.x), ys = _dzCorners.map(c => c.y);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const y0 = Math.min(...ys), y1 = Math.max(...ys);
+  _dzCorners = [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
+  _dzPositionnerPoignees();
+  _dzMajPolygone();
+  showToast('⬛ Zone redressée — pensez à enregistrer');
 }
 
 function _dzMajPolygone() {

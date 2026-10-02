@@ -52,8 +52,8 @@ le studio pour personnaliser s'il le souhaite.
 | B | `GET` public « quels visuels pour ce produit » : règle de compatibilité par la zone, exclusions, cache | 0,5 j | **fait** |
 | C | Block de thème « Sélecteur de design » : grille, catégories, recherche, `?design=`, mobile | 2–3 j | **fait** |
 | D | Aperçu : vignettes en superposition, grand visuel via le pipeline sharp, cache | 1 j | **fait** |
-| H | **Rendu sur la photo produit** : zone à 4 coins par produit vierge, admin de calibration, composition sur l'image commerciale | 2–3 j | **en cours** |
-| E | Panier sans passer par le studio : propriété de ligne, référence de prix par produit, fichier d'impression à la commande | 1,5–2 j | à faire |
+| H | **Rendu sur la photo produit** : zone à 4 coins par produit vierge, admin de calibration, composition sur l'image commerciale | 2–3 j | **fait** |
+| E | Panier sans passer par le studio : propriété de ligne, référence de prix par produit, fichier d'impression à la commande | 1,5–2 j | **suivant** |
 | F | Ouverture du studio avec le visuel déjà placé (`?product_id=…&visual=…`) | 0,5 j | **fait** |
 | G | Tests, recette, passage dev puis prod | 1 j | à faire |
 
@@ -455,6 +455,32 @@ photo : projection correcte, trapèze visiblement incliné, transparence du PNG
 conservée. **Le jugement esthétique du report d'ombres demande une photo
 portée réelle** — impossible depuis ici, le store de dev est protégé par mot
 de passe. À regarder avec Alan sur son premier produit calibré.
+
+### 2026-10-02 — Lot H validé en production sur dev
+
+Alan a calibré le t-shirt femme et le sac Kimood : **le rendu fonctionne sur
+les deux**, y compris sur le coloris « Washed Green Clay » du sac, qui n'est
+pas celui ayant servi à la calibration. La question « faut-il une zone par
+variante de couleur » est donc tranchée par les faits : non. Les photos de
+coloris Toptex sont la même prise de vue recolorée, donc mêmes dimensions,
+donc même quadrilatère — le contrôle de dimensions les accepte et le
+MutationObserver recompose à chaque changement de pastille.
+
+Une zone par image ne deviendrait nécessaire que pour un produit dont les
+photos ont des **cadrages différents** (vue de dos, plan serré). Dans ce cas
+le contrôle de dimensions les rejette et aucun design ne s'affiche sur ces
+vues-là — comportement voulu, mieux vaut rien qu'un design sur une manche.
+La table est déjà prête pour cette évolution : `reference_media_id` est
+stocké, il suffirait d'élargir la contrainte d'unicité.
+
+**Défaut de manipulation corrigé.** La zone n'avait que ses quatre poignées
+comme prise : la déplacer obligeait à les bouger une par une, donc à la
+déformer à chaque fois. Glisser l'intérieur du quadrilatère le déplace
+désormais d'un bloc, et un bouton « Redresser » rétablit un rectangle droit
+dans l'encombrement courant.
+
+Vérifié : les quatre coins se décalent du même vecteur au pixel près, et le
+redressement produit un rectangle exact dont les poignées suivent.
 
 ## Contraintes permanentes d'Alan
 
