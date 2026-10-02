@@ -232,6 +232,23 @@ function initDB() {
     )
   `);
 
+  // ── Table: upsell_candidates (suggestions "vous aimeriez aussi" curées par shop) ──
+  // Spec Upsell V2 étape 1 (docs/ROADMAP-DEV.md §2) : pas d'algorithme automatique,
+  // l'admin associe à la main 2-4 produits cibles déjà liés à un mockup pour un
+  // produit source donné. Backend-only à ce stade, aucun écran admin ni impact client.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS upsell_candidates (
+      id                         INTEGER PRIMARY KEY AUTOINCREMENT,
+      shop_id                    INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+      source_shopify_product_id  TEXT NOT NULL,
+      target_shopify_product_id  TEXT NOT NULL,
+      sort_order                 INTEGER NOT NULL DEFAULT 0,
+      created_at                 TEXT DEFAULT (datetime('now')),
+      UNIQUE(shop_id, source_shopify_product_id, target_shopify_product_id)
+    )
+  `);
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_upsell_candidates_source ON upsell_candidates(shop_id, source_shopify_product_id)"); } catch {}
+
   // ── Table: ai_styles (styles visuels appliqués aux photos clients via OpenAI) ──
   // Scopée par shop. Les styles "built-in" sont créés au démarrage pour chaque
   // shop existant ; l'admin peut ajouter ses propres styles custom.

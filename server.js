@@ -538,6 +538,7 @@ app.use('/api/mockups',    express.json({ limit: '25mb' }), require('./routes/mo
 app.use('/api/mockup-gen', express.json({ limit: '10mb' }), require('./routes/mockup-gen'));
 app.use('/api/product-categories', require('./routes/product-categories'));
 app.use('/api/product-links',      require('./routes/product-links'));
+app.use('/api/upsell-candidates',  require('./routes/upsell-candidates'));
 app.use('/api/email',              require('./routes/email'));
 app.use('/api/shopify',    require('./routes/storefront'));
 // Audit M4 — override 10 Mo : /api/ai/transform (photo → style IA) et

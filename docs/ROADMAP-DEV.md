@@ -4,7 +4,7 @@
 > Portée : uniquement l'app TSL Shopify (Node/Express/SQLite/Fabric.js, Railway). Pas TSL 2.0, pas Shakass.com, pas Shakabot.
 > Règle du dépôt : tout se fait sur `dev`, rien ne part sur `main` sans validation explicite d'Alan.
 
-_Dernière mise à jour : 2026-10-01 (Routine « Corrections », 18h)_
+_Dernière mise à jour : 2026-10-02 (Routine « Option du jour », 5h)_
 
 ---
 
@@ -24,6 +24,7 @@ Fonctionnalités en place au 2026-09-29 (branche `dev`) :
 - **Mobile (29-30/09)** : corrections du studio sur mobile — le vêtement occupe toute la largeur du cadre, fin du double zoom, header compact, échec de génération IA affiché clairement, bouton IA visiblement en cours. Répond en partie au backlog P1 item 4 (passage studio → panier sur mobile), à considérer comme un point de départ plutôt qu'un audit tactile complet.
 - **Bandeau de réassurance studio (01/10)** : ligne « Paiement sécurisé via Shopify · Fabriqué à la demande · Contactez-nous » au-dessus du bouton panier, flag `reassurance_banner_enabled` (défaut activé, toggle Admin → Paramètres). Répond au backlog P1 item 2.
 - **Barre de prix sticky mobile (01/10)** : sur mobile `.stat-pill` (prix du topbar) est masqué en CSS et aucun total n'était visible pendant la personnalisation hors ouverture d'un drawer. Ajout d'une barre fixe en bas d'écran (au-dessus de la bottom-nav), synchronisée en live via `updatePrice()`, flag `mobile_price_bar_enabled` (pattern `readBoolSetting`/`setSetting`, **défaut désactivé** — changement de mise en page mobile, à valider sur un vrai téléphone avant activation), toggle Admin → Paramètres → Studio. Répond au backlog P1 item 3. **Vérifié ce jour (Routine Corrections, 01/10 18h) côté backend uniquement** : serveur démarré en local avec une boutique de test, flux complet confirmé par requêtes HTTP réelles — login admin → `GET /api/shop-settings/style` (défaut `false`) → `POST` toggle `true` → `GET /api/shop-settings/style/public?shop=...` reflète bien `true` → toggle `false` (retour à l'état initial). Le HTML du studio sert bien les éléments `#mobile-price-bar` et la lecture de `cfg.mobile_price_bar_enabled` dans `init()`. **Toujours non vérifié visuellement sur un vrai mobile/WinShirt** (rendu CSS sticky, chevauchement bottom-nav) — cet environnement n'a pas de navigateur mobile ni de session Shopify réelle ; à confirmer par Alan avant activation.
+- **Upsell V2 étape 1 — table + CRUD `upsell_candidates` (02/10)** : nouvelle table `upsell_candidates` (`db/database.js`, scopée `shop_id`, contrainte `UNIQUE(shop_id, source_shopify_product_id, target_shopify_product_id)`, index sur `(shop_id, source)`), logique CRUD pure dans `utils/upsell-candidates.js` (testable sans charger `routes/auth.js`), routée par `routes/upsell-candidates.js` (`GET ?source=`, `GET` groupé, `POST` upsert avec rejet `source === target`, `DELETE /:id` scopé shop), montée dans `server.js` juste après `/api/product-links`. Backend-only, pas d'écran admin ni de flag — zéro impact sur le studio client. Étape 1 du découpage Upsell V2 (§2bis) ; étapes suivantes (rendu headless, modal, branchement réel) restent à faire.
 
 Documents de contexte existants (à ne pas dupliquer) : `LIAISON_CLAUDE_CODEX.md` (journal de push partagé Claude/Codex — **daté du 2026-06-24, à remettre à jour**), `CDC_TEXTILELAB.md`, `AUDIT_TSL_2026-06-15.md`, `PROPOSITION_TARIFICATION.md`.
 
@@ -59,38 +60,11 @@ Constat d'Alan après test réel sur spreadshirt.fr/personnaliser-soi-meme : TSL
 
 ---
 
-### ⭐ Option recommandée pour demain matin (02/10, Routine « Option du jour »)
+### ⭐ Option recommandée pour la prochaine routine (après le 02/10)
 
-**Upsell V2 — Étape 1 : migration DB + endpoint admin CRUD `upsell_candidates`** (reprend l'étape 1 du découpage §2bis ci-dessous, détaillée ici pour être codée sans nouvelle décision à prendre).
+**Upsell V2 — Étape 2 : extraction de la fonction de rendu headless** (§2bis point 3 ci-dessous).
 
-Pourquoi celle-ci plutôt qu'une autre : c'est le seul item P1 à la fois **validé par Alan sans condition** (« on attaque directement une vraie V2 », 2026-09-29) et **sans risque pour le studio existant** — uniquement une nouvelle table + un écran/endpoint admin, zéro impact sur le flux client tant que l'étape 3 (modal) n'est pas branchée. Alternative si cette étape est jugée trop courte pour une journée : enchaîner avec le début de l'étape 2 (extraction de la fonction de rendu headless, §2bis point 3) — mais ne pas commencer l'étape 2 sans l'étape 1 déjà testée.
-
-**1. Table (dans `db/database.js`, à côté de la définition de `product_mockup_links` ~l.225, même fichier — ce projet ne versionne pas chaque table dans `db/migrations/`, seul le backfill multi-tenant l'est) :**
-```sql
-CREATE TABLE IF NOT EXISTS upsell_candidates (
-  id                         INTEGER PRIMARY KEY AUTOINCREMENT,
-  shop_id                    INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-  source_shopify_product_id  TEXT NOT NULL,
-  target_shopify_product_id  TEXT NOT NULL,
-  sort_order                 INTEGER NOT NULL DEFAULT 0,
-  created_at                 TEXT DEFAULT (datetime('now')),
-  UNIQUE(shop_id, source_shopify_product_id, target_shopify_product_id)
-)
-```
-Index utile : `CREATE INDEX IF NOT EXISTS idx_upsell_candidates_source ON upsell_candidates(shop_id, source_shopify_product_id)` (c'est la requête de lecture la plus fréquente : « quels produits suggérer pour ce produit source »).
-
-**2. Nouveau fichier `routes/upsell-candidates.js`**, calqué exactement sur `routes/product-links.js` (même squelette `requireAuth` + `attachShopId`, même style de requêtes préparées scopées `shop_id`) :
-- `GET /api/upsell-candidates?source=<shopify_product_id>` → liste les candidats pour ce produit source, triés par `sort_order`, avec jointure sur `product_mockup_links` pour remonter `shopify_product_title`/`shopify_product_handle` du produit cible (même logique de JOIN que `product-links.js`).
-- `GET /api/upsell-candidates` (sans `source`) → liste tout, groupé par `source_shopify_product_id`, pour l'écran admin « vue d'ensemble ».
-- `POST /api/upsell-candidates` body `{ source_shopify_product_id, target_shopify_product_id, sort_order? }` → upsert (INSERT OR REPLACE ou gestion du conflit `UNIQUE`), rejette si `source === target` (400).
-- `DELETE /api/upsell-candidates/:id` → supprime, scopé `shop_id` (vérifier `shop_id = ?` dans le WHERE, pas seulement l'`id`, sinon un marchand pourrait supprimer les lignes d'un autre shop par id deviné).
-- Monter dans `server.js` juste après la ligne `app.use('/api/product-links', ...)` (~l.540) : `app.use('/api/upsell-candidates', require('./routes/upsell-candidates'));`.
-
-**3. Pas d'écran admin ni de flag à ce stade** (l'écran « Produits suggérés » est l'étape 2 du §2bis, à faire ensuite) — cette étape est backend-only, donc aucun risque pour le studio en prod même déployée directement sur `dev`.
-
-**4. Tests (`tests/upsell-candidates.test.js`, même structure que `tests/reassurance-banner.test.js`/`tests/mobile-price-bar.test.js`)** : cas à couvrir — création réussie, rejet si `source === target`, scoping strict par `shop_id` (un shop A ne doit jamais voir/supprimer les candidats du shop B), contrainte `UNIQUE` respectée (un re-POST du même couple source/target modifie `sort_order` au lieu de dupliquer la ligne), tri par `sort_order`.
-
-**5. Vérification avant de pousser** : comme pour cette routine aujourd'hui — démarrer le serveur localement avec un shop de test (`INSERT` manuel dans `shops`, `SHOPIFY_BOOTSTRAP_SHOP` dans `.env`), et confirmer par `curl` le cycle `POST` → `GET` → `DELETE`, pas seulement `npm test`.
+L'étape 1 (migration DB + endpoint CRUD `upsell_candidates`) est livrée (voir §1, 02/10) — c'est maintenant le morceau le plus délicat du découpage : extraire de `textilelab-studio.html` la logique « placer ces objets Fabric sur ce mockup, à cette échelle, zone X/Y » en une fonction autonome, appelable pour générer une vignette d'un mockup B avec le design de la session courante, **sans ouvrir l'éditeur complet**. Le studio n'a aujourd'hui aucune notion de "generate a preview for a mockup I haven't opened" — à spécifier précisément avant de coder (entrée : design(s) + mockup cible + zone d'impression cible ; sortie : un PNG ou un canvas). Valider isolément (générer une vignette d'un design existant sur un 2ᵉ mockup, sans UI upsell) avant de construire le modal autour (étape 3). Si cette extraction s'avère trop risquée pour une seule session (gros refactor d'un fichier HTML de 500+ Ko), ne pas forcer — documenter le blocage précisément ici plutôt que de livrer un découpage à moitié fait.
 
 ---
 
