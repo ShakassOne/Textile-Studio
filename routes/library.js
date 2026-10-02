@@ -7,6 +7,7 @@ const fs      = require('fs');
 const { requireAuth } = require('./auth');
 const { getDB } = require('../db/database');
 const { attachShopId } = require('./_shop-context');
+const DL = require('../utils/design-library');
 
 const DEFAULT_CATEGORIES = ['logos', 'illustrations', 'patterns', 'textes', 'divers', 'Dall-E'];
 
@@ -92,14 +93,52 @@ router.delete('/categories/:name', requireAuth, attachShopId, (req, res) => {
 });
 
 // GET /api/library — exclut les cat_placeholder côté serveur (scopé shop)
+// GET /api/library — visuels du shop.
+//   ?category=…  filtre sur une catégorie
+//   ?all=1       inclut les visuels désactivés (back-office uniquement)
+//
+// Par DÉFAUT les visuels désactivés sont masqués : cette route alimente aussi
+// le studio côté client, et « désactivé » doit y signifier « plus proposé à la
+// vente » sans qu'il faille supprimer le fichier.
+//
+// Tri : sort_order croissant d'abord (l'admin met ses meilleurs visuels en
+// tête), puis le plus récent — ce qui préserve l'ordre historique tant que
+// personne n'a réordonné quoi que ce soit (sort_order vaut 0 partout).
 router.get('/', attachShopId, (req, res) => {
   const db = getDB();
   const { category, limit = 200 } = req.query;
-  const rows = category
-    ? db.prepare("SELECT * FROM library WHERE shop_id=? AND category=? AND filename NOT LIKE '__cat_placeholder_%' ORDER BY created_at DESC LIMIT ?").all(req.shopId, category, Number(limit))
-    : db.prepare("SELECT * FROM library WHERE shop_id=? AND filename NOT LIKE '__cat_placeholder_%' ORDER BY created_at DESC LIMIT ?").all(req.shopId, Number(limit));
-  res.json(rows);
+  const tous = String(req.query.all || '') === '1';
+
+  const where = ["shop_id=?", "filename NOT LIKE '__cat_placeholder_%'"];
+  const args  = [req.shopId];
+  if (category) { where.push('category=?'); args.push(category); }
+  if (!tous)    { where.push('is_active=1'); }
+  args.push(Number(limit));
+
+  const rows = db.prepare(
+    `SELECT * FROM library WHERE ${where.join(' AND ')}
+     ORDER BY sort_order ASC, created_at DESC LIMIT ?`
+  ).all(...args);
+
+  res.json(rows.map(_exposeRow));
 });
+
+/** Ligne SQL → objet d'API : les colonnes JSON sortent en tableaux. */
+function _exposeRow(row) {
+  return {
+    ...row,
+    is_active: row.is_active == null ? 1 : Number(row.is_active),
+    tags: DL.parseJsonArray(row.tags),
+    excluded_mockups: DL.parseJsonArray(row.excluded_mockups),
+  };
+}
+
+/** Slugs déjà utilisés dans cette boutique (pour garantir l'unicité). */
+function _slugsPris(db, shopId) {
+  return new Set(
+    db.prepare("SELECT slug FROM library WHERE shop_id=? AND slug <> ''").all(shopId).map(r => r.slug)
+  );
+}
 
 // POST /api/library — upload (admin + shop scopé)
 const handleUpload = upload.single('file');
@@ -128,12 +167,18 @@ function processUpload(req, res) {
     // S'assurer que la catégorie est enregistrée dans la table categories (scopée shop)
     try { db.prepare('INSERT OR IGNORE INTO categories (shop_id, name) VALUES (?, ?)').run(req.shopId, cat); } catch {}
 
+    // Le nom stocké par multer est horodaté ; c'est le nom d'origine choisi
+    // par l'admin qui fait un libellé lisible côté boutique.
+    const nom  = DL.displayNameFromFilename(req.file.originalname) || 'Nouveau visuel';
+    const slug = DL.uniqueSlug(nom, _slugsPris(db, req.shopId));
+
     const info = db.prepare(
-      'INSERT INTO library (shop_id, filename, url, thumb_url, category, mimetype, size) VALUES (?,?,?,?,?,?,?)'
-    ).run(req.shopId, req.file.filename, url, thumbUrl, cat, req.file.mimetype, req.file.size);
+      `INSERT INTO library (shop_id, filename, url, thumb_url, category, mimetype, size, slug, display_name)
+       VALUES (?,?,?,?,?,?,?,?,?)`
+    ).run(req.shopId, req.file.filename, url, thumbUrl, cat, req.file.mimetype, req.file.size, slug, nom);
 
     res.status(201).json({
-      ...db.prepare('SELECT * FROM library WHERE id=?').get(info.lastInsertRowid),
+      ..._exposeRow(db.prepare('SELECT * FROM library WHERE id=?').get(info.lastInsertRowid)),
       original_name: req.file.originalname,
     });
   } catch(e) {
@@ -162,15 +207,21 @@ router.post('/external', requireAuth, attachShopId, (req, res) => {
     // Idempotence : une même URL Shopify ne doit pas créer de doublon si
     // l'admin la resélectionne dans la grille.
     const existing = db.prepare('SELECT * FROM library WHERE shop_id=? AND url=?').get(req.shopId, url);
-    if (existing) return res.status(200).json({ ...existing, duplicate: true });
+    if (existing) return res.status(200).json({ ..._exposeRow(existing), duplicate: true });
 
     try { db.prepare('INSERT OR IGNORE INTO categories (shop_id, name) VALUES (?, ?)').run(req.shopId, cat); } catch {}
 
-    const info = db.prepare(
-      'INSERT INTO library (shop_id, filename, url, thumb_url, category, mimetype, size) VALUES (?,?,?,?,?,?,?)'
-    ).run(req.shopId, filename, url, thumbUrl, cat, mimetype, size);
+    const nom  = String(req.body?.display_name || '').trim()
+              || DL.displayNameFromFilename(filename)
+              || 'Nouveau visuel';
+    const slug = DL.uniqueSlug(nom, _slugsPris(db, req.shopId));
 
-    res.status(201).json(db.prepare('SELECT * FROM library WHERE id=?').get(info.lastInsertRowid));
+    const info = db.prepare(
+      `INSERT INTO library (shop_id, filename, url, thumb_url, category, mimetype, size, slug, display_name)
+       VALUES (?,?,?,?,?,?,?,?,?)`
+    ).run(req.shopId, filename, url, thumbUrl, cat, mimetype, size, slug, nom);
+
+    res.status(201).json(_exposeRow(db.prepare('SELECT * FROM library WHERE id=?').get(info.lastInsertRowid)));
   } catch (e) {
     console.error('library/external error:', e.message);
     res.status(500).json({ error: e.message });
@@ -181,13 +232,79 @@ router.post('/',       requireAuth, attachShopId, (req, res) => handleUpload(req
 router.post('/upload', requireAuth, attachShopId, (req, res) => handleUpload(req, res, err => { if(err) return res.status(400).json({error:err.message}); processUpload(req, res); }));
 
 // PATCH /api/library/:id (admin, scopé shop)
+// Champs acceptés : category, display_name, sort_order, is_active, tags,
+// excluded_mockups. Tout champ absent du corps reste inchangé.
+//
+// Le `slug` n'est JAMAIS modifiable directement : il sert d'adresse publique
+// (?design=money-control) et le casser casserait les liens partagés. Seule
+// exception, un slug encore provisoire (cf. isPlaceholderSlug) se recalcule au
+// premier vrai renommage — à ce stade il n'a pu être partagé par personne.
 router.patch('/:id', requireAuth, attachShopId, (req, res) => {
   const db  = getDB();
   const row = db.prepare('SELECT * FROM library WHERE id=? AND shop_id=?').get(req.params.id, req.shopId);
   if (!row) return res.status(404).json({ error: 'Not found' });
-  const cat = (req.body.category || '').trim() || row.category;
-  db.prepare('UPDATE library SET category=? WHERE id=? AND shop_id=?').run(cat, req.params.id, req.shopId);
-  res.json({ ...row, category: cat });
+
+  const b = req.body || {};
+  const maj = {};
+
+  if (typeof b.category === 'string' && b.category.trim()) {
+    maj.category = b.category.trim();
+    try { db.prepare('INSERT OR IGNORE INTO categories (shop_id, name) VALUES (?, ?)').run(req.shopId, maj.category); } catch {}
+  }
+  if (typeof b.display_name === 'string') {
+    const nom = b.display_name.trim();
+    if (!nom) return res.status(400).json({ error: 'Le nom affiché ne peut pas être vide' });
+    maj.display_name = nom.slice(0, 120);
+    if (!row.slug || DL.isPlaceholderSlug(row.slug)) {
+      const pris = _slugsPris(db, req.shopId);
+      pris.delete(row.slug);
+      maj.slug = DL.uniqueSlug(maj.display_name, pris, `visuel-${row.id}`);
+    }
+  }
+  if (b.sort_order !== undefined) {
+    const n = Number.parseInt(b.sort_order, 10);
+    if (!Number.isInteger(n)) return res.status(400).json({ error: 'sort_order invalide' });
+    maj.sort_order = n;
+  }
+  if (b.is_active !== undefined) {
+    maj.is_active = (b.is_active === true || b.is_active === 1 || b.is_active === '1') ? 1 : 0;
+  }
+  if (b.tags !== undefined) {
+    maj.tags = JSON.stringify(DL.normalizeTags(b.tags));
+  }
+  if (b.excluded_mockups !== undefined) {
+    maj.excluded_mockups = JSON.stringify(DL.normalizeExclusions(b.excluded_mockups));
+  }
+
+  const champs = Object.keys(maj);
+  if (!champs.length) return res.json(_exposeRow(row));
+
+  db.prepare(`UPDATE library SET ${champs.map(c => `${c}=?`).join(', ')} WHERE id=? AND shop_id=?`)
+    .run(...champs.map(c => maj[c]), req.params.id, req.shopId);
+
+  res.json(_exposeRow(db.prepare('SELECT * FROM library WHERE id=? AND shop_id=?').get(req.params.id, req.shopId)));
+});
+
+// POST /api/library/reorder — ordre d'affichage en une seule requête (admin).
+// Corps : { ids: [12, 7, 30, …] } — la position dans le tableau devient
+// sort_order. Les visuels absents du tableau ne sont pas touchés.
+router.post('/reorder', requireAuth, attachShopId, (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : null;
+  if (!ids) return res.status(400).json({ error: 'ids (tableau) requis' });
+  if (ids.length > 2000) return res.status(400).json({ error: 'Trop d\'éléments' });
+
+  const db  = getDB();
+  const maj = db.prepare('UPDATE library SET sort_order=? WHERE id=? AND shop_id=?');
+  let n = 0;
+  const tout = db.transaction(() => {
+    ids.forEach((raw, i) => {
+      const id = Number.parseInt(raw, 10);
+      if (!Number.isInteger(id)) return;
+      n += maj.run(i, id, req.shopId).changes;
+    });
+  });
+  tout();
+  res.json({ reordered: n });
 });
 
 // DELETE /api/library/:id (admin, scopé shop)

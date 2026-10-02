@@ -125,6 +125,19 @@ tr:hover td{background:var(--glass)}
 .lib-item-del{position:absolute;top:4px;right:4px;background:rgba(0,0,0,.7);border:none;border-radius:6px;color:var(--danger);width:22px;height:22px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;opacity:0;transition:.15s;z-index:2}
 .lib-item:hover .lib-item-del{opacity:1}
 .lib-cat-label{font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;position:absolute;bottom:4px;left:6px;pointer-events:none}
+.lib-item{display:flex;flex-direction:column}
+.lib-item .lib-thumb{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.lib-item img{width:100%;height:100%;object-fit:contain;padding:4px}
+.lib-foot{padding:3px 6px 5px;background:var(--bg2);border-top:1px solid var(--border);pointer-events:none}
+.lib-name{font-size:10.5px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3}
+.lib-sub{font-size:9px;color:var(--text3);font-family:'DM Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lib-item.off{opacity:.5;border-style:dashed}
+.lib-badge-off{position:absolute;top:4px;right:30px;background:rgba(0,0,0,.78);border:1px solid var(--border);border-radius:5px;color:var(--text2);font-size:9px;font-family:'DM Mono',monospace;letter-spacing:.5px;padding:2px 5px;z-index:2;pointer-events:none}
+.lib-drag{position:absolute;top:4px;left:4px;background:rgba(0,0,0,.7);border-radius:6px;color:var(--text2);width:22px;height:22px;cursor:grab;font-size:12px;display:flex;align-items:center;justify-content:center;opacity:0;transition:.15s;z-index:3;user-select:none}
+.lib-item:hover .lib-drag{opacity:1}
+.lib-item.dragging{opacity:.35}
+.lib-item.drop-before{border-left:3px solid var(--amber)}
+.lib-item.drop-after{border-right:3px solid var(--amber)}
 .lib-sel-toolbar{display:none;align-items:center;gap:10px;padding:10px 14px;background:var(--amber-dim);border:1px solid rgba(245,158,11,.4);border-radius:12px;margin-bottom:12px}
 .lib-sel-toolbar.visible{display:flex}
 .upload-zone{border:2px dashed var(--border);border-radius:14px;padding:30px;text-align:center;cursor:pointer;transition:all .2s}
@@ -1642,11 +1655,15 @@ async function loadLibrary() {
   let data = null, cats = [];
   try {
     [data, cats] = await Promise.all([
-      api('/api/library'),
+      api('/api/library?all=1'),
       api('/api/library/categories').catch(() => []),
     ]);
   } catch(e) {
-    data = await api('/api/library').catch(() => []);
+    data = await api('/api/library?all=1').catch(() => []);
+  }
+  // Les exclusions se posent par mockup : il faut leur liste dans la modale.
+  if (!Array.isArray(MOCKUPS) || !MOCKUPS.length) {
+    try { MOCKUPS = await api('/api/mockups') || []; } catch { MOCKUPS = MOCKUPS || []; }
   }
   _libItems = Array.isArray(data) ? data : (data?.items || []);
   _libCats  = Array.isArray(cats) ? cats : [];
@@ -1674,6 +1691,93 @@ function filterLib(cat) {
   renderLibGrid();
 }
 
+/** Échappement HTML minimal pour les valeurs injectées dans la grille. */
+function _esc(v) {
+  return String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/** Libellé affiché d'un visuel : son nom commercial, à défaut son fichier. */
+function _libLabel(i) {
+  return (i.display_name || '').trim() || i.filename || `Visuel ${i.id}`;
+}
+
+// ── Réordonnancement par glisser-déposer ──────────────────────────────────
+// Le glissement ne part QUE de la poignée ⠿ : sans ça, le clic de sélection
+// multiple de la grille deviendrait un début de drag à chaque fois.
+//
+// L'ordre est global alors que la grille peut être filtrée par catégorie. On
+// déplace donc l'élément dans _libItems (la liste complète, déjà triée comme
+// l'API la renvoie) et on renvoie la liste entière au serveur : les positions
+// restent cohérentes avec les visuels non affichés.
+let _libDragId = null;
+
+function _bindLibDragReorder(grid) {
+  grid.querySelectorAll('.lib-drag').forEach(poignee => {
+    const carte = poignee.closest('.lib-item');
+    poignee.addEventListener('mousedown', () => { carte.draggable = true; });
+    poignee.addEventListener('mouseup',   () => { carte.draggable = false; });
+  });
+
+  grid.addEventListener('dragstart', e => {
+    const carte = e.target.closest('.lib-item');
+    if (!carte || !carte.draggable) return;
+    _libDragId = parseInt(carte.dataset.id, 10);
+    carte.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', String(_libDragId)); } catch {}
+  });
+
+  grid.addEventListener('dragover', e => {
+    if (_libDragId == null) return;
+    const carte = e.target.closest('.lib-item');
+    if (!carte || parseInt(carte.dataset.id, 10) === _libDragId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const r = carte.getBoundingClientRect();
+    const avant = (e.clientX - r.left) < r.width / 2;
+    grid.querySelectorAll('.drop-before,.drop-after').forEach(el => el.classList.remove('drop-before', 'drop-after'));
+    carte.classList.add(avant ? 'drop-before' : 'drop-after');
+  });
+
+  grid.addEventListener('drop', e => {
+    if (_libDragId == null) return;
+    const carte = e.target.closest('.lib-item');
+    if (!carte) return;
+    e.preventDefault();
+    const cibleId = parseInt(carte.dataset.id, 10);
+    const avant   = carte.classList.contains('drop-before');
+    _libApplyReorder(_libDragId, cibleId, avant);
+  });
+
+  grid.addEventListener('dragend', () => {
+    _libDragId = null;
+    grid.querySelectorAll('.dragging,.drop-before,.drop-after')
+        .forEach(el => el.classList.remove('dragging', 'drop-before', 'drop-after'));
+    grid.querySelectorAll('.lib-item').forEach(el => { el.draggable = false; });
+  });
+}
+
+async function _libApplyReorder(sourceId, cibleId, avant) {
+  if (sourceId === cibleId) return;
+  const iSrc = _libItems.findIndex(i => i.id === sourceId);
+  if (iSrc < 0) return;
+  const [deplace] = _libItems.splice(iSrc, 1);
+  // L'index cible se relit APRÈS le retrait, sinon il glisse d'un cran quand
+  // on déplace un élément vers la droite.
+  const iCible = _libItems.findIndex(i => i.id === cibleId);
+  if (iCible < 0) { _libItems.splice(iSrc, 0, deplace); return; }
+  _libItems.splice(avant ? iCible : iCible + 1, 0, deplace);
+
+  renderLibGrid();
+  const r = await api('/api/library/reorder', {
+    method: 'POST',
+    body: JSON.stringify({ ids: _libItems.map(i => i.id) }),
+  });
+  if (r === null) { showToast('⚠ Ordre non enregistré'); await loadLibrary(); }
+}
+
 function renderLibGrid() {
   const allVisible = _libItems.filter(i => !i.filename?.startsWith('__cat_placeholder_'));
   const items = _libCat === 'all' ? allVisible : allVisible.filter(i => i.category === _libCat);
@@ -1683,12 +1787,23 @@ function renderLibGrid() {
     _updateLibSelToolbar(0, 0);
     return;
   }
-  grid.innerHTML = items.map(i => `
-    <div class="lib-item ${_libSelected.has(i.id) ? 'selected' : ''}" data-id="${i.id}" title="${i.filename}">
-      <img src="${API_BASE}${i.url}" alt="${i.filename}" loading="lazy" onerror="this.style.display='none'">
-      <span class="lib-cat-label">${i.category}</span>
+  grid.innerHTML = items.map(i => {
+    const nom = _libLabel(i);
+    return `
+    <div class="lib-item ${_libSelected.has(i.id) ? 'selected' : ''} ${i.is_active === 0 ? 'off' : ''}"
+         data-id="${i.id}" title="${_esc(nom)} — ${_esc(i.filename)}">
+      <span class="lib-drag" title="Glisser pour réordonner">⠿</span>
+      ${i.is_active === 0 ? '<span class="lib-badge-off">MASQUÉ</span>' : ''}
       <button class="lib-item-del" title="Supprimer">✕</button>
-    </div>`).join('');
+      <div class="lib-thumb"><img src="${API_BASE}${i.url}" alt="${_esc(nom)}" loading="lazy" onerror="this.style.display='none'"></div>
+      <div class="lib-foot">
+        <div class="lib-name">${_esc(nom)}</div>
+        <div class="lib-sub">${_esc(i.category || '')}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  _bindLibDragReorder(grid);
 
   // Délégation d'événements sur la grille — un seul listener, pas d'onclick inline
   grid.onclick = e => {
@@ -2565,42 +2680,102 @@ async function createCategory() {
   filterLib(name);
 }
 
+// ── Modale d'édition d'un visuel ─────────────────────────────────────────
+// Le visuel n'est plus un simple fichier : c'est une fiche de vitrine que le
+// client final verra sur la page produit. D'où le nom commercial, l'ordre
+// d'affichage (réglé par glisser-déposer dans la grille), l'interrupteur de
+// mise en vente, et les exclusions de support.
 function openEditLibItem(id) {
   _modalOpen();
   const item = _libItems.find(i => i.id === id);
   if (!item) return;
-  const opts = _libCats.map(c => `<option value="${c}" ${c===item.category?'selected':''}>${c}</option>`).join('');
+
+  const cats = _libCats.length ? _libCats : [item.category].filter(Boolean);
+  const opts = cats.map(c => `<option value="${_esc(c)}" ${c === item.category ? 'selected' : ''}>${_esc(c)}</option>`).join('');
+
+  const exclus  = new Set((item.excluded_mockups || []).map(Number));
+  const mockups = Array.isArray(MOCKUPS) ? MOCKUPS : [];
+  const listeMockups = mockups.length
+    ? mockups.map(m => `
+        <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text2);padding:3px 0;cursor:pointer">
+          <input type="checkbox" class="edit-lib-excl" value="${m.id}" ${exclus.has(Number(m.id)) ? 'checked' : ''}>
+          <span>${_esc(m.name || ('Mockup ' + m.id))}</span>
+        </label>`).join('')
+    : '<div style="font-size:12px;color:var(--text3)">Aucun mockup enregistré.</div>';
+
   const modal = document.createElement('div');
   modal.className = 'modal-overlay open';
   modal.id = 'edit-lib-modal';
-  modal.addEventListener('click', e => { if(e.target === modal) { modal.remove(); _modalClose(); } });
+  modal.addEventListener('click', e => { if (e.target === modal) { modal.remove(); _modalClose(); } });
   modal.innerHTML = `
-    <div class="modal-box" style="width:min(380px,94vw)" onclick="event.stopPropagation()">
+    <div class="modal-box" style="width:min(460px,94vw)" onclick="event.stopPropagation()">
       <div class="modal-header"><div class="modal-title">✏ Modifier le visuel</div><button class="modal-close" onclick="document.getElementById('edit-lib-modal').remove();_modalClose()">×</button></div>
-      <div class="modal-body" style="display:flex;flex-direction:column;gap:14px;align-items:center">
-        <img src="${API_BASE}${item.url}" style="max-height:160px;max-width:100%;border-radius:10px;object-fit:contain;background:var(--bg3);padding:8px">
-        <div style="width:100%">
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:14px">
+
+        <img src="${API_BASE}${item.url}" style="max-height:150px;max-width:100%;border-radius:10px;object-fit:contain;background:var(--bg3);padding:8px;align-self:center">
+
+        <div>
+          <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">Nom affiché au client</label>
+          <input id="edit-lib-name" type="text" value="${_esc(_libLabel(item))}" maxlength="120"
+            style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:9px 12px;color:var(--text);font-size:13px;outline:none">
+        </div>
+
+        <div>
           <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">Catégorie</label>
           <select id="edit-cat-select" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:9px 12px;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;outline:none">${opts}</select>
         </div>
-        <div style="font-size:11px;color:var(--text3);align-self:flex-start">${item.filename}</div>
+
+        <div>
+          <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">Étiquettes <span style="color:var(--text3);font-weight:400">(séparées par des virgules)</span></label>
+          <input id="edit-lib-tags" type="text" value="${_esc((item.tags || []).join(', '))}" placeholder="rose, octobre, solidarité"
+            style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:9px 12px;color:var(--text);font-size:13px;outline:none">
+        </div>
+
+        <label style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text);cursor:pointer">
+          <input id="edit-lib-active" type="checkbox" ${item.is_active === 0 ? '' : 'checked'}>
+          <span>Proposé à la vente<span style="color:var(--text3);font-size:11.5px"> — décoché, le visuel reste en base mais disparaît de la boutique et du studio</span></span>
+        </label>
+
+        <details>
+          <summary style="font-size:12px;color:var(--text2);cursor:pointer">Supports exclus <span style="color:var(--text3);font-weight:400">(${exclus.size} coché·s)</span></summary>
+          <div style="margin-top:8px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;max-height:190px;overflow:auto">
+            <div style="font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.5">Par défaut le visuel est disponible sur tous les supports, et ceux dont la zone est trop petite sont écartés automatiquement. Ne cochez ici que les exceptions.</div>
+            ${listeMockups}
+          </div>
+        </details>
+
+        <div style="font-size:10.5px;color:var(--text3);font-family:'DM Mono',monospace;line-height:1.6;border-top:1px solid var(--border);padding-top:10px">
+          adresse publique : ?design=${_esc(item.slug || '—')}<br>fichier : ${_esc(item.filename)}
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-danger" onclick="deleteLibItem(${id},true)">🗑 Supprimer</button>
         <button class="btn" onclick="document.getElementById('edit-lib-modal').remove();_modalClose()">Annuler</button>
-        <button class="btn btn-primary" onclick="saveLibItemCategory(${id})">Enregistrer</button>
+        <button class="btn btn-primary" onclick="saveLibItem(${id})">Enregistrer</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
+  setTimeout(() => document.getElementById('edit-lib-name')?.focus(), 50);
 }
 
-async function saveLibItemCategory(id) {
-  const cat = document.getElementById('edit-cat-select')?.value;
-  if (!cat) return;
-  await api(`/api/library/${id}`, {method:'PATCH', body:JSON.stringify({category:cat})});
+async function saveLibItem(id) {
+  const nom = (document.getElementById('edit-lib-name')?.value || '').trim();
+  if (!nom) return showToast('⚠ Le nom affiché est obligatoire');
+
+  const corps = {
+    display_name:     nom,
+    category:         document.getElementById('edit-cat-select')?.value || undefined,
+    tags:             (document.getElementById('edit-lib-tags')?.value || '').split(','),
+    is_active:        !!document.getElementById('edit-lib-active')?.checked,
+    excluded_mockups: [...document.querySelectorAll('.edit-lib-excl:checked')].map(c => c.value),
+  };
+
+  const r = await api(`/api/library/${id}`, { method: 'PATCH', body: JSON.stringify(corps) });
+  if (r === null) return showToast('⚠ Enregistrement impossible');
+
   document.getElementById('edit-lib-modal')?.remove();
   _modalClose();
-  showToast('✅ Catégorie mise à jour');
+  showToast('✅ Visuel mis à jour');
   loadLibrary();
 }
 

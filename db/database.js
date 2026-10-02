@@ -128,6 +128,23 @@ function initDB() {
   try { db.exec("ALTER TABLE shops ADD COLUMN is_active INTEGER DEFAULT 1"); } catch {}
   try { db.exec("ALTER TABLE library ADD COLUMN thumb_url TEXT DEFAULT NULL"); } catch {}
 
+  // ── Migration library — métadonnées « vitrine » de la bibliothèque ───────
+  // La fiche produit affichera ces visuels au client final (« Choisissez un
+  // design »), ce qu'un simple nom de fichier ne permet pas. Voir
+  // utils/design-library.js pour les règles (slug figé, exclusions plutôt
+  // qu'autorisations).
+  try { db.exec("ALTER TABLE library ADD COLUMN slug TEXT DEFAULT ''"); } catch {}
+  try { db.exec("ALTER TABLE library ADD COLUMN display_name TEXT DEFAULT ''"); } catch {}
+  try { db.exec("ALTER TABLE library ADD COLUMN sort_order INTEGER DEFAULT 0"); } catch {}
+  try { db.exec("ALTER TABLE library ADD COLUMN is_active INTEGER DEFAULT 1"); } catch {}
+  try { db.exec("ALTER TABLE library ADD COLUMN tags TEXT DEFAULT '[]'"); } catch {}
+  try { db.exec("ALTER TABLE library ADD COLUMN excluded_mockups TEXT DEFAULT '[]'"); } catch {}
+  // Index non unique : l'unicité du slug est tenue côté route (uniqueSlug),
+  // car un index UNIQUE échouerait sur les bases existantes où toutes les
+  // lignes ont encore slug=''.
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_library_shop_slug ON library(shop_id, slug)"); } catch {}
+  backfillLibraryMetadata(db);
+
   // ── Table: categories (catégories de bibliothèque sans placeholder SVG) ────
   db.exec(`
     CREATE TABLE IF NOT EXISTS categories (
@@ -426,6 +443,55 @@ function getShopIdByDomain(shopDomain) {
     .prepare('SELECT id FROM shops WHERE shop_domain = ? AND is_active = 1')
     .get(String(shopDomain).toLowerCase().trim());
   return row?.id || null;
+}
+
+/**
+ * Remplit slug / display_name pour les visuels créés avant le lot « vitrine ».
+ * ──────────────────────────────────────────────────────────────────────────
+ * Idempotent : ne touche que les lignes dont le champ est encore vide, donc
+ * sans effet au deuxième démarrage, et sans jamais écraser une saisie admin.
+ *
+ * Le slug part dans l'URL publique de la boutique : il doit être unique PAR
+ * BOUTIQUE, d'où le traitement shop par shop.
+ */
+function backfillLibraryMetadata(database) {
+  const DL = require('../utils/design-library');
+  try {
+    const rows = database.prepare(`
+      SELECT id, shop_id, filename, slug, display_name
+      FROM library
+      WHERE (slug IS NULL OR slug = '') OR (display_name IS NULL OR display_name = '')
+      ORDER BY id
+    `).all();
+    if (!rows.length) return;
+
+    // Slugs déjà attribués, par boutique, pour ne pas en recréer un identique.
+    const pris = new Map();
+    for (const r of database.prepare("SELECT shop_id, slug FROM library WHERE slug <> ''").all()) {
+      const cle = String(r.shop_id);
+      if (!pris.has(cle)) pris.set(cle, new Set());
+      pris.get(cle).add(r.slug);
+    }
+
+    const maj = database.prepare('UPDATE library SET slug=?, display_name=? WHERE id=?');
+    const tout = database.transaction(() => {
+      for (const r of rows) {
+        // Un upload local porte un nom horodaté qui ne dit rien : on retombe
+        // alors sur « Visuel 42 », que l'admin renommera.
+        const nom  = r.display_name || DL.displayNameFromFilename(r.filename) || `Visuel ${r.id}`;
+        const cle  = String(r.shop_id);
+        if (!pris.has(cle)) pris.set(cle, new Set());
+        const slug = r.slug || DL.uniqueSlug(nom, pris.get(cle), `visuel-${r.id}`);
+        pris.get(cle).add(slug);
+        maj.run(slug, nom, r.id);
+      }
+    });
+    tout();
+    console.log(`[DB] Bibliothèque : ${rows.length} visuel(s) complété(s) (slug + nom affiché)`);
+  } catch (e) {
+    // Non bloquant : l'app doit démarrer même si le rattrapage échoue.
+    console.warn('[DB] backfillLibraryMetadata ignoré :', e.message);
+  }
 }
 
 function getDB() {
