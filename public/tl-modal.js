@@ -844,7 +844,10 @@
       .catch(function () { return null; }); // non connecté ou proxy indisponible
   }
 
-  function buildStudioUrl(idOrHandle) {
+  // `visual` = slug du design choisi dans le sélecteur de la fiche produit
+  // (tl-designs.js le pose en data-tsl-visual sur les boutons). Le studio
+  // l'ouvre avec ce visuel déjà posé dans la zone d'impression.
+  function buildStudioUrl(idOrHandle, visual) {
     var shop = (window.Shopify && window.Shopify.shop)
             || window._TL_SHOP
             || window.location.hostname;
@@ -856,6 +859,7 @@
         else                 params.set('product', v);
       }
     }
+    if (visual) params.set('visual', String(visual).trim());
     if (_tlCustomerToken) params.set('ct', _tlCustomerToken);
     return TSL_BACKEND_ORIGIN + '/textilelab-studio.html?' + params.toString();
   }
@@ -874,7 +878,8 @@
       // le réclame ici aussi pour couvrir le cas d'une connexion faite entre
       // temps, sans bloquer l'ouverture si le proxy ne répond pas.
       _tlFetchCustomerToken().then(function () {
-        var finalUrl = customUrl ? customUrl : buildStudioUrl(ref);
+        var visual   = String(btn.getAttribute('data-tsl-visual') || '').trim();
+        var finalUrl = customUrl ? customUrl : buildStudioUrl(ref, visual);
         var request  = _tlEditorRequest(finalUrl, btn);
         if (!request.ready) {
           _tlGoToProductPage(/^[a-z0-9][a-z0-9-]*$/.test(ref) ? ref : '');

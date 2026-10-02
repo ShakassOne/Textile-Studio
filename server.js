@@ -175,7 +175,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
       res.setHeader('Expires', '0');
     }
     // tl-modal.js chargé depuis n'importe quel domaine Shopify via <script src>
-    if (filePath.endsWith('tl-modal.js')) {
+    if (filePath.endsWith('tl-modal.js') || filePath.endsWith('tl-designs.js')) {
       res.setHeader('Access-Control-Allow-Origin', '*');
     }
   },
@@ -511,6 +511,7 @@ app.use((req, res, next) => {
     '/api/shop-settings/style/public',
     '/textilelab-studio.html',
     '/tl-modal.js',
+    '/tl-designs.js',
     '/uploads',
     '/assets',
   ];

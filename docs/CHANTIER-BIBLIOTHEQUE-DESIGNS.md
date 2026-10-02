@@ -50,10 +50,10 @@ le studio pour personnaliser s'il le souhaite.
 |-----|---------|-----------|------|
 | A | Modèle bibliothèque enrichi (slug, nom affiché, ordre, actif/inactif, tags, exclusions) + écran admin | 1 j | **fait** |
 | B | `GET` public « quels visuels pour ce produit » : règle de compatibilité par la zone, exclusions, cache | 0,5 j | **fait** |
-| C | Block de thème « Sélecteur de design » : grille, catégories, recherche, `?design=`, mobile | 2–3 j | **suivant** |
-| D | Aperçu : vignettes en superposition, grand visuel via le pipeline sharp, cache | 1 j | à faire |
+| C | Block de thème « Sélecteur de design » : grille, catégories, recherche, `?design=`, mobile | 2–3 j | **fait** |
+| D | Aperçu : vignettes en superposition, grand visuel via le pipeline sharp, cache | 1 j | **suivant** |
 | E | Panier sans passer par le studio : propriété de ligne, référence de prix par produit, fichier d'impression à la commande | 1,5–2 j | à faire |
-| F | Ouverture du studio avec le visuel déjà placé (`?product_id=…&visual=…`) | 0,5 j | à faire |
+| F | Ouverture du studio avec le visuel déjà placé (`?product_id=…&visual=…`) | 0,5 j | **fait** |
 | G | Tests, recette, passage dev puis prod | 1 j | à faire |
 
 Première version utilisable = lots A + B + C + F. Les lots D et E viennent
@@ -234,6 +234,40 @@ champ n'existe pas encore dans l'écran Mockups & Zones** : c'est le réglage
 à ajouter, et c'est la même valeur qui servira de référence de prix au lot
 E. La question posée plus haut est donc tranchée par les faits — il faut un
 champ explicite, parce que `printWidthMm` ne peut pas en tenir lieu.
+
+### 2026-10-02 — Lots F et C
+
+**Lot F — le studio s'ouvre sur le design choisi.**
+`GET /api/library/by-ref/:ref` résout un visuel par son slug ou son id, et
+refuse un visuel retiré de la vente : un lien partagé vers un design
+dépublié doit se comporter comme un lien mort. Côté studio,
+`_tlChargerVisuelDemande` pose le visuel dans la zone d'impression ;
+`_tlQuandCadrePret` attend que la zone existe (le PNG du mockup doit être
+chargé) et abandonne au bout de 8 s en posant quand même — mieux vaut un
+visuel mal centré, déplaçable, qu'un studio vide. Un produit templaté garde
+la priorité.
+
+**Lot C — le sélecteur sur la fiche produit.**
+- `public/tl-designs.js` (281 lignes, ES5, sans dépendance, comme
+  tl-modal.js) : titre, filtres par catégorie, recherche, défilement
+  horizontal ou grille, sélection, `?design=<slug>` dans l'URL, évènement
+  `tsl:design` pour que l'aperçu du lot D puisse s'y brancher sans couplage.
+- Servi par l'App Proxy avec la même réécriture d'origin que tl-modal.js,
+  exempté de la vérification d'abonnement, CORS ouvert en statique.
+- `extensions/textilelab-button/blocks/design-picker.liquid` : block de
+  section avec ses réglages (titre, disposition, filtres, recherche).
+- `tl-modal.js` transmet le design choisi au studio (`data-tsl-visual` →
+  `&visual=`).
+
+Le bloc se masque complètement si le serveur ne répond pas ou si aucun
+design ne convient : une section « Choisissez un design » vide ferait croire
+à une boutique cassée.
+
+Vérifié dans un navigateur sur une fausse fiche produit, en 430 px et en
+1100 px, thème clair et sombre — et contre le VRAI backend de dev, donc avec
+les vrais visuels WinShirt : filtre par catégorie, recherche, sélection,
+désélection au second clic, `?design=` restitué au rechargement, lien vers
+un design inexistant sans effet, aucun débordement horizontal.
 
 ## Contraintes permanentes d'Alan
 

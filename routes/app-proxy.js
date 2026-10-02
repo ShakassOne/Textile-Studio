@@ -253,6 +253,26 @@ router.get('/tl-modal.js', requireProxyHMAC, (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /proxy/tl-designs.js — sélecteur de designs de la fiche produit
+// Même logique que tl-modal.js ci-dessus : l'origin du backend en dur est
+// remplacé par celui de l'app réellement installée sur cette boutique.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/tl-designs.js', requireProxyHMAC, (req, res) => {
+  const fs     = require('fs');
+  const appUrl = (process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
+  fs.readFile(path.join(__dirname, '..', 'public', 'tl-designs.js'), 'utf8', (err, js) => {
+    if (err) return res.status(404).type('application/javascript').send('// tl-designs.js introuvable');
+    const out = appUrl
+      ? js.replace(/https:\/\/textile-studio-production\.up\.railway\.app/g, appUrl)
+      : js;
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.send(out);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /proxy/whoami — identité du client connecté, sous forme de jeton signé
 // ─────────────────────────────────────────────────────────────────────────────
 // Le studio est une iframe servie par Railway : il ne voit pas la session

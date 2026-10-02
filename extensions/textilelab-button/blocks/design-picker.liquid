@@ -1,0 +1,77 @@
+{% comment %}
+  Textile Studio Lab — Sélecteur de designs
+
+  Affiche la bibliothèque de visuels WinShirt sur la fiche produit. Le client
+  choisit un design, puis le bouton « Personnaliser » ouvre le studio avec ce
+  design déjà posé dans la zone d'impression.
+
+  C'est ce qui permet de vendre 50 produits × 200 visuels sans créer la moindre
+  déclinaison Shopify : les variantes du produit restent ses vraies variantes
+  commerciales (taille, couleur), le design n'en est pas une.
+
+  Le serveur fait le tri (routes/product-designs.js) : seuls les visuels en
+  vente, non exclus de ce support, et dont la résolution et les proportions
+  conviennent à sa zone d'impression sont renvoyés. Si aucun ne convient, ou si
+  le backend ne répond pas, le bloc disparaît — une section « Choisissez un
+  design » vide ferait croire à une boutique cassée.
+
+  À placer sous le sélecteur de taille, au-dessus du bouton « Personnaliser ».
+
+  Dépend de l'App Embed « TextileLab Script » (tl-modal.js), qui transmet le
+  design choisi au studio.
+{% endcomment %}
+
+{%- if product -%}
+  <div
+    data-tsl-designs="{{ product.id }}"
+    data-tsl-title="{{ block.settings.title | escape }}"
+    data-tsl-categories="{% if block.settings.show_categories %}1{% else %}0{% endif %}"
+    data-tsl-search="{% if block.settings.show_search %}1{% else %}0{% endif %}"
+    data-tsl-layout="{{ block.settings.layout }}"
+    style="display:none"
+    {{ block.shopify_attributes }}
+  ></div>
+
+  {% # theme-check-disable RemoteAsset %}
+  <script src="/apps/textilelab/tl-designs.js" defer></script>
+  {% # theme-check-enable RemoteAsset %}
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Sélecteur de design",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "title",
+      "label": "Titre de la section",
+      "default": "Choisissez un design"
+    },
+    {
+      "type": "select",
+      "id": "layout",
+      "label": "Disposition",
+      "options": [
+        { "value": "carousel", "label": "Défilement horizontal" },
+        { "value": "grid",     "label": "Grille" }
+      ],
+      "default": "carousel",
+      "info": "Le défilement horizontal économise la hauteur de page, surtout sur mobile."
+    },
+    {
+      "type": "checkbox",
+      "id": "show_categories",
+      "label": "Afficher les filtres par catégorie",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_search",
+      "label": "Afficher la recherche",
+      "default": true,
+      "info": "N'apparaît que si le produit compte plus de huit designs."
+    }
+  ]
+}
+{% endschema %}
