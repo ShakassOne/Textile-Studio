@@ -250,6 +250,9 @@ tr:hover td{background:var(--glass)}
   cursor:pointer;background:var(--bg3);padding:2px}
 .dz-thumb img{width:100%;height:100%;object-fit:contain;display:block}
 .dz-thumb.on{border-color:var(--amber)}
+.dz-thumb{position:relative}
+.dz-marque{position:absolute;top:2px;right:4px;font-size:11px;color:var(--amber);
+  text-shadow:0 0 3px rgba(0,0,0,.9);pointer-events:none}
 .zone-editor-canvas-wrap .no-img-msg{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--text3);pointer-events:none;transition:background .15s;border-radius:10px}
 .mockup-modal.open .zone-editor-canvas-wrap .no-img-msg{pointer-events:all}
 .zone-editor-canvas-wrap .no-img-msg:hover{background:rgba(245,158,11,.05)}
@@ -643,6 +646,7 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
         </div>
         <div class="page-actions">
           <button class="btn" onclick="loadDisplayZones()">↺ Produits</button>
+          <button class="btn" id="dz-heriter" onclick="heriterDuMaster()" style="display:none" title="Supprimer la zone propre à cette photo : elle suivra de nouveau la zone de référence">↳ Suivre la référence</button>
           <button class="btn" id="dz-reset" onclick="resetDisplayZone()" style="display:none" title="Remettre un rectangle droit, en gardant la taille et la position actuelles">⬛ Redresser</button>
           <button class="btn btn-danger" id="dz-del" onclick="deleteDisplayZone()" style="display:none">🗑 Supprimer la zone</button>
           <button class="btn btn-primary" id="dz-save" onclick="saveDisplayZone()" disabled>💾 Enregistrer la zone</button>
@@ -3596,6 +3600,9 @@ async function _onPlChange(sel) {
 // CDN Shopify sert la même photo en plusieurs définitions.
 
 let _dzProducts = [], _dzImages = [], _dzImage = null, _dzCorners = null, _dzZones = [];
+// Pour le produit en cours : la zone master (valable par défaut sur toutes
+// les photos) et les zones propres à une photo, indexées par identifiant.
+let _dzMaster = null, _dzOverrides = {};
 
 // Zone de départ : un cadre raisonnable au centre, que l'admin ajuste.
 // Ordre imposé : haut-gauche, haut-droit, bas-droit, bas-gauche.
@@ -3645,6 +3652,7 @@ async function selectDisplayZoneProduct(productId, depuisListe) {
   document.getElementById('dz-save').disabled = true;
   document.getElementById('dz-del').style.display = 'none';
   document.getElementById('dz-reset').style.display = 'none';
+  document.getElementById('dz-heriter').style.display = 'none';
 
   if (depuisListe) document.getElementById('dz-product').value = productId;
 
@@ -3658,15 +3666,15 @@ async function selectDisplayZoneProduct(productId, depuisListe) {
   const data = await api(`/api/admin/products/${productId}/display-zone`);
   if (!data) { badge.textContent = '⚠ illisible'; return; }
 
-  _dzImages  = data.images || [];
-  _dzCorners = (data.zone?.corners?.length === 4)
-    ? data.zone.corners.map(c => ({ x: c.x, y: c.y }))
-    : DZ_DEPART.map(c => ({ ...c }));
+  _dzImages    = data.images || [];
+  _dzMaster    = data.master || null;
+  _dzOverrides = {};
+  (data.overrides || []).forEach(z => { _dzOverrides[z.referenceMediaId] = z; });
 
-  // Image de référence : celle déjà calibrée si elle existe encore, sinon la
-  // première. Si la photo de référence a disparu du produit, on le dit —
-  // garder la zone en silence la ferait tomber au mauvais endroit.
-  const refId = data.zone?.referenceMediaId || null;
+  // Photo de départ : celle du master si elle existe encore, sinon la
+  // première. Si elle a disparu du produit, on le dit — garder la zone en
+  // silence la ferait tomber au mauvais endroit.
+  const refId = _dzMaster?.referenceMediaId || null;
   const ref   = refId ? _dzImages.find(i => i.id === refId) : null;
   if (refId && !ref) {
     showToast('⚠ L\'image calibrée n\'existe plus sur ce produit — repositionnez la zone');
@@ -3680,20 +3688,55 @@ async function selectDisplayZoneProduct(productId, depuisListe) {
     return;
   }
 
-  badge.textContent = data.zone ? '✓ zone enregistrée' : 'zone à poser';
-  document.getElementById('dz-del').style.display = data.zone ? '' : 'none';
   vide.style.display = 'none';
   stage.style.display = '';
   _dzRenderImages();
   _dzAfficherImage();
 }
 
+/**
+ * Coins à afficher pour la photo courante.
+ *
+ * Une photo peut avoir sa propre zone — c'est le cas d'un coloris dont la
+ * prise de vue cadre le produit plus haut. Sinon elle hérite du master, qui
+ * sert alors de point de départ : le marchand n'a qu'à corriger.
+ */
+function _dzCoinsPourPhoto() {
+  const propre = _dzImage && _dzOverrides[_dzImage.id];
+  if (propre?.corners?.length === 4) return propre.corners.map(c => ({ ...c }));
+  if (_dzMaster?.corners?.length === 4) return _dzMaster.corners.map(c => ({ ...c }));
+  return DZ_DEPART.map(c => ({ ...c }));
+}
+
+/** Badge et boutons, selon ce que porte la photo courante. */
+function _dzMajStatut() {
+  const badge = document.getElementById('dz-badge');
+  const propre = _dzImage && _dzOverrides[_dzImage.id];
+  const estPhotoDuMaster = _dzMaster && _dzImage && _dzMaster.referenceMediaId === _dzImage.id;
+
+  if (propre)                   badge.textContent = '◆ zone propre à cette photo';
+  else if (estPhotoDuMaster)    badge.textContent = '✓ zone de référence';
+  else if (_dzMaster)           badge.textContent = '↳ hérite de la zone de référence';
+  else                          badge.textContent = 'zone à poser';
+
+  document.getElementById('dz-del').style.display = _dzMaster ? '' : 'none';
+  const btnHeriter = document.getElementById('dz-heriter');
+  if (btnHeriter) btnHeriter.style.display = propre ? '' : 'none';
+}
+
 function _dzRenderImages() {
-  document.getElementById('dz-images').innerHTML = _dzImages.map(i => `
+  document.getElementById('dz-images').innerHTML = _dzImages.map(i => {
+    const propre = !!_dzOverrides[i.id];
+    const master = _dzMaster && _dzMaster.referenceMediaId === i.id;
+    const marque = propre ? '◆' : (master ? '✓' : '');
+    return `
     <div class="dz-thumb ${_dzImage && i.id === _dzImage.id ? 'on' : ''}" data-id="${_esc(i.id)}"
-         title="${i.width}×${i.height}" onclick="_dzChoisirImage('${_esc(i.id)}')">
+         title="${i.width}×${i.height}${propre ? ' — zone propre' : (master ? ' — zone de référence' : '')}"
+         onclick="_dzChoisirImage('${_esc(i.id)}')">
       <img src="${_esc(i.url)}" alt="" loading="lazy">
-    </div>`).join('');
+      ${marque ? `<span class="dz-marque">${marque}</span>` : ''}
+    </div>`;
+  }).join('');
 }
 
 function _dzChoisirImage(id) {
@@ -3704,8 +3747,23 @@ function _dzChoisirImage(id) {
   _dzAfficherImage();
 }
 
+/** Supprime la zone propre à la photo courante : elle repasse sous le master. */
+async function heriterDuMaster() {
+  const productId = document.getElementById('dz-product').value;
+  if (!productId || !_dzImage) return;
+  const r = await api(`/api/admin/products/${productId}/display-zone?media=${encodeURIComponent(_dzImage.id)}`,
+                      { method: 'DELETE' });
+  if (r === null) return showToast('⚠ Suppression impossible');
+  delete _dzOverrides[_dzImage.id];
+  showToast('↳ Cette photo suit de nouveau la zone de référence');
+  _dzRenderImages();
+  _dzAfficherImage();
+}
+
 function _dzAfficherImage() {
   const img = document.getElementById('dz-img');
+  _dzCorners = _dzCoinsPourPhoto();
+  _dzMajStatut();
   img.onload = () => { _dzPoserPoignees(); document.getElementById('dz-save').disabled = false; };
   img.src = _dzImage.url;
   if (img.complete && img.naturalWidth) img.onload();
@@ -3851,9 +3909,17 @@ async function saveDisplayZone() {
     }),
   });
   if (r === null) return showToast('⚠ ' + (window.__TL_LAST_API_ERROR || 'Enregistrement impossible'));
-  showToast('✅ Zone enregistrée — les designs s\'y afficheront');
-  document.getElementById('dz-badge').textContent = '✓ zone enregistrée';
-  document.getElementById('dz-del').style.display = '';
+
+  const zoneEnregistree = { referenceMediaId: _dzImage.id, corners: _dzCorners.map(c => ({ ...c })) };
+  if (r.estMaster) {
+    _dzMaster = { ...zoneEnregistree, isMaster: true };
+    showToast('✅ Zone de référence enregistrée — elle vaut pour toutes les photos');
+  } else {
+    _dzOverrides[_dzImage.id] = zoneEnregistree;
+    showToast('✅ Zone propre à cette photo — les autres ne bougent pas');
+  }
+  _dzRenderImages();
+  _dzMajStatut();
   _dzZones = await api('/api/admin/product-display-zones').catch(() => _dzZones) || _dzZones;
   _dzRenderList();
 }

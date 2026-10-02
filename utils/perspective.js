@@ -133,6 +133,47 @@ function aire(coins) {
 }
 
 /**
+ * Longueurs moyennes des côtés d'un quadrilatère.
+ * Sur une zone en perspective, le haut et le bas n'ont pas la même largeur :
+ * la moyenne donne la proportion perçue, qui est ce qui compte ici.
+ */
+function proportionsQuadrilatere(coins) {
+  const d = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
+  const largeur = (d(coins[0], coins[1]) + d(coins[3], coins[2])) / 2;
+  const hauteur = (d(coins[0], coins[3]) + d(coins[1], coins[2])) / 2;
+  return { largeur, hauteur };
+}
+
+/**
+ * Où placer un design dans le carré unité pour qu'il garde ses proportions.
+ * ──────────────────────────────────────────────────────────────────────────
+ * La zone calibrée décrit la surface imprimable DISPONIBLE, pas la forme du
+ * design. Y étirer le visuel le déforme — un logo rond devient ovale. On
+ * l'inscrit donc dedans, centré, en conservant son rapport.
+ *
+ * C'est la hauteur qui commande dès que le design est plus « portrait » que
+ * la zone, ce qui est le cas courant d'un visuel textile. La largeur reprend
+ * la main sinon, pour qu'un bandeau très large ne déborde jamais du vêtement.
+ *
+ * @returns {{x0:number,y0:number,ex:number,ey:number}} origine et étendue du
+ *          sous-rectangle occupé, en coordonnées du carré unité.
+ */
+function proportionsDansQuadrilatere(dw, dh, coins) {
+  const { largeur, hauteur } = proportionsQuadrilatere(coins);
+  if (!(largeur > 0) || !(hauteur > 0) || !(dw > 0) || !(dh > 0)) {
+    return { x0: 0, y0: 0, ex: 1, ey: 1 };
+  }
+  const rZone   = largeur / hauteur;
+  const rDesign = dw / dh;
+
+  let ex = 1, ey = 1;
+  if (rDesign > rZone) ey = rZone / rDesign;  // design plus large : bridé en largeur
+  else                 ex = rDesign / rZone;  // design plus haut : bridé en hauteur
+
+  return { x0: (1 - ex) / 2, y0: (1 - ey) / 2, ex, ey };
+}
+
+/**
  * Projette une image RGBA dans un quadrilatère.
  * ──────────────────────────────────────────────────────────────────────────
  * On parcourt les pixels de la SORTIE et on cherche, pour chacun, d'où il
@@ -147,16 +188,26 @@ function aire(coins) {
  * @param {number} dw, dh             dimensions du design
  * @param {{x:number,y:number}[]} coins  les 4 coins, en pixels de la sortie
  * @param {{x:number,y:number,w:number,h:number}} cadre  zone de sortie à peindre
+ * @param {{etirer?:boolean}} [options]  `etirer: true` remplit tout le
+ *        quadrilatère quitte à déformer le design. Par défaut on conserve
+ *        ses proportions (voir `proportionsDansQuadrilatere`).
  * @returns {Uint8Array|null} pixels RGBA du cadre (w × h × 4), transparent
  *                            hors du quadrilatère. null si la zone est
  *                            inexploitable.
  */
-function projeterDansQuadrilatere(design, dw, dh, coins, cadre) {
+function projeterDansQuadrilatere(design, dw, dh, coins, cadre, options = {}) {
   const m = homographieDepuisCarre(coins);
   if (!m) return null;
   const inv = inverse3x3(m);
   if (!inv) return null;
   if (!(cadre.w > 0) || !(cadre.h > 0) || !(dw > 0) || !(dh > 0)) return null;
+
+  // Sous-rectangle du carré unité réellement occupé par le design. Sans ça,
+  // le design est étiré aux dimensions du quadrilatère : un visuel carré dans
+  // une zone haute devient un visuel allongé.
+  const occ = options.etirer
+    ? { x0: 0, y0: 0, ex: 1, ey: 1 }
+    : proportionsDansQuadrilatere(dw, dh, coins);
 
   const out = new Uint8Array(cadre.w * cadre.h * 4); // transparent par défaut
   const [i0, i1, i2, i3, i4, i5, i6, i7, i8] = inv;
@@ -172,9 +223,14 @@ function projeterDansQuadrilatere(design, dw, dh, coins, cadre) {
       const v = (i3 * px + i4 * py + i5) / w;
       if (u < 0 || u > 1 || v < 0 || v > 1) continue; // hors du quadrilatère
 
+      // Du carré unité vers le sous-rectangle occupé par le design.
+      const du = (u - occ.x0) / occ.ex;
+      const dv = (v - occ.y0) / occ.ey;
+      if (du < 0 || du > 1 || dv < 0 || dv > 1) continue; // marge laissée nue
+
       // Coordonnées dans le design, en pixels.
-      const sx = u * (dw - 1);
-      const sy = v * (dh - 1);
+      const sx = du * (dw - 1);
+      const sy = dv * (dh - 1);
       const x0 = Math.floor(sx), y0 = Math.floor(sy);
       const x1 = Math.min(x0 + 1, dw - 1), y1 = Math.min(y0 + 1, dh - 1);
       const fx = sx - x0, fy = sy - y0;
@@ -196,6 +252,8 @@ function projeterDansQuadrilatere(design, dw, dh, coins, cadre) {
 module.exports = {
   homographieDepuisCarre,
   projeterDansQuadrilatere,
+  proportionsQuadrilatere,
+  proportionsDansQuadrilatere,
   inverse3x3,
   projeter,
   cadreEnglobant,

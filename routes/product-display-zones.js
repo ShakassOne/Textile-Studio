@@ -80,14 +80,43 @@ function _exposer(row) {
     referenceWidth:   row.reference_width,
     referenceHeight:  row.reference_height,
     corners:          _lireCoins(row.corners_json),
+    isMaster:         row.is_master === 1 || row.is_master === undefined,
     updatedAt:        row.updated_at,
   };
 }
 
-function _lireZone(db, shopId, productId) {
+/** Toutes les zones d'un produit : le master d'abord, puis les remplacements. */
+function _lireZones(db, shopId, productId) {
   return db.prepare(
-    'SELECT * FROM product_display_zones WHERE shop_id=? AND shopify_product_id=? AND zone_type=?'
+    `SELECT * FROM product_display_zones
+     WHERE shop_id=? AND shopify_product_id=? AND zone_type=?
+     ORDER BY is_master DESC, updated_at DESC`
+  ).all(shopId, productId, ZONE_TYPE);
+}
+
+/** La zone master d'un produit : celle qui vaut par défaut pour toutes ses photos. */
+function _lireMaster(db, shopId, productId) {
+  return db.prepare(
+    `SELECT * FROM product_display_zones
+     WHERE shop_id=? AND shopify_product_id=? AND zone_type=? AND is_master=1`
   ).get(shopId, productId, ZONE_TYPE);
+}
+
+/**
+ * Zone à appliquer à une photo donnée.
+ * Un remplacement calibré sur cette photo précise l'emporte ; à défaut, le
+ * master. C'est ce qui permet de corriger un coloris dont la prise de vue
+ * cadre le produit plus haut, sans toucher aux treize autres.
+ */
+function _zonePourPhoto(db, shopId, productId, mediaId) {
+  if (mediaId) {
+    const propre = db.prepare(
+      `SELECT * FROM product_display_zones
+       WHERE shop_id=? AND shopify_product_id=? AND zone_type=? AND reference_media_id=? AND is_master=0`
+    ).get(shopId, productId, ZONE_TYPE, mediaId);
+    if (propre) return propre;
+  }
+  return _lireMaster(db, shopId, productId);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -127,7 +156,12 @@ router.get('/admin/products/:productId/display-zone', requireAuth, requireShopif
       handle:   prod.handle,
       featured: prod.featuredImage?.id || null,
       images,
-      zone:     _exposer(_lireZone(getDB(), req.shopId, productId)),
+      // `master` vaut par défaut pour toutes les photos ; `overrides` ne
+      // concernent qu'une photo chacun.
+      master:    _exposer(_lireMaster(getDB(), req.shopId, productId)),
+      overrides: _lireZones(getDB(), req.shopId, productId)
+                   .filter(z => z.is_master !== 1)
+                   .map(_exposer),
     });
   } catch (e) {
     console.error('GET display-zone (admin) :', e.message);
@@ -152,20 +186,35 @@ router.put('/admin/products/:productId/display-zone', requireAuth, requireShopif
 
   try {
     const db = getDB();
+    const master = _lireMaster(db, req.shopId, productId);
+
+    // Qui est qui :
+    //   • pas encore de master  → cette zone le devient, elle vaudra pour
+    //     toutes les photos du produit ;
+    //   • on réenregistre la photo du master → on met le master à jour ;
+    //   • une autre photo → remplacement propre à celle-ci, les autres ne
+    //     bougent pas. C'est exactement le besoin du sac Kimood, dont
+    //     certains coloris cadrent le produit plus haut.
+    const estMaster = !master || master.reference_media_id === mediaId ? 1 : 0;
+
     db.prepare(`
       INSERT INTO product_display_zones
-        (shop_id, shopify_product_id, zone_type, reference_media_id, reference_width, reference_height, corners_json, updated_at)
-      VALUES (?,?,?,?,?,?,?, datetime('now'))
-      ON CONFLICT(shop_id, shopify_product_id, zone_type) DO UPDATE SET
-        reference_media_id = excluded.reference_media_id,
+        (shop_id, shopify_product_id, zone_type, reference_media_id,
+         reference_width, reference_height, corners_json, is_master, updated_at)
+      VALUES (?,?,?,?,?,?,?,?, datetime('now'))
+      ON CONFLICT(shop_id, shopify_product_id, zone_type, reference_media_id) DO UPDATE SET
         reference_width    = excluded.reference_width,
         reference_height   = excluded.reference_height,
         corners_json       = excluded.corners_json,
         updated_at         = datetime('now')
-    `).run(req.shopId, productId, ZONE_TYPE, mediaId, w, h, JSON.stringify(v.coins));
+    `).run(req.shopId, productId, ZONE_TYPE, mediaId, w, h, JSON.stringify(v.coins), estMaster);
 
     _purgerRendus(productId);
-    res.json({ ok: true, zone: _exposer(_lireZone(db, req.shopId, productId)) });
+    res.json({
+      ok: true,
+      estMaster: estMaster === 1,
+      zone: _exposer(_zonePourPhoto(db, req.shopId, productId, mediaId)),
+    });
   } catch (e) {
     console.error('PUT display-zone :', e.message);
     res.status(500).json({ error: e.message });
@@ -175,14 +224,25 @@ router.put('/admin/products/:productId/display-zone', requireAuth, requireShopif
 // ─────────────────────────────────────────────────────────────────────────────
 // DELETE /api/admin/products/:productId/display-zone
 // ─────────────────────────────────────────────────────────────────────────────
+// Sans `?media=`, tout le produit est remis à zéro. Avec, seul le
+// remplacement de cette photo disparaît et elle repasse sous le master.
 router.delete('/admin/products/:productId/display-zone', requireAuth, requireShopifySession, (req, res) => {
   const productId = _chiffres(req.params.productId);
   if (!productId) return res.status(400).json({ error: 'productId invalide' });
-  const info = getDB().prepare(
-    'DELETE FROM product_display_zones WHERE shop_id=? AND shopify_product_id=? AND zone_type=?'
-  ).run(req.shopId, productId, ZONE_TYPE);
+  const media = String(req.query.media || '').trim();
+
+  const db = getDB();
+  const info = media
+    ? db.prepare(
+        `DELETE FROM product_display_zones
+         WHERE shop_id=? AND shopify_product_id=? AND zone_type=? AND reference_media_id=? AND is_master=0`
+      ).run(req.shopId, productId, ZONE_TYPE, media)
+    : db.prepare(
+        'DELETE FROM product_display_zones WHERE shop_id=? AND shopify_product_id=? AND zone_type=?'
+      ).run(req.shopId, productId, ZONE_TYPE);
+
   _purgerRendus(productId);
-  res.json({ deleted: info.changes > 0 });
+  res.json({ deleted: info.changes > 0, portee: media ? 'photo' : 'produit' });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -204,7 +264,8 @@ router.get('/admin/product-display-zones', requireAuth, requireShopifySession, (
 router.get('/products/:productId/display-zone', attachShopId, (req, res) => {
   const productId = _chiffres(req.params.productId);
   if (!productId) return res.status(400).json({ error: 'productId invalide' });
-  const zone = _exposer(_lireZone(getDB(), req.shopId, productId));
+  const media = String(req.query.media || '').trim();
+  const zone  = _exposer(_zonePourPhoto(getDB(), req.shopId, productId, media));
   res.json(zone ? { exists: true, ...zone } : { exists: false, productId });
 });
 

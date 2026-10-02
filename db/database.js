@@ -285,11 +285,63 @@ function initDB() {
       reference_width     INTEGER DEFAULT NULL,
       reference_height    INTEGER DEFAULT NULL,
       corners_json        TEXT    NOT NULL DEFAULT '[]',
+      is_master           INTEGER NOT NULL DEFAULT 1,
       updated_at          TEXT    DEFAULT (datetime('now')),
-      UNIQUE(shop_id, shopify_product_id, zone_type)
+      UNIQUE(shop_id, shopify_product_id, zone_type, reference_media_id)
     )
   `);
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_display_zones_product ON product_display_zones(shop_id, shopify_product_id)"); } catch {}
+
+  // ── Migration : une zone par photo, avec une zone « master » ────────────
+  // Première version : une seule zone par produit. Mais sur le sac Kimood,
+  // certaines photos de coloris cadrent le produit un peu plus haut ou plus
+  // bas — la zone du Naturel tombe alors légèrement à côté. Il faut donc
+  // pouvoir corriger UNE photo sans toucher aux autres.
+  //
+  // Le modèle : une zone master qui vaut par défaut pour toutes les photos,
+  // et des zones propres à une photo qui la remplacent pour celle-là.
+  //
+  // SQLite ne sait pas modifier une contrainte UNIQUE : il faut reconstruire
+  // la table. On ne le fait qu'une fois, détecté par l'absence de la colonne
+  // is_master.
+  try {
+    const cols = db.prepare('PRAGMA table_info(product_display_zones)').all();
+    if (cols.length && !cols.some(c => c.name === 'is_master')) {
+      db.exec('BEGIN');
+      db.exec(`
+        CREATE TABLE product_display_zones_v2 (
+          id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+          shop_id             INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+          shopify_product_id  TEXT    NOT NULL,
+          zone_type           TEXT    NOT NULL DEFAULT 'product_display_zone',
+          reference_media_id  TEXT    NOT NULL DEFAULT '',
+          reference_width     INTEGER DEFAULT NULL,
+          reference_height    INTEGER DEFAULT NULL,
+          corners_json        TEXT    NOT NULL DEFAULT '[]',
+          is_master           INTEGER NOT NULL DEFAULT 1,
+          updated_at          TEXT    DEFAULT (datetime('now')),
+          UNIQUE(shop_id, shopify_product_id, zone_type, reference_media_id)
+        )
+      `);
+      // Les zones existantes deviennent les master de leur produit.
+      db.exec(`
+        INSERT INTO product_display_zones_v2
+          (shop_id, shopify_product_id, zone_type, reference_media_id,
+           reference_width, reference_height, corners_json, is_master, updated_at)
+        SELECT shop_id, shopify_product_id, zone_type, reference_media_id,
+               reference_width, reference_height, corners_json, 1, updated_at
+        FROM product_display_zones
+      `);
+      db.exec('DROP TABLE product_display_zones');
+      db.exec('ALTER TABLE product_display_zones_v2 RENAME TO product_display_zones');
+      db.exec("CREATE INDEX IF NOT EXISTS idx_display_zones_product ON product_display_zones(shop_id, shopify_product_id)");
+      db.exec('COMMIT');
+      console.log('[DB] Zones produit : migration vers une zone par photo');
+    }
+  } catch (e) {
+    try { db.exec('ROLLBACK'); } catch {}
+    console.warn('[DB] Migration des zones produit ignorée :', e.message);
+  }
 
   // ── Table: upsell_candidates (suggestions "vous aimeriez aussi" curées par shop) ──
   // Spec Upsell V2 étape 1 (docs/ROADMAP-DEV.md §2) : pas d'algorithme automatique,

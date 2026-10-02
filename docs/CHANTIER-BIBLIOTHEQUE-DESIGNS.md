@@ -482,6 +482,45 @@ dans l'encombrement courant.
 Vérifié : les quatre coins se décalent du même vecteur au pixel près, et le
 redressement produit un rectangle exact dont les poignées suivent.
 
+### 2026-10-02 — Lot H : proportions et zones par photo
+
+Deux retours d'Alan après usage réel.
+
+**1. Le design était étiré aux dimensions de la zone.** La zone décrit la
+surface imprimable disponible, pas la forme du design : y étirer le visuel
+transforme un logo rond en ovale. Il est désormais inscrit dedans, centré, à
+proportions conservées (`proportionsDansQuadrilatere`). C'est la hauteur qui
+commande dès que le design est plus « portrait » que la zone — le cas du sac,
+dont la zone est large — et la largeur reprend la main sinon, pour qu'un
+bandeau ne déborde jamais du vêtement. `{ etirer: true }` reste disponible.
+
+**2. Certains coloris du sac cadrent le produit plus haut ou plus bas.** La
+zone unique tombait donc légèrement à côté sur ces photos. Modèle retenu,
+celui demandé par Alan :
+
+- une **zone de référence** (master), posée une fois, qui vaut par défaut
+  pour toutes les photos du produit ;
+- des **zones propres à une photo**, qui la remplacent pour celle-là
+  uniquement, sans toucher aux autres ;
+- un bouton « Suivre la référence » pour annuler une zone propre.
+
+En base : la contrainte d'unicité passe à
+`(shop, produit, type, reference_media_id)` et une colonne `is_master`
+apparaît. SQLite ne sachant pas modifier une contrainte, la table est
+reconstruite une seule fois, détectée par l'absence de la colonne ; les zones
+existantes deviennent les master de leur produit.
+
+Au rendu : une zone propre à la photo demandée l'emporte, et **sans contrôle
+de dimensions** — elle y a été posée, elle est juste par construction. À
+défaut, le master s'applique si le cadrage correspond. Si le cadrage diffère
+et qu'aucune zone propre n'existe, aucun rendu : mieux vaut laisser la photo
+intacte qu'y poser un design de travers.
+
+Parcours vérifié de bout en bout dans un navigateur : photo 1 enregistrée en
+référence, photo 2 qui en hérite comme point de départ, photo 2 corrigée sans
+que le master bouge, retour sur photo 1 intacte, puis « Suivre la référence »
+qui rend la photo 2 à son héritage.
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.

@@ -302,15 +302,12 @@ router.get('/products/:productId/preview', attachShopId, async (req, res) => {
       : db.prepare('SELECT * FROM library WHERE shop_id=? AND slug=? AND is_active=1').get(req.shopId, ref);
     if (!visuel) return res.status(404).json({ error: 'Visuel introuvable' });
 
-    const zone = db.prepare(
+    const zones = db.prepare(
       `SELECT * FROM product_display_zones
        WHERE shop_id=? AND shopify_product_id=? AND zone_type='product_display_zone'`
-    ).get(req.shopId, productId);
-    if (!zone) return res.status(404).json({ error: 'Produit sans zone d\'affichage calibrée' });
-
-    let coinsPct = [];
-    try { coinsPct = JSON.parse(zone.corners_json || '[]'); } catch { coinsPct = []; }
-    if (coinsPct.length !== 4) return res.status(409).json({ error: 'Zone illisible' });
+    ).all(req.shopId, productId);
+    const master = zones.find(z => z.is_master === 1);
+    if (!master) return res.status(404).json({ error: 'Produit sans zone d\'affichage calibrée' });
 
     const boutique = db.prepare('SELECT shop_domain, access_token FROM shops WHERE id=? AND is_active=1')
                        .get(req.shopId);
@@ -319,28 +316,43 @@ router.get('/products/:productId/preview', attachShopId, async (req, res) => {
     const photos = await _photosDuProduit(boutique.shop_domain, boutique.access_token, productId);
     if (!photos.length) return res.status(404).json({ error: 'Produit sans photo' });
 
-    // Photo demandée, à condition qu'elle appartienne au produit ET partage le
-    // cadrage de celle sur laquelle les coins ont été posés. Sans ce contrôle,
-    // une vue de dos recevrait les coins de la vue de face.
+    // ── Quelle photo, et avec quelle zone ────────────────────────────────
     //
     // `media` peut être un GID Shopify ou l'URL que la vitrine affiche déjà —
     // c'est cette seconde forme que le thème sait fournir, le DOM n'exposant
     // pas les identifiants de média. On compare alors les noms de fichier.
     const demandee = String(req.query.media || '').trim();
-    const reference = photos.find(p => p.id === zone.reference_media_id) || photos[0];
-    let photo = reference;
+    let photo = photos.find(p => p.id === master.reference_media_id) || photos[0];
+    let zone  = master;
+
     if (demandee) {
       const cle = _nomDeFichier(demandee);
       const candidate = photos.find(p =>
         p.id === demandee ||
         _cleFichier(p.id) === _cleFichier(demandee) ||
         (cle && _nomDeFichier(p.url) === cle));
-      if (candidate &&
-          (!zone.reference_width  || candidate.width  === zone.reference_width) &&
-          (!zone.reference_height || candidate.height === zone.reference_height)) {
-        photo = candidate;
+
+      if (candidate) {
+        // Une zone calibrée SUR cette photo l'emporte, et sans contrôle de
+        // dimensions : elle y a été posée, elle est juste par construction.
+        const propre = zones.find(z => z.is_master !== 1 && z.reference_media_id === candidate.id);
+        if (propre) {
+          photo = candidate; zone = propre;
+        } else if ((!master.reference_width  || candidate.width  === master.reference_width) &&
+                   (!master.reference_height || candidate.height === master.reference_height)) {
+          // Même cadrage que la photo de référence : le master s'applique.
+          photo = candidate;
+        } else {
+          // Cadrage différent et aucune zone propre : on ne devine pas. Mieux
+          // vaut laisser la photo intacte qu'y poser un design de travers.
+          return res.status(404).json({ error: 'Photo non calibrée pour ce produit' });
+        }
       }
     }
+
+    let coinsPct = [];
+    try { coinsPct = JSON.parse(zone.corners_json || '[]'); } catch { coinsPct = []; }
+    if (coinsPct.length !== 4) return res.status(409).json({ error: 'Zone illisible' });
 
     const fichier  = `p${productId}_m${_cleFichier(photo.id)}_d${visuel.id}.png`;
     const chemin   = path.join(PHOTOS_DIR, fichier);

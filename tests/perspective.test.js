@@ -165,10 +165,11 @@ test('la transparence du design est conservée', () => {
 
 test('la projection suit la perspective, elle ne se contente pas d\'un cadre', () => {
   // Quadrilatère en trapèze : le haut est deux fois plus étroit que le bas.
-  // La frontière rouge/vert doit donc se déplacer en descendant.
+  // `etirer` isole la géométrie — sans lui, la conservation des proportions
+  // réduirait le design et brouillerait ce qu'on cherche à vérifier ici.
   const out = P.projeterDansQuadrilatere(design2x2(), 2, 2,
     [{ x: 20, y: 0 }, { x: 40, y: 0 }, { x: 60, y: 40 }, { x: 0, y: 40 }],
-    { x: 0, y: 0, w: 60, h: 40 });
+    { x: 0, y: 0, w: 60, h: 40 }, { etirer: true });
   assert.ok(out);
   // En haut, la zone va de x=20 à x=40 : à x=10 il n'y a rien.
   assert.equal(px(out, 60, 10, 1)[3], 0, 'hors zone en haut');
@@ -182,4 +183,62 @@ test('une zone inexploitable rend null plutôt que des pixels faux', () => {
   assert.equal(P.projeterDansQuadrilatere(d, 2, 2, [{ x: 0, y: 0 }], { x: 0, y: 0, w: 5, h: 5 }), null);
   assert.equal(P.projeterDansQuadrilatere(d, 2, 2, carre, { x: 0, y: 0, w: 0, h: 5 }), null);
   assert.equal(P.projeterDansQuadrilatere(d, 0, 0, carre, { x: 0, y: 0, w: 5, h: 5 }), null);
+});
+
+// ── Conservation des proportions ──────────────────────────────────────────
+
+test('le design n\'est plus étiré aux dimensions de la zone', () => {
+  // La zone décrit la surface imprimable disponible, pas la forme du design.
+  // L'y étirer transforme un logo rond en ovale.
+  const zoneHaute = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 300 }, { x: 0, y: 300 }];
+  const carre = P.proportionsDansQuadrilatere(500, 500, zoneHaute);
+  assert.equal(carre.ex, 1, 'un design carré occupe toute la largeur disponible');
+  assert.ok(Math.abs(carre.ey - 1 / 3) < 1e-9, 'et le tiers de la hauteur');
+  assert.ok(Math.abs(carre.y0 - 1 / 3) < 1e-9, 'centré verticalement');
+
+  // Sur une zone large — le cas du sac — c'est la hauteur qui commande.
+  const zoneLarge = [{ x: 0, y: 0 }, { x: 300, y: 0 }, { x: 300, y: 100 }, { x: 0, y: 100 }];
+  const surSac = P.proportionsDansQuadrilatere(500, 500, zoneLarge);
+  assert.equal(surSac.ey, 1);
+  assert.ok(Math.abs(surSac.ex - 1 / 3) < 1e-9);
+  assert.ok(Math.abs(surSac.x0 - 1 / 3) < 1e-9, 'centré horizontalement');
+});
+
+test('un design au rapport de la zone la remplit entièrement', () => {
+  const zone = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 300 }, { x: 0, y: 300 }];
+  const r = P.proportionsDansQuadrilatere(100, 300, zone);
+  assert.deepEqual(r, { x0: 0, y0: 0, ex: 1, ey: 1 });
+});
+
+test('les proportions d\'un quadrilatère en perspective sont moyennées', () => {
+  // Haut à 20, bas à 60 : la largeur perçue est la moyenne, 40.
+  const trapeze = [{ x: 20, y: 0 }, { x: 40, y: 0 }, { x: 60, y: 100 }, { x: 0, y: 100 }];
+  const { largeur, hauteur } = P.proportionsQuadrilatere(trapeze);
+  assert.equal(largeur, 40);
+  assert.ok(hauteur > 100 && hauteur < 105, 'les côtés obliques sont plus longs que la verticale');
+});
+
+test('la projection respecte les proportions, et peut encore étirer sur demande', () => {
+  const d = design2x2();
+  // Zone trois fois plus haute que large, design carré : deux tiers de la
+  // hauteur doivent rester nus.
+  const zone = [{ x: 0, y: 0 }, { x: 30, y: 0 }, { x: 30, y: 90 }, { x: 0, y: 90 }];
+  const cadre = { x: 0, y: 0, w: 30, h: 90 };
+
+  const garde = P.projeterDansQuadrilatere(d, 2, 2, zone, cadre);
+  assert.equal(px(garde, 30, 15, 5)[3], 0, 'haut de la zone laissé nu');
+  assert.equal(px(garde, 30, 15, 45)[3], 255, 'centre peint');
+  assert.equal(px(garde, 30, 15, 85)[3], 0, 'bas de la zone laissé nu');
+
+  const etire = P.projeterDansQuadrilatere(d, 2, 2, zone, cadre, { etirer: true });
+  assert.equal(px(etire, 30, 15, 5)[3], 255, 'étiré : toute la zone est peinte');
+  assert.equal(px(etire, 30, 15, 85)[3], 255);
+});
+
+test('un quadrilatère dégénéré ne fait pas dérailler le calcul de proportions', () => {
+  const plat = [{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }];
+  assert.deepEqual(P.proportionsDansQuadrilatere(100, 100, plat), { x0: 0, y0: 0, ex: 1, ey: 1 });
+  assert.deepEqual(P.proportionsDansQuadrilatere(0, 0,
+    [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }]),
+    { x0: 0, y0: 0, ex: 1, ey: 1 });
 });
