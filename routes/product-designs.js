@@ -156,5 +156,138 @@ router.get('/products/:productId/designs', attachShopId, (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/products/:productId/preview?design=<slug|id>&view=0
+// ─────────────────────────────────────────────────────────────────────────────
+// Le vêtement avec le design dessus. Sans ça, le client choisit un visuel sans
+// voir ce qu'il achète.
+//
+// On réutilise le moteur de compositing du back-office (routes/mockup-gen.js) :
+// même displacement map, mêmes plis du tissu, donc un aperçu fidèle plutôt
+// qu'une image collée à plat. Il tourne en 900 px et non en 2000 : c'est une
+// vignette de fiche produit, pas un fichier d'impression.
+//
+// Le résultat est écrit sur disque et la requête redirige vers le fichier
+// statique. Les visites suivantes ne repassent plus par ce calcul, qui coûte
+// une bonne seconde de CPU.
+const fs   = require('fs');
+const path = require('path');
+const APERCU_TAILLE = 900;
+const APERCU_MARGE  = 0.9; // même marge que centerObjectInPrintFrame dans le studio
+const APERCU_DIR = path.join(process.env.DATA_DIR || path.join(__dirname, '..'), 'uploads', 'generated', 'apercus');
+
+// Deux visiteurs peuvent demander le même aperçu en même temps : sans ce
+// registre, on paierait le compositing deux fois.
+const _enCours = new Map();
+
+function _versBuffer(dataUrl) {
+  return Buffer.from(String(dataUrl || '').replace(/^data:image\/\w+;base64,/, ''), 'base64');
+}
+
+/** Octets d'un visuel, qu'il soit sur le disque local ou sur un CDN. */
+async function _octetsDuVisuel(url) {
+  if (/^https?:\/\//i.test(url)) {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`visuel distant HTTP ${r.status}`);
+    return Buffer.from(await r.arrayBuffer());
+  }
+  const base = process.env.DATA_DIR || path.join(__dirname, '..');
+  return fs.promises.readFile(path.join(base, url));
+}
+
+/**
+ * Pose le visuel au centre d'un calque transparent aux dimensions de la zone.
+ *
+ * generateMockup étire ce qu'on lui donne aux dimensions de la zone : lui
+ * passer le visuel brut le déformerait. On le place donc « contenu », à la
+ * même marge que le studio quand il dépose une image dans le cadre — l'aperçu
+ * montre ainsi exactement ce que le client verra en cliquant Personnaliser.
+ */
+async function _calquePourZone(octets, zone) {
+  const sharp = require('sharp');
+  const dispoW = Math.max(1, Math.round(zone.w * APERCU_MARGE));
+  const dispoH = Math.max(1, Math.round(zone.h * APERCU_MARGE));
+  const visuel = await sharp(octets)
+    .resize(dispoW, dispoH, { fit: 'inside', withoutEnlargement: false })
+    .ensureAlpha()
+    .png()
+    .toBuffer();
+  const m = await sharp(visuel).metadata();
+  return sharp({
+    create: { width: zone.w, height: zone.h, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+  })
+    .composite([{
+      input: visuel,
+      left:  Math.max(0, Math.round((zone.w - m.width) / 2)),
+      top:   Math.max(0, Math.round((zone.h - m.height) / 2)),
+    }])
+    .png()
+    .toBuffer();
+}
+
+router.get('/products/:productId/preview', attachShopId, async (req, res) => {
+  const productId = String(req.params.productId || '').replace(/\D/g, '');
+  const ref       = String(req.query.design || '').trim();
+  const viewIndex = Math.max(0, Number.parseInt(req.query.view, 10) || 0);
+  if (!productId || !ref) return res.status(400).json({ error: 'productId et design requis' });
+
+  try {
+    const db = getDB();
+
+    const visuel = /^\d+$/.test(ref)
+      ? db.prepare('SELECT * FROM library WHERE shop_id=? AND id=? AND is_active=1').get(req.shopId, Number(ref))
+      : db.prepare('SELECT * FROM library WHERE shop_id=? AND slug=? AND is_active=1').get(req.shopId, ref);
+    if (!visuel) return res.status(404).json({ error: 'Visuel introuvable' });
+
+    const lien = db.prepare(
+      `SELECT mockup_id FROM product_mockup_links
+       WHERE shop_id=? AND (shopify_product_id=? OR shopify_product_id=?)`
+    ).get(req.shopId, productId, `gid://shopify/Product/${productId}`);
+    if (!lien?.mockup_id) return res.status(404).json({ error: 'Produit sans mockup lié' });
+
+    const fichier = `a${req.shopId}_m${lien.mockup_id}_v${viewIndex}_d${visuel.id}.png`;
+    const chemin  = path.join(APERCU_DIR, fichier);
+    const publique = `/uploads/generated/apercus/${fichier}`;
+
+    if (fs.existsSync(chemin)) return res.redirect(302, publique);
+    if (_enCours.has(fichier)) { await _enCours.get(fichier); return res.redirect(302, publique); }
+
+    const travail = (async () => {
+      const MG = require('./mockup-gen');
+      const sharp = require('sharp');
+      const m = db.prepare('SELECT views_json FROM mockups WHERE id=? AND shop_id=?')
+                  .get(lien.mockup_id, req.shopId);
+      let vues = [];
+      try { vues = JSON.parse(m?.views_json || '[]'); } catch { vues = []; }
+      const vue = vues[viewIndex];
+      if (!vue?.imageData || !vue.zone?.w) throw new Error('Vue de mockup inexploitable');
+
+      const mockupBuffer = _versBuffer(vue.imageData);
+      const meta = await sharp(mockupBuffer).metadata();
+      const zone = MG.zoneVersSortie(vue.zone, meta.width, meta.height, APERCU_TAILLE);
+      const calque = await _calquePourZone(await _octetsDuVisuel(visuel.url), zone);
+
+      const png = await MG.generateMockup({
+        designBuffer: calque,
+        mockupBuffer,
+        naturalW: meta.width,
+        naturalH: meta.height,
+        zone,
+        dispIntensity: MG.DISP_INTENSITY,
+        outputSize: APERCU_TAILLE,
+      });
+      await fs.promises.mkdir(APERCU_DIR, { recursive: true });
+      await fs.promises.writeFile(chemin, png);
+    })();
+
+    _enCours.set(fichier, travail);
+    try { await travail; } finally { _enCours.delete(fichier); }
+    res.redirect(302, publique);
+  } catch (e) {
+    console.error('GET /products/:id/preview :', e.message);
+    res.status(500).json({ error: 'Aperçu indisponible' });
+  }
+});
+
 module.exports = router;
 module.exports.viderCacheDesigns = viderCacheDesigns;

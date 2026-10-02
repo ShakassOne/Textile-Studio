@@ -28,6 +28,7 @@
     data-tsl-categories="{% if block.settings.show_categories %}1{% else %}0{% endif %}"
     data-tsl-search="{% if block.settings.show_search %}1{% else %}0{% endif %}"
     data-tsl-layout="{{ block.settings.layout }}"
+    data-tsl-preview="{% if block.settings.show_preview %}1{% else %}0{% endif %}"
     style="display:none"
     {{ block.shopify_attributes }}
   ></div>
@@ -58,6 +59,13 @@
       ],
       "default": "carousel",
       "info": "Le défilement horizontal économise la hauteur de page, surtout sur mobile."
+    },
+    {
+      "type": "checkbox",
+      "id": "show_preview",
+      "label": "Afficher l'aperçu sur le produit",
+      "default": true,
+      "info": "Le design est composé sur le mockup du produit, avec les plis du tissu."
     },
     {
       "type": "checkbox",
