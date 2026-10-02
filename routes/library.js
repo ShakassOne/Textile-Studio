@@ -168,6 +168,35 @@ function _slugsPris(db, shopId) {
   );
 }
 
+// GET /api/library/by-ref/:ref — résout un visuel par son id ou son slug.
+// ──────────────────────────────────────────────────────────────────────────
+// PUBLIQUE : c'est par là que le studio récupère le visuel choisi sur la fiche
+// produit, quand il est ouvert avec ?visual=<slug>. Le slug est l'adresse
+// publique figée du visuel (cf. utils/design-library.js), l'id numérique reste
+// accepté pour les appels internes.
+//
+// Un visuel retiré de la vente n'est pas résolu : un lien partagé vers un
+// design que le marchand a dépublié doit se comporter comme un lien mort,
+// pas ressusciter le design.
+router.get('/by-ref/:ref', attachShopId, (req, res) => {
+  const ref = String(req.params.ref || '').trim();
+  if (!ref) return res.status(400).json({ error: 'Référence manquante' });
+
+  const db = getDB();
+  const row = /^\d+$/.test(ref)
+    ? db.prepare('SELECT * FROM library WHERE shop_id=? AND id=? AND is_active=1').get(req.shopId, Number(ref))
+    : db.prepare('SELECT * FROM library WHERE shop_id=? AND slug=? AND is_active=1').get(req.shopId, ref);
+
+  if (!row) return res.status(404).json({ error: 'Visuel introuvable', exists: false });
+  const v = _exposeRow(row);
+  res.json({
+    exists: true,
+    id: v.id, slug: v.slug, nom: v.display_name,
+    url: v.url, thumb: v.thumb_url || v.url,
+    categorie: v.category, width: v.width, height: v.height,
+  });
+});
+
 // POST /api/library — upload (admin + shop scopé)
 const handleUpload = upload.single('file');
 

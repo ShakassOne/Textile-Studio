@@ -9320,7 +9320,18 @@ function init() {
     // la remplace (produit, couleur, mockup, format).
     _tplInitAdminBar();
     const _tplProductId = _up.get('product_id') || '';
-    if (_tplProductId) _tplLoadForProduct(_tplProductId);
+    // ?visual=<slug|id> — le client a choisi son design sur la fiche produit
+    // (sélecteur du thème) et arrive ici pour le personnaliser.
+    const _visualRef = _up.get('visual') || '';
+    if (_tplProductId) {
+      // Un produit templaté porte déjà son design : on ne superpose pas le
+      // visuel choisi par-dessus, le template fait foi.
+      _tplLoadForProduct(_tplProductId).then(applique => {
+        if (!applique && _visualRef) _tlChargerVisuelDemande(_visualRef);
+      });
+    } else if (_visualRef) {
+      _tlChargerVisuelDemande(_visualRef);
+    }
   });
   initCanvas();
   initPalette();
@@ -9793,16 +9804,47 @@ function _tplApply(tpl) {
   return true;
 }
 
+/** @returns {Promise<boolean>} true si un template a été appliqué. */
 async function _tplLoadForProduct(productId) {
-  if (!productId) return;
+  if (!productId) return false;
   const data = await apiFetch(`/api/products/${encodeURIComponent(productId)}/template`);
-  if (!data?.exists || !data.template) return; // produit sans template → flux normal
+  if (!data?.exists || !data.template) return false; // produit sans template → flux normal
   // Coût d'impression déjà payé dans le prix Shopify : seul le surcoût au-delà
   // sera facturé (cf. _tplExtraDue).
   const ref = Number(data.referenceAmount);
   TPL_REFERENCE_AMOUNT = Number.isFinite(ref) && ref > 0 ? Math.round(ref * 100) / 100 : 0;
-  if (_tplApply(data.template)) showToast('🎨 Design chargé — personnalisez-le');
+  const applique = _tplApply(data.template);
+  if (applique) showToast('🎨 Design chargé — personnalisez-le');
   try { updatePrice(); } catch (_) {}
+  return applique;
+}
+
+// ── Visuel choisi sur la fiche produit (?visual=) ──────────────────────────
+// Le client a cliqué un design dans le sélecteur du thème ; le studio s'ouvre
+// avec ce visuel déjà posé dans la zone d'impression, prêt à être déplacé.
+//
+// Le délai est la vraie difficulté : la zone d'impression (STATE.frameCoords)
+// n'existe qu'une fois le mockup appliqué ET son image chargée. Poser le
+// visuel trop tôt le centrerait sur un cadre par défaut, hors du vêtement.
+// On attend donc le cadre, avec une limite — même raison d'être que la
+// cascade d'ancrage des templates.
+async function _tlChargerVisuelDemande(ref) {
+  const v = await apiFetch(`/api/library/by-ref/${encodeURIComponent(ref)}`);
+  if (!v?.url) { showToast('⚠️ Ce design n\'est plus disponible'); return; }
+  _tlQuandCadrePret(() => {
+    addLibraryImageToCanvas(v.url, v.nom || '');
+    showToast(`🖼 ${v.nom || 'Design'} — à vous de jouer`);
+  });
+}
+
+/**
+ * Exécute `action` dès que la zone d'impression est connue.
+ * Abandonne au bout de ~8 s et exécute quand même : mieux vaut un visuel
+ * mal centré, que le client peut déplacer, qu'un studio vide sans explication.
+ */
+function _tlQuandCadrePret(action, essais = 0) {
+  if (STATE.frameCoords?.w > 0 || essais > 53) { action(); return; }
+  setTimeout(() => _tlQuandCadrePret(action, essais + 1), 150);
 }
 
 // ── Charger les catégories produit depuis l'API et mettre à jour les noms dans l'UI ──
