@@ -74,7 +74,7 @@
     + '.tsld-thumb{width:100%;aspect-ratio:1;object-fit:contain;display:block;border-radius:6px;background:rgba(127,127,127,.08)}'
     + '.tsld-name{font-size:.72rem;line-height:1.3;margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.85}'
     + '.tsld-empty{font-size:.85rem;opacity:.6;padding:10px 0}'
-    + '.tsld-apercu{position:relative;margin-bottom:12px;border-radius:10px;overflow:hidden;'
+    + '.tsld-apercu{position:relative;margin-top:12px;border-radius:10px;overflow:hidden;'
     +   'background:rgba(127,127,127,.06);display:none}'
     + '.tsld-apercu.on{display:block}'
     + '.tsld-apercu img{display:block;width:100%;max-width:340px;margin:0 auto;aspect-ratio:1;object-fit:contain}'
@@ -237,10 +237,6 @@
     var avecApercu = conteneur.getAttribute('data-tsl-preview') !== '0';
 
     var html = '<div class="tsld-head"><p class="tsld-title">' + esc(titre) + '</p><span class="tsld-count"></span></div>';
-    if (avecApercu) {
-      html += '<div class="tsld-apercu"><img alt="" loading="lazy">'
-            +   '<span class="tsld-apercu-att">Aperçu en cours…</span></div>';
-    }
     if (avecCats && data.categories.length > 1) {
       html += '<div class="tsld-cats"><button type="button" class="tsld-cat" data-cat="" aria-pressed="true">Tous</button>';
       for (var i = 0; i < data.categories.length; i++) {
@@ -253,6 +249,15 @@
       html += '<input type="search" class="tsld-search" placeholder="Rechercher un design…" aria-label="Rechercher un design">';
     }
     html += '<div class="tsld-grid' + (enGrille ? ' tsld-wrap' : '') + '"></div>';
+    // L'aperçu vient APRÈS la grille, délibérément. Placé au-dessus, il
+    // repoussait toute la grille de sa hauteur au moment du clic : la vignette
+    // qu'on venait de toucher sortait de l'écran sur mobile. En dessous, rien
+    // ne bouge au-dessus du doigt, et le résultat apparaît là où le regard va
+    // ensuite — juste avant le bouton « Personnaliser ».
+    if (avecApercu) {
+      html += '<div class="tsld-apercu"><img alt="" loading="lazy">'
+            +   '<span class="tsld-apercu-att">Aperçu en cours…</span></div>';
+    }
     conteneur.innerHTML = html;
     conteneur.classList.add('tsld');
 

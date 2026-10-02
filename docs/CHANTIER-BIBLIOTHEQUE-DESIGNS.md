@@ -51,8 +51,8 @@ le studio pour personnaliser s'il le souhaite.
 | A | Modèle bibliothèque enrichi (slug, nom affiché, ordre, actif/inactif, tags, exclusions) + écran admin | 1 j | **fait** |
 | B | `GET` public « quels visuels pour ce produit » : règle de compatibilité par la zone, exclusions, cache | 0,5 j | **fait** |
 | C | Block de thème « Sélecteur de design » : grille, catégories, recherche, `?design=`, mobile | 2–3 j | **fait** |
-| D | Aperçu : vignettes en superposition, grand visuel via le pipeline sharp, cache | 1 j | **suivant** |
-| E | Panier sans passer par le studio : propriété de ligne, référence de prix par produit, fichier d'impression à la commande | 1,5–2 j | à faire |
+| D | Aperçu : vignettes en superposition, grand visuel via le pipeline sharp, cache | 1 j | **fait** |
+| E | Panier sans passer par le studio : propriété de ligne, référence de prix par produit, fichier d'impression à la commande | 1,5–2 j | **suivant** |
 | F | Ouverture du studio avec le visuel déjà placé (`?product_id=…&visual=…`) | 0,5 j | **fait** |
 | G | Tests, recette, passage dev puis prod | 1 j | à faire |
 
@@ -290,6 +290,34 @@ Reproduit d'abord dans une fausse fiche à deux colonnes (colonne infos à
 2132 px, colonne image à 0), puis vérifié corrigé : 600/600, défileur borné
 à 600 px avec 2132 px de contenu défilable. Mode grille et mobile 430 px
 inchangés, aucun débordement de page.
+
+### 2026-10-02 — Lot D : aperçu sur le vêtement
+
+`GET /api/products/:productId/preview?design=<slug>&view=0` compose le
+visuel sur le mockup et redirige vers le PNG produit.
+
+Réemploi du moteur du back-office (`routes/mockup-gen.js`), donc displacement
+map et plis du tissu compris. Trois aménagements :
+- `generateMockup` accepte une taille de sortie — 900 px pour l'aperçu,
+  2000 px inchangé pour le fichier d'impression ;
+- la conversion zone back-office → image de sortie est extraite en
+  `zoneVersSortie`, comportement identique, pour être réutilisable ;
+- le visuel est posé « contenu » au centre de la zone à la marge 0,9, la même
+  que `centerObjectInPrintFrame` dans le studio. `generateMockup` étire ce
+  qu'on lui donne : lui passer le visuel brut le déformerait. Et reprendre la
+  marge du studio garantit que l'aperçu montre ce que le client verra en
+  cliquant Personnaliser.
+
+Cache disque + registre des compositions en cours (deux visiteurs simultanés
+ne paient pas deux fois). Mesuré sur dev : **1,1 s au premier appel, 0,15 s
+ensuite**.
+
+Côté vitrine, l'aperçu est rendu **sous** la grille. Placé au-dessus, il
+repoussait la grille de sa hauteur au moment du clic et la vignette touchée
+sortait de l'écran sur mobile. Vérifié après correction : déplacement de la
+vignette cliquée = 0 px.
+
+Réglage de block « Afficher l'aperçu sur le produit », activé par défaut.
 
 ## Contraintes permanentes d'Alan
 
