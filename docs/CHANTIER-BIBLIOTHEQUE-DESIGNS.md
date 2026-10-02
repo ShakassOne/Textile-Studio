@@ -49,8 +49,8 @@ le studio pour personnaliser s'il le souhaite.
 | Lot | Contenu | Estimation | État |
 |-----|---------|-----------|------|
 | A | Modèle bibliothèque enrichi (slug, nom affiché, ordre, actif/inactif, tags, exclusions) + écran admin | 1 j | **fait** |
-| B | `GET` public « quels visuels pour ce produit » : règle de compatibilité par la zone, exclusions, cache | 0,5 j | **suivant** |
-| C | Block de thème « Sélecteur de design » : grille, catégories, recherche, `?design=`, mobile | 2–3 j | à faire |
+| B | `GET` public « quels visuels pour ce produit » : règle de compatibilité par la zone, exclusions, cache | 0,5 j | **fait** |
+| C | Block de thème « Sélecteur de design » : grille, catégories, recherche, `?design=`, mobile | 2–3 j | **suivant** |
 | D | Aperçu : vignettes en superposition, grand visuel via le pipeline sharp, cache | 1 j | à faire |
 | E | Panier sans passer par le studio : propriété de ligne, référence de prix par produit, fichier d'impression à la commande | 1,5–2 j | à faire |
 | F | Ouverture du studio avec le visuel déjà placé (`?product_id=…&visual=…`) | 0,5 j | à faire |
@@ -148,6 +148,49 @@ documentées (surtout pas de valeurs magiques dispersées) :
 À valider avec Alan APRÈS l'avoir vu tourner sur ses vrais mockups : ces deux
 seuils ne doivent pas être devinés depuis un bureau, ils se règlent en
 regardant le résultat sur un t-shirt, une casquette et un tote bag.
+
+### 2026-10-02 — Lot B fait
+
+Dimensions des images (le préalable repéré plus haut) :
+- colonnes `width` / `height` sur `library` ;
+- renseignées à la création — `sharp` pour les uploads locaux, champs
+  `image { width height }` ajoutés à la requête Shopify Files de la modale ;
+- rattrapage au démarrage pour les lignes locales existantes, par lecture
+  d'en-tête seulement, 4 s après le boot pour ne pas le ralentir.
+
+Règle de compatibilité (`utils/design-library.js`, fonctions pures) :
+- `zoneEnMm(view)` — dimensions physiques de la zone, même convention et
+  même repli que `_getPrintWidthMm` dans le studio ;
+- `evaluerCompatibilite(visuel, zoneMm)` — deux critères, **résolution**
+  (DPI effectif ≥ `COMPAT.DPI_MIN`, 100) et **remplissage** (part de la zone
+  couverte ≥ `COMPAT.REMPLISSAGE_MIN`, 0,45).
+
+C'est le second critère qui écarte tout seul un grand visuel vertical d'une
+casquette, sans que personne n'ait rien coché : contenu dans une zone large
+et basse, il n'en couvre que 31 %.
+
+`routes/product-designs.js` — `GET /api/products/:productId/designs` :
+produit → mockup → zone → visuels actifs, moins les exclusions manuelles,
+moins les incompatibles. Cache 2 min purgé par toute écriture sur la
+bibliothèque. Renvoie aussi `ecartes` (id, nom, raison, dpi, remplissage) :
+ce n'est pas du débogage de luxe, c'est ce qui permettra de régler les seuils
+sur de vrais mockups.
+
+Tests : 12 sur la route (base et contexte shop remplacés dans le cache de
+modules, donc sans SQLite), 4 de plus sur les fonctions pures. Suite : 73
+tests, 72 passent, 1 ignoré.
+
+**Question en attente pour Alan.** La règle évalue le visuel contre la zone
+d'impression COMPLÈTE du mockup, c'est-à-dire la plus grande taille que le
+support autorise. Or la décision n°2 dit « une seule taille par produit,
+celle par défaut de son mockup » — et cette taille par défaut n'existe
+nulle part dans les données aujourd'hui. C'est la même valeur qui servira de
+référence de prix au lot E. Deux options :
+  (a) l'admin la règle par mockup (un champ « format par défaut » à côté de
+      `printWidthMm`) ;
+  (b) on la déduit de la zone (le plus grand format standard qui y tient).
+À trancher avant le lot E. En attendant, évaluer contre la zone complète est
+le choix conservateur et explicable.
 
 ## Contraintes permanentes d'Alan
 

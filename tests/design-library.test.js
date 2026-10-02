@@ -89,3 +89,49 @@ test('une colonne JSON illisible ne fait jamais tomber la lecture', () => {
   assert.deepEqual(DL.parseJsonArray('json cassé {'), []);
   assert.deepEqual(DL.parseJsonArray(null), []);
 });
+
+// ── Compatibilité visuel ↔ support ────────────────────────────────────────
+
+test('la zone physique se déduit de printWidthMm et du rapport de la zone', () => {
+  assert.deepEqual(DL.zoneEnMm({ zone: { w: 300, h: 400 }, printWidthMm: 420 }),
+    { widthMm: 420, heightMm: 560 });
+  // Sans printWidthMm, même repli que le studio (420 mm = côté long A3).
+  assert.deepEqual(DL.zoneEnMm({ zone: { w: 100, h: 100 } }), { widthMm: 420, heightMm: 420 });
+  // Pas de zone calibrée → rien à dire.
+  assert.equal(DL.zoneEnMm({ printWidthMm: 420 }), null);
+  assert.equal(DL.zoneEnMm({ zone: { w: 0, h: 10 } }), null);
+  assert.equal(DL.zoneEnMm(undefined), null);
+});
+
+test('aucune donnée manquante n\'écarte un visuel', () => {
+  const zone = { widthMm: 420, heightMm: 560 };
+  for (const v of [{}, { width: 0, height: 0 }, { width: 100 }, { width: 'abc', height: 'abc' }, null]) {
+    assert.equal(DL.evaluerCompatibilite(v, zone).compatible, true, JSON.stringify(v));
+  }
+  for (const z of [null, {}, { widthMm: 0, heightMm: 10 }]) {
+    assert.equal(DL.evaluerCompatibilite({ width: 2480, height: 3508 }, z).compatible, true, JSON.stringify(z));
+  }
+});
+
+test('les deux motifs de refus sont distingués', () => {
+  const tshirt = { widthMm: 420, heightMm: 560 };
+  const casquette = { widthMm: 140, heightMm: 61 };
+
+  const tropPetit = DL.evaluerCompatibilite({ width: 300, height: 300 }, tshirt);
+  assert.equal(tropPetit.raison, 'resolution-insuffisante');
+  assert.ok(tropPetit.dpi < DL.COMPAT.DPI_MIN);
+
+  const malProportionne = DL.evaluerCompatibilite({ width: 2480, height: 3508 }, casquette);
+  assert.equal(malProportionne.raison, 'proportions-inadaptees');
+  assert.ok(malProportionne.remplissage < DL.COMPAT.REMPLISSAGE_MIN);
+  assert.ok(malProportionne.dpi > DL.COMPAT.DPI_MIN,
+    'la résolution est excellente : c\'est bien la forme qui pose problème');
+
+  assert.equal(DL.evaluerCompatibilite({ width: 2480, height: 3508 }, tshirt).raison, 'ok');
+});
+
+test('un visuel de même rapport que la zone la remplit entièrement', () => {
+  const r = DL.evaluerCompatibilite({ width: 1200, height: 1600 }, { widthMm: 300, heightMm: 400 });
+  assert.equal(r.remplissage, 1);
+  assert.equal(r.compatible, true);
+});

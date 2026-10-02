@@ -9,6 +9,24 @@ const { getDB } = require('../db/database');
 const { attachShopId } = require('./_shop-context');
 const DL = require('../utils/design-library');
 
+/**
+ * Dimensions en pixels d'une image sur disque.
+ * ──────────────────────────────────────────────────────────────────────────
+ * Elles servent à décider si un visuel tient correctement dans la zone
+ * d'impression d'un support. sharp est déjà une dépendance du projet
+ * (utils/compositeMockup.js) et sait lire les en-têtes sans décoder l'image.
+ *
+ * @returns {Promise<{width:number,height:number}|null>} null si illisible —
+ *          un visuel sans dimensions connues reste proposé partout.
+ */
+async function _lireDimensions(cheminAbsolu) {
+  try {
+    const sharp = require('sharp');
+    const m = await sharp(cheminAbsolu).metadata();
+    return (m.width > 0 && m.height > 0) ? { width: m.width, height: m.height } : null;
+  } catch { return null; }
+}
+
 const DEFAULT_CATEGORIES = ['logos', 'illustrations', 'patterns', 'textes', 'divers', 'Dall-E'];
 
 // Multer storage — fichier original HD
@@ -133,6 +151,16 @@ function _exposeRow(row) {
   };
 }
 
+/**
+ * Le catalogue proposé sur les fiches produit est mis en cache deux minutes.
+ * Toute écriture sur la bibliothèque doit le purger, sinon un visuel masqué
+ * resterait en vente le temps que le cache expire.
+ * require() paresseux : évite un cycle entre les deux routeurs.
+ */
+function _purgerCatalogue() {
+  try { require('./product-designs').viderCacheDesigns(); } catch {}
+}
+
 /** Slugs déjà utilisés dans cette boutique (pour garantir l'unicité). */
 function _slugsPris(db, shopId) {
   return new Set(
@@ -143,7 +171,7 @@ function _slugsPris(db, shopId) {
 // POST /api/library — upload (admin + shop scopé)
 const handleUpload = upload.single('file');
 
-function processUpload(req, res) {
+async function processUpload(req, res) {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   try {
     const db  = getDB();
@@ -171,12 +199,15 @@ function processUpload(req, res) {
     // par l'admin qui fait un libellé lisible côté boutique.
     const nom  = DL.displayNameFromFilename(req.file.originalname) || 'Nouveau visuel';
     const slug = DL.uniqueSlug(nom, _slugsPris(db, req.shopId));
+    const dim  = await _lireDimensions(req.file.path);
 
     const info = db.prepare(
-      `INSERT INTO library (shop_id, filename, url, thumb_url, category, mimetype, size, slug, display_name)
-       VALUES (?,?,?,?,?,?,?,?,?)`
-    ).run(req.shopId, req.file.filename, url, thumbUrl, cat, req.file.mimetype, req.file.size, slug, nom);
+      `INSERT INTO library (shop_id, filename, url, thumb_url, category, mimetype, size, slug, display_name, width, height)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+    ).run(req.shopId, req.file.filename, url, thumbUrl, cat, req.file.mimetype, req.file.size, slug, nom,
+          dim?.width ?? null, dim?.height ?? null);
 
+    _purgerCatalogue();
     res.status(201).json({
       ..._exposeRow(db.prepare('SELECT * FROM library WHERE id=?').get(info.lastInsertRowid)),
       original_name: req.file.originalname,
@@ -215,12 +246,17 @@ router.post('/external', requireAuth, attachShopId, (req, res) => {
               || DL.displayNameFromFilename(filename)
               || 'Nouveau visuel';
     const slug = DL.uniqueSlug(nom, _slugsPris(db, req.shopId));
+    // Shopify connaît les dimensions de ses MediaImage : la modale les joint.
+    const w = Number.parseInt(req.body?.width, 10);
+    const h = Number.parseInt(req.body?.height, 10);
 
     const info = db.prepare(
-      `INSERT INTO library (shop_id, filename, url, thumb_url, category, mimetype, size, slug, display_name)
-       VALUES (?,?,?,?,?,?,?,?,?)`
-    ).run(req.shopId, filename, url, thumbUrl, cat, mimetype, size, slug, nom);
+      `INSERT INTO library (shop_id, filename, url, thumb_url, category, mimetype, size, slug, display_name, width, height)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+    ).run(req.shopId, filename, url, thumbUrl, cat, mimetype, size, slug, nom,
+          w > 0 ? w : null, h > 0 ? h : null);
 
+    _purgerCatalogue();
     res.status(201).json(_exposeRow(db.prepare('SELECT * FROM library WHERE id=?').get(info.lastInsertRowid)));
   } catch (e) {
     console.error('library/external error:', e.message);
@@ -228,8 +264,17 @@ router.post('/external', requireAuth, attachShopId, (req, res) => {
   }
 });
 
-router.post('/',       requireAuth, attachShopId, (req, res) => handleUpload(req, res, err => { if(err) return res.status(400).json({error:err.message}); processUpload(req, res); }));
-router.post('/upload', requireAuth, attachShopId, (req, res) => handleUpload(req, res, err => { if(err) return res.status(400).json({error:err.message}); processUpload(req, res); }));
+const _upload = (req, res) => handleUpload(req, res, err => {
+  if (err) return res.status(400).json({ error: err.message });
+  // processUpload est asynchrone depuis la lecture des dimensions : on capte
+  // son rejet ici, sinon une erreur partirait en unhandledRejection.
+  processUpload(req, res).catch(e => {
+    console.error('processUpload error:', e.message);
+    if (!res.headersSent) res.status(500).json({ error: e.message });
+  });
+});
+router.post('/',       requireAuth, attachShopId, _upload);
+router.post('/upload', requireAuth, attachShopId, _upload);
 
 // PATCH /api/library/:id (admin, scopé shop)
 // Champs acceptés : category, display_name, sort_order, is_active, tags,
@@ -282,6 +327,7 @@ router.patch('/:id', requireAuth, attachShopId, (req, res) => {
   db.prepare(`UPDATE library SET ${champs.map(c => `${c}=?`).join(', ')} WHERE id=? AND shop_id=?`)
     .run(...champs.map(c => maj[c]), req.params.id, req.shopId);
 
+  _purgerCatalogue();
   res.json(_exposeRow(db.prepare('SELECT * FROM library WHERE id=? AND shop_id=?').get(req.params.id, req.shopId)));
 });
 
@@ -304,6 +350,7 @@ router.post('/reorder', requireAuth, attachShopId, (req, res) => {
     });
   });
   tout();
+  _purgerCatalogue();
   res.json({ reordered: n });
 });
 
@@ -323,6 +370,7 @@ router.delete('/:id', requireAuth, attachShopId, (req, res) => {
     }
   }
   db.prepare('DELETE FROM library WHERE id=? AND shop_id=?').run(req.params.id, req.shopId);
+  _purgerCatalogue();
   res.json({ deleted: true });
 });
 
@@ -356,5 +404,30 @@ setTimeout(() => {
     if (ok) console.log(`✅ ${ok} thumb(s) copiés`);
   } catch(e) { /* silencieux */ }
 }, 2000);
+
+// ── Migration auto : dimensions manquantes au démarrage ──────────────────
+// Ne concerne que les visuels stockés localement : pour un visuel hébergé sur
+// un CDN externe, les dimensions arrivent de Shopify au moment de l'ajout.
+// Lecture d'en-tête seulement (sharp ne décode pas l'image), par petits
+// paquets pour ne pas monopoliser le démarrage.
+setTimeout(async () => {
+  try {
+    const db = getDB();
+    const aFaire = db.prepare(
+      "SELECT id, url FROM library WHERE width IS NULL AND filename NOT LIKE '__cat_placeholder%'"
+    ).all().filter(r => !/^https?:\/\//i.test(r.url || ''));
+    if (!aFaire.length) return;
+    console.log(`📐 Dimensions manquantes : ${aFaire.length} visuel(s)…`);
+    const maj = db.prepare('UPDATE library SET width=?, height=? WHERE id=?');
+    let ok = 0;
+    for (const r of aFaire) {
+      const dim = await _lireDimensions(path.join(__dirname, '..', r.url));
+      if (dim) { maj.run(dim.width, dim.height, r.id); ok++; }
+    }
+    if (ok) console.log(`✅ ${ok} visuel(s) mesuré(s)`);
+  } catch (e) {
+    console.warn('Mesure des visuels ignorée :', e.message);
+  }
+}, 4000);
 
 module.exports = router;

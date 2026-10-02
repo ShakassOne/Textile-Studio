@@ -139,6 +139,12 @@ function initDB() {
   try { db.exec("ALTER TABLE library ADD COLUMN is_active INTEGER DEFAULT 1"); } catch {}
   try { db.exec("ALTER TABLE library ADD COLUMN tags TEXT DEFAULT '[]'"); } catch {}
   try { db.exec("ALTER TABLE library ADD COLUMN excluded_mockups TEXT DEFAULT '[]'"); } catch {}
+  // Dimensions en pixels : indispensables pour décider si un visuel tient
+  // correctement dans la zone d'impression d'un support (lot B). NULL tant
+  // qu'on ne les connaît pas — et un visuel aux dimensions inconnues est
+  // toujours considéré comme compatible, jamais écarté faute de données.
+  try { db.exec("ALTER TABLE library ADD COLUMN width INTEGER DEFAULT NULL"); } catch {}
+  try { db.exec("ALTER TABLE library ADD COLUMN height INTEGER DEFAULT NULL"); } catch {}
   // Index non unique : l'unicité du slug est tenue côté route (uniqueSlug),
   // car un index UNIQUE échouerait sur les bases existantes où toutes les
   // lignes ont encore slug=''.

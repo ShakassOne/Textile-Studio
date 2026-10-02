@@ -554,6 +554,8 @@ app.use('/api/shop-settings',  require('./routes/shop-settings'));
 // Templates produit — monté sur /api car il sert deux préfixes :
 //   POST /api/admin/products/:id/template (admin)  et  GET /api/products/:id/template (public)
 app.use('/api',                require('./routes/product-templates'));
+// Catalogue de visuels proposés sur une fiche produit (public, via App Proxy).
+app.use('/api',                require('./routes/product-designs'));
 app.use('/proxy',             require('./routes/app-proxy'));
 
 // ── Fix webhooks : réenregistre orders/paid sur tous les shops actifs ─────────

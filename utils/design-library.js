@@ -167,8 +167,96 @@ function parseJsonArray(raw) {
   } catch { return []; }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Compatibilité visuel ↔ support
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Seuils de la règle automatique.
+ *
+ * PROVISOIRES : ces deux nombres ne doivent pas rester devinés depuis un
+ * bureau. Ils se calibrent en regardant le résultat sur de vrais mockups —
+ * un t-shirt, une casquette, un tote bag. L'API expose `dpi` et
+ * `remplissage` pour chaque visuel écarté, justement pour pouvoir les régler
+ * sur pièces.
+ */
+const COMPAT = {
+  // Résolution plancher une fois le visuel mis à l'échelle de la zone.
+  // En dessous, l'impression DTF pixellise.
+  DPI_MIN: 100,
+  // Fraction de la zone que le visuel doit occuper. C'est ce critère qui
+  // écarte tout seul un grand visuel vertical d'une casquette : contenu dans
+  // une zone large et basse, il n'en remplirait qu'une fraction dérisoire.
+  REMPLISSAGE_MIN: 0.45,
+};
+
+/**
+ * Dimensions physiques de la zone d'impression d'une vue de mockup.
+ *
+ * `printWidthMm` est calibré par l'admin et décrit la largeur réelle
+ * correspondant à `zone.w` pixels ; la hauteur s'en déduit par le rapport de
+ * la zone. Même convention que le studio (`_getPrintWidthMm`), repli compris.
+ *
+ * @param {object} view  une entrée de `mockups.views_json`
+ * @returns {{widthMm:number, heightMm:number}|null} null si la vue n'a pas de zone
+ */
+function zoneEnMm(view, largeurParDefautMm = 420) {
+  const z = view && view.zone;
+  if (!z) return null;
+  const zw = Number(z.w), zh = Number(z.h);
+  if (!(zw > 0) || !(zh > 0)) return null;
+  const largeur = (typeof view.printWidthMm === 'number' && view.printWidthMm > 0)
+    ? view.printWidthMm
+    : largeurParDefautMm;
+  return { widthMm: largeur, heightMm: largeur * (zh / zw) };
+}
+
+/**
+ * Un visuel a-t-il sa place sur ce support ?
+ *
+ * Le visuel est supposé posé « contenu » dans la zone : mis à l'échelle au
+ * maximum sans débordement ni déformation. On en tire deux mesures.
+ *
+ *  • `dpi`         — résolution effective à l'impression.
+ *  • `remplissage` — part de la surface de la zone réellement couverte. Ne
+ *                    dépend que des proportions : un visuel et une zone de
+ *                    même rapport donnent 1, des proportions opposées
+ *                    donnent très peu.
+ *
+ * Principe directeur : **on n'écarte jamais un visuel faute de données.**
+ * Dimensions inconnues, zone non calibrée, nombre aberrant → compatible.
+ *
+ * @returns {{compatible:boolean, raison:string, dpi:number|null, remplissage:number|null}}
+ */
+function evaluerCompatibilite(visuel, zoneMm, seuils = COMPAT) {
+  const vw = Number(visuel && visuel.width), vh = Number(visuel && visuel.height);
+  if (!(vw > 0) || !(vh > 0)) {
+    return { compatible: true, raison: 'dimensions-inconnues', dpi: null, remplissage: null };
+  }
+  const zw = Number(zoneMm && zoneMm.widthMm), zh = Number(zoneMm && zoneMm.heightMm);
+  if (!(zw > 0) || !(zh > 0)) {
+    return { compatible: true, raison: 'zone-inconnue', dpi: null, remplissage: null };
+  }
+
+  // Millimètres par pixel une fois le visuel contenu dans la zone.
+  const echelle = Math.min(zw / vw, zh / vh);
+  const dpi = Math.round(25.4 / echelle);
+  const remplissage = Math.round(((vw * echelle) * (vh * echelle)) / (zw * zh) * 1000) / 1000;
+
+  if (dpi < seuils.DPI_MIN) {
+    return { compatible: false, raison: 'resolution-insuffisante', dpi, remplissage };
+  }
+  if (remplissage < seuils.REMPLISSAGE_MIN) {
+    return { compatible: false, raison: 'proportions-inadaptees', dpi, remplissage };
+  }
+  return { compatible: true, raison: 'ok', dpi, remplissage };
+}
+
 module.exports = {
   SLUG_MAX,
+  COMPAT,
+  zoneEnMm,
+  evaluerCompatibilite,
   slugify,
   uniqueSlug,
   displayNameFromFilename,

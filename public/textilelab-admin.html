@@ -2028,7 +2028,8 @@ function _sfNormalize(node) {
   if (!url) return null;
   const thumb = node.image?.thumb || url;
   const name  = node.alt || (url.split('/').pop() || '').split('?')[0];
-  return { id: node.id, url, thumb, name, mime: node.mimeType || 'image/*', status: node.fileStatus };
+  return { id: node.id, url, thumb, name, mime: node.mimeType || 'image/*', status: node.fileStatus,
+           width: node.image?.width || null, height: node.image?.height || null };
 }
 
 const _SF_LIST_QUERY = `
@@ -2041,7 +2042,7 @@ const _SF_LIST_QUERY = `
         alt
         ... on MediaImage {
           mimeType
-          image { url thumb: url(transform: { maxWidth: 320, maxHeight: 320 }) }
+          image { url width height thumb: url(transform: { maxWidth: 320, maxHeight: 320 }) }
         }
         ... on GenericFile { mimeType url }
       } }
@@ -2281,6 +2282,8 @@ async function _sfConfirmAdd() {
         filename:  f.name,
         category:  cat,
         mimetype:  f.mime,
+        width:     f.width,
+        height:    f.height,
       }),
     });
     if (r) done++;
