@@ -108,13 +108,46 @@ dossier scratchpad de la session, à recréer si besoin) :
   `--shot`, `--pre` (script injecté avant chargement, pour poser le jeton
   admin dans localStorage), `--w/--h`, `--dark`.
 
-### Prochain pas — lot B
+### Prochain pas — lot B, et un obstacle repéré
 
 `GET /api/products/:productId/designs` (public, via App Proxy) :
-produit → mockup lié → zone de la vue par défaut → visuels actifs dont le
-ratio tient dans la zone, moins les `excluded_mockups`. Prévoir un cache court
-comme `_templateIdsCache` dans `routes/product-templates.js`, et ne jamais
-renvoyer une liste vide sur erreur sans le signaler explicitement.
+produit → `product_mockup_links` → mockup → `views_json[0]` → zone →
+visuels actifs du shop, moins ceux dont `excluded_mockups` contient l'id du
+mockup, moins ceux que la règle automatique écarte. Cache court sur le modèle
+de `_templateIdsCache` dans `routes/product-templates.js`.
+
+**Obstacle : la table `library` ne stocke pas les dimensions des images.**
+Sans largeur/hauteur en pixels, la règle automatique de compatibilité est
+impossible à écrire. Il faut donc, avant le reste du lot B :
+
+1. deux colonnes `width` / `height` sur `library` (migrations du même style) ;
+2. les remplir à la création :
+   - upload local → `sharp(chemin).metadata()` (sharp est déjà une dépendance,
+     utilisée par `utils/compositeMockup.js`) ;
+   - Shopify Files → la requête GraphQL de `utils/shopify-files.js` demande
+     `... on MediaImage { id image { url } }` ; il suffit d'ajouter
+     `width height` dans le bloc `image` ;
+3. un rattrapage paresseux pour les lignes existantes (lire les dimensions à
+   la première demande, puis les écrire), ou laisser à `null`.
+
+**Dimensions inconnues = visuel considéré comme compatible.** On n'écarte
+jamais un visuel faute de données : au pire le client voit une proposition
+imparfaite, au mieux il ne manque rien au catalogue.
+
+Règle de compatibilité proposée, deux critères, seuils à constantes nommées et
+documentées (surtout pas de valeurs magiques dispersées) :
+
+- **Résolution** — une fois le visuel mis à l'échelle de la zone, le DPI
+  effectif doit rester au-dessus d'un plancher (défaut 100 DPI). La zone donne
+  sa largeur physique par `views[i].printWidthMm` ; sa hauteur s'en déduit par
+  le rapport `zone.h / zone.w`.
+- **Occupation** — le visuel doit remplir une fraction décente de la zone
+  (défaut 45 % de sa surface). C'est ce critère qui écarte tout seul un grand
+  visuel vertical sur une casquette, sans que personne n'ait rien coché.
+
+À valider avec Alan APRÈS l'avoir vu tourner sur ses vrais mockups : ces deux
+seuils ne doivent pas être devinés depuis un bureau, ils se règlent en
+regardant le résultat sur un t-shirt, une casquette et un tote bag.
 
 ## Contraintes permanentes d'Alan
 
