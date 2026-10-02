@@ -223,6 +223,12 @@ Après correction, sur les mêmes données : les visuels réels passent entre
 112 et 300 DPI, une image de 300 × 300 px reste écartée à 36 DPI, et un
 grand vertical sur une casquette reste écarté sur ses proportions.
 
+Vérifié en production sur dev après déploiement : **16 visuels sur 18
+retenus** sur les deux mockups t-shirt, 6 catégories remontées. Les deux
+écartés sont défendables — « Visuel 7 » à 69 DPI, et « Visuel 1 » à 41 % de
+remplissage, juste sous le seuil de 45 %. Ce dernier est exactement le cas
+limite à soumettre à Alan quand il verra la grille.
+
 Le format se lit dans `views[i].defaultFormat` s'il existe, sinon A4. **Ce
 champ n'existe pas encore dans l'écran Mockups & Zones** : c'est le réglage
 à ajouter, et c'est la même valeur qui servira de référence de prix au lot
