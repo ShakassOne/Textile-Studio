@@ -38,19 +38,35 @@
   // n'importe quel thème. On hérite de la police, on ne force ni fond ni
   // couleur de texte, et toutes les classes sont préfixées.
   var CSS = ''
-    + '.tsld{margin:18px 0}'
+    // Le conteneur ne doit jamais imposer sa largeur au thème : `min-width:0`
+    // le rend compressible dans une colonne flex ou grid.
+    + '.tsld{margin:18px 0;min-width:0;max-width:100%}'
     + '.tsld-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px}'
     + '.tsld-title{font-weight:600;font-size:1rem;margin:0}'
     + '.tsld-count{font-size:.8rem;opacity:.6}'
-    + '.tsld-cats{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:10px;scrollbar-width:thin}'
+    + '.tsld-cats{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:10px;scrollbar-width:thin;'
+    +   'width:0;min-width:100%}'
     + '.tsld-cat{flex:0 0 auto;border:1px solid currentColor;border-radius:999px;padding:5px 12px;font-size:.8rem;'
     +   'background:transparent;color:inherit;opacity:.55;cursor:pointer;white-space:nowrap;line-height:1.2}'
     + '.tsld-cat[aria-pressed="true"]{opacity:1;font-weight:600}'
     + '.tsld-search{width:100%;box-sizing:border-box;padding:9px 12px;margin-bottom:10px;font:inherit;font-size:.9rem;'
     +   'border:1px solid currentColor;border-radius:8px;background:transparent;color:inherit;opacity:.75}'
+    // `width:0; min-width:100%` — la clé du défilement horizontal.
+    //
+    // Un défileur en grid-auto-flow:column a une largeur intrinsèque égale à
+    // la somme de ses colonnes : 17 vignettes ≈ 2 000 px. Posé dans la colonne
+    // d'infos d'un thème dimensionnée par son contenu, il l'élargit d'autant
+    // et fait exploser toute la mise en page — colonne image écrasée, page qui
+    // déborde horizontalement.
+    //
+    // `width:0` annule cette contribution au calcul de largeur du parent ;
+    // `min-width:100%` rétablit ensuite la largeur réelle, une fois le parent
+    // dimensionné sans nous. Le défilement interne est intact.
     + '.tsld-grid{display:grid;grid-auto-flow:column;grid-auto-columns:116px;grid-template-rows:auto;gap:10px;'
-    +   'overflow-x:auto;padding-bottom:8px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}'
-    + '.tsld-grid.tsld-wrap{grid-auto-flow:row;grid-template-columns:repeat(auto-fill,minmax(116px,1fr));overflow-x:visible}'
+    +   'overflow-x:auto;padding-bottom:8px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;'
+    +   'width:0;min-width:100%}'
+    + '.tsld-grid.tsld-wrap{grid-auto-flow:row;grid-template-columns:repeat(auto-fill,minmax(116px,1fr));'
+    +   'overflow-x:visible;width:auto;min-width:0}'
     + '.tsld-item{scroll-snap-align:start;border:2px solid transparent;border-radius:10px;padding:4px;cursor:pointer;'
     +   'background:transparent;font:inherit;color:inherit;text-align:center;display:block;width:100%}'
     + '.tsld-item:hover{border-color:currentColor}'

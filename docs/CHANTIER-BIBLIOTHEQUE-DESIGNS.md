@@ -269,6 +269,28 @@ les vrais visuels WinShirt : filtre par catégorie, recherche, sélection,
 désélection au second clic, `?design=` restitué au rechargement, lien vers
 un design inexistant sans effet, aucun débordement horizontal.
 
+### 2026-10-02 — Lot C : correction du défilement horizontal
+
+Signalé par Alan après mise en ligne sur le dev store : en mode défilement
+horizontal, toute la fiche produit explose — colonne image écrasée à zéro,
+page qui déborde latéralement. En mode grille, rien.
+
+Cause : un défileur en `grid-auto-flow:column` a une largeur intrinsèque
+égale à la somme de ses colonnes, soit ~2 000 px pour 17 vignettes. Placé
+dans une colonne de thème dimensionnée par son contenu, il l'élargit
+d'autant. `overflow-x:auto` ne protège de rien ici : il gère le débordement
+une fois la largeur connue, il n'empêche pas de la réclamer.
+
+Correctif : `width:0; min-width:100%` sur les deux défileurs (vignettes et
+puces de catégorie). `width:0` annule leur contribution au calcul de largeur
+du parent ; `min-width:100%` rétablit la largeur réelle une fois le parent
+dimensionné sans eux. Plus `min-width:0; max-width:100%` sur le conteneur.
+
+Reproduit d'abord dans une fausse fiche à deux colonnes (colonne infos à
+2132 px, colonne image à 0), puis vérifié corrigé : 600/600, défileur borné
+à 600 px avec 2132 px de contenu défilable. Mode grille et mobile 430 px
+inchangés, aucun débordement de page.
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.
