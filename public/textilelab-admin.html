@@ -1353,8 +1353,31 @@ function _tplRow(t) {
     <td>${opt}</td>
     <td style="font-family:'DM Mono',monospace;color:var(--text3)">${ko} Ko</td>
     <td style="font-size:11px;color:var(--text3)">${maj}</td>
-    <td><button class="btn btn-sm" onclick="editTemplate('${t.numericId}')">Modifier</button></td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm" onclick="editTemplate('${t.numericId}')">Modifier</button>
+      <button class="btn btn-sm btn-danger" style="margin-left:4px"
+              onclick="deleteTemplate('${t.numericId}', '${String(t.title || '').replace(/'/g, "\\'")}')">Supprimer</button>
+    </td>
   </tr>`;
+}
+
+// Retire le template d'un produit : il redevient un produit ordinaire, son
+// bouton repasse de « Modifier ce visuel » à « Personnaliser », et il
+// réapparaît dans le sélecteur de produits du studio.
+// L'option « Impression » et les variantes tarifées déjà créées sont
+// conservées — elles peuvent porter des commandes passées.
+async function deleteTemplate(productId, titre) {
+  if (!confirm(`Supprimer le template de « ${titre || productId} » ?\n\n`
+             + 'Le design enregistré sera définitivement perdu et le produit '
+             + 'redeviendra un produit personnalisable vierge.\n\n'
+             + 'Les variantes de prix déjà créées sont conservées.')) return;
+  const r = await api(`/api/admin/products/${encodeURIComponent(productId)}/template`, { method: 'DELETE' });
+  if (r && (r.deleted || r.absent)) {
+    showToast(r.deleted ? '🗑 Template supprimé' : '⚠ Aucun template sur ce produit');
+    loadTemplatesList();
+  } else {
+    showToast('❌ ' + (window.__TL_LAST_API_ERROR || 'Suppression impossible'));
+  }
 }
 
 // Rouvre le studio en mode admin sur ce produit : le template est rechargé,

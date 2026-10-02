@@ -4691,15 +4691,43 @@ function _getVisibleShopifyProductLinks() {
     .filter(_isLiveShopifyLink);
 }
 
+// Produits porteurs d'un template (custom.tsl_template), chargés une fois au
+// démarrage. Ils sont EXCLUS du sélecteur de mockup : ce panneau sert à choisir
+// un support vierge sur lequel créer, tandis qu'un produit déjà dessiné s'ouvre
+// depuis sa fiche produit via « Modifier ce visuel ».
+let _productsWithTemplate = new Set();
+
+async function loadProductsWithTemplate() {
+  try {
+    const d = await apiFetch('/api/products/with-template');
+    if (d && Array.isArray(d.ids)) {
+      _productsWithTemplate = new Set(d.ids.map(String));
+      // La liste a pu être rendue avant la réponse : on la rafraîchit.
+      try { renderProductsPanel(); } catch (_) {}
+      try { renderMobileProductsList(); } catch (_) {}
+    }
+  } catch (_) { /* en cas d'échec on n'exclut rien, le sélecteur reste complet */ }
+}
+
+function _aUnTemplate(p) {
+  const id = String(p.product_id || '').replace(/^gid:\/\/shopify\/Product\//, '').replace(/\D/g, '');
+  return !!id && _productsWithTemplate.has(id);
+}
+
 function _getLinkedProductsForActiveMockup() {
   const mid = String(STATE_mockup?.id || '');
   if (!mid) return [];
+  // Le produit actuellement ouvert reste visible même s'il a un template :
+  // sinon le client ne verrait plus où il se trouve dans la liste.
+  const refCourant = _resolvedProductHandle || window._TL_PRODUCT_HANDLE || '';
   return _getVisibleShopifyProductLinks().filter(p => {
     const sameMockupId = String(p.mockup_id || '') === mid;
     const hasRef = (p.handle || p.product_id);
     const title = String(p.title || '').toLowerCase();
     const isSample = title.includes('example product') || title.includes('sample');
-    return hasRef && sameMockupId && !isSample;
+    const ref = p.handle || ('id:' + p.product_id);
+    const estCourant = ref === refCourant;
+    return hasRef && sameMockupId && !isSample && (estCourant || !_aUnTemplate(p));
   }).filter((p, idx, arr) => arr.findIndex(x => (x.handle || x.product_id) === (p.handle || p.product_id)) === idx);
 }
 
@@ -9265,6 +9293,7 @@ function init() {
     }
 
     loadShopifyProductLinks().then(loadShopifyProductThumbs);
+    loadProductsWithTemplate();
 
     if (_urlMockupId) {
       // Trouver le mockup correspondant dans MOCKUPS_DATA

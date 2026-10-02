@@ -111,6 +111,7 @@ router.post(
         prepared = { ok: false, error: e.message };
       }
 
+      _templateIdsCache.clear(); // le produit doit sortir du sélecteur aussitôt
       res.status(201).json({
         saved:     true,
         productId: gid,
@@ -196,6 +197,87 @@ router.get('/admin/templates', requireAuth, requireShopifySession, async (req, r
   } catch (err) {
     console.error('❌  templates list:', err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cache court des ids porteurs d'un template. Le studio interroge la route
+// ci-dessous à chaque ouverture : inutile de marteler l'Admin API de Shopify.
+// Vidé dès qu'un template est créé ou retiré.
+const _templateIdsCache = new Map(); // shopId → { ids:string[], at:number }
+const TEMPLATE_IDS_TTL_MS = 2 * 60 * 1000;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/admin/products/:productId/template — retire le template (admin)
+// ─────────────────────────────────────────────────────────────────────────────
+// Le produit redevient ordinaire : son bouton repasse de « Modifier ce visuel »
+// à « Personnaliser », et il réapparaît dans le sélecteur du studio.
+// On NE touche PAS à l'option « Impression » ni aux variantes tarifées déjà
+// créées — elles peuvent porter des commandes passées.
+router.delete('/admin/products/:productId/template', requireAuth, requireShopifySession, async (req, res) => {
+  const gid = _toProductGid(req.params.productId);
+  if (!gid) return res.status(400).json({ error: 'productId invalide' });
+  const shop  = req.shopDomain;
+  const token = req.shopRecord?.access_token;
+  if (!shop || !token) return res.status(403).json({ error: 'Contexte shop manquant' });
+
+  const mutation = `
+    mutation TslDeleteTemplate($metafields: [MetafieldIdentifierInput!]!) {
+      metafieldsDelete(metafields: $metafields) {
+        deletedMetafields { key namespace ownerId }
+        userErrors { field message }
+      }
+    }`;
+  try {
+    const out = await adminGraphQL(shop, token, mutation, {
+      metafields: [{ ownerId: gid, namespace: NAMESPACE, key: KEY }],
+    });
+    const errs = out?.data?.metafieldsDelete?.userErrors || [];
+    if (errs.length) return res.status(400).json({ error: errs.map(e => e.message).join(' | ') });
+    const supprimes = out?.data?.metafieldsDelete?.deletedMetafields || [];
+    _templateIdsCache.clear();
+    console.log(`🗑  Template supprimé — ${gid}`);
+    res.json({ deleted: supprimes.length > 0, productId: gid, absent: supprimes.length === 0 });
+  } catch (err) {
+    console.error('❌  template delete:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/products/with-template — ids des produits porteurs d'un template
+// ─────────────────────────────────────────────────────────────────────────────
+// Public : le studio s'en sert pour EXCLURE ces produits du sélecteur de
+// mockup. Ce panneau sert à choisir un support VIERGE sur lequel travailler ;
+// un produit déjà dessiné s'ouvre depuis sa fiche, via « Modifier ce visuel ».
+router.get('/products/with-template', attachShopId, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const hit = _templateIdsCache.get(req.shopId);
+  if (hit && Date.now() - hit.at < TEMPLATE_IDS_TTL_MS) return res.json({ ids: hit.ids, cached: true });
+
+  const shopRecord = getDB()
+    .prepare('SELECT shop_domain, access_token FROM shops WHERE id = ? AND is_active = 1')
+    .get(req.shopId);
+  // Sans contexte Shopify on ne filtre rien : mieux vaut un sélecteur complet
+  // qu'un sélecteur vide.
+  if (!shopRecord?.access_token) return res.json({ ids: [], configured: false });
+
+  const query = `
+    query TslTemplateIds($first: Int!) {
+      products(first: $first, sortKey: UPDATED_AT, reverse: true) {
+        edges { node { id metafield(namespace: "${NAMESPACE}", key: "${KEY}") { id } } }
+      }
+    }`;
+  try {
+    const out = await adminGraphQL(shopRecord.shop_domain, shopRecord.access_token, query, { first: 250 });
+    const ids = (out?.data?.products?.edges || [])
+      .filter(e => e?.node?.metafield)
+      .map(e => String(e.node.id).replace(/^gid:\/\/shopify\/Product\//, ''));
+    _templateIdsCache.set(req.shopId, { ids, at: Date.now() });
+    res.json({ ids });
+  } catch (err) {
+    console.error('❌  template ids:', err.message);
+    res.json({ ids: [], error: err.message }); // ne jamais bloquer le studio
   }
 });
 
