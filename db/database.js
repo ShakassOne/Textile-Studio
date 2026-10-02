@@ -255,6 +255,42 @@ function initDB() {
     )
   `);
 
+  // ── Table: product_display_zones (zone d'affichage sur la PHOTO produit) ──
+  // ──────────────────────────────────────────────────────────────────────────
+  // À NE PAS CONFONDRE avec la zone d'impression des mockups
+  // (mockups.views_json[i].zone, que le code appelle « studio_print_zone ») :
+  //
+  //   studio_print_zone     — un RECTANGLE dans le repère du back-office
+  //                           (440×340), sur le packshot à plat. Sert à
+  //                           produire le FICHIER D'IMPRESSION.
+  //   product_display_zone  — un QUADRILATÈRE en pourcentage de la photo
+  //                           commerciale du produit, où le vêtement est porté
+  //                           de biais. Sert uniquement à l'AFFICHAGE sur la
+  //                           fiche produit.
+  //
+  // Formes différentes, repères différents, usages différents : deux tables
+  // distinctes, aucun champ partagé, aucun chemin de code commun. Un produit
+  // peut avoir l'une sans l'autre.
+  //
+  // Les coins sont en POURCENTAGE de l'image : le CDN Shopify sert la même
+  // photo en plusieurs définitions, une zone en pixels ne vaudrait que pour
+  // l'une d'elles.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS product_display_zones (
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      shop_id             INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+      shopify_product_id  TEXT    NOT NULL,
+      zone_type           TEXT    NOT NULL DEFAULT 'product_display_zone',
+      reference_media_id  TEXT    NOT NULL DEFAULT '',
+      reference_width     INTEGER DEFAULT NULL,
+      reference_height    INTEGER DEFAULT NULL,
+      corners_json        TEXT    NOT NULL DEFAULT '[]',
+      updated_at          TEXT    DEFAULT (datetime('now')),
+      UNIQUE(shop_id, shopify_product_id, zone_type)
+    )
+  `);
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_display_zones_product ON product_display_zones(shop_id, shopify_product_id)"); } catch {}
+
   // ── Table: upsell_candidates (suggestions "vous aimeriez aussi" curées par shop) ──
   // Spec Upsell V2 étape 1 (docs/ROADMAP-DEV.md §2) : pas d'algorithme automatique,
   // l'admin associe à la main 2-4 produits cibles déjà liés à un mockup pour un

@@ -32,10 +32,10 @@
       Test sur `== false` et non sur la véracité : un block déjà posé dans le
       thème avant l'ajout de ce réglage n'a pas la clé en mémoire. Avec un
       simple {% if %}, cette absence serait lue comme « décoché » et
-      désactiverait l'aperçu sur toutes les fiches existantes. Ici, seul un
+      désactiverait le rendu sur toutes les fiches existantes. Ici, seul un
       décochage explicite le désactive.
     {%- endcomment -%}
-    data-tsl-preview="{% if block.settings.show_preview == false %}0{% else %}1{% endif %}"
+    data-tsl-apply-image="{% if block.settings.apply_on_image == false %}0{% else %}1{% endif %}"
     style="display:none"
     {{ block.shopify_attributes }}
   ></div>
@@ -69,10 +69,10 @@
     },
     {
       "type": "checkbox",
-      "id": "show_preview",
-      "label": "Afficher l'aperçu sur le produit",
+      "id": "apply_on_image",
+      "label": "Appliquer le design sur la photo du produit",
       "default": true,
-      "info": "Le design est composé sur le mockup du produit, avec les plis du tissu."
+      "info": "Nécessite une zone d'affichage calibrée sur ce produit dans l'admin TSL. Sans zone, l'image reste inchangée."
     },
     {
       "type": "checkbox",

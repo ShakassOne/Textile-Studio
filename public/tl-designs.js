@@ -74,14 +74,6 @@
     + '.tsld-thumb{width:100%;aspect-ratio:1;object-fit:contain;display:block;border-radius:6px;background:rgba(127,127,127,.08)}'
     + '.tsld-name{font-size:.72rem;line-height:1.3;margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.85}'
     + '.tsld-empty{font-size:.85rem;opacity:.6;padding:10px 0}'
-    + '.tsld-apercu{position:relative;margin-top:12px;border-radius:10px;overflow:hidden;'
-    +   'background:rgba(127,127,127,.06);display:none}'
-    + '.tsld-apercu.on{display:block}'
-    + '.tsld-apercu img{display:block;width:100%;max-width:340px;margin:0 auto;aspect-ratio:1;object-fit:contain}'
-    + '.tsld-apercu.chargement img{opacity:.35}'
-    + '.tsld-apercu-att{position:absolute;inset:0;display:none;align-items:center;justify-content:center;'
-    +   'font-size:.8rem;opacity:.7}'
-    + '.tsld-apercu.chargement .tsld-apercu-att{display:flex}'
     + '@media (max-width:600px){.tsld-grid{grid-auto-columns:96px}}';
 
   function injecterStyles() {
@@ -142,47 +134,11 @@
       else        ctas[j].removeAttribute('data-tsl-visual');
     }
 
-    var apercu = majApercu(conteneur, design);
-
     try {
       document.dispatchEvent(new CustomEvent('tsl:design', {
-        detail: { design: design, productId: conteneur.__tsldProduct, apercu: apercu },
+        detail: { design: design, productId: conteneur.__tsldProduct },
       }));
     } catch (e) { /* CustomEvent indisponible : non bloquant */ }
-  }
-
-  /**
-   * Affiche le vêtement avec le design dessus.
-   *
-   * L'image est composée côté serveur (zone d'impression, plis du tissu) et
-   * mise en cache sur disque : seule la toute première demande d'une
-   * combinaison produit × design coûte du calcul, d'où l'état d'attente.
-   *
-   * Un échec ne casse rien : le cadre se referme et la grille reste utilisable.
-   *
-   * @returns {string|null} l'URL de l'aperçu, pour les écouteurs de l'évènement
-   */
-  function majApercu(conteneur, design) {
-    var cadre = conteneur.querySelector('.tsld-apercu');
-    if (!cadre) return null;
-    var img = cadre.querySelector('img');
-
-    if (!design) {
-      cadre.classList.remove('on', 'chargement');
-      img.removeAttribute('src');
-      return null;
-    }
-
-    var url = BACKEND + '/api/products/' + conteneur.__tsldProduct + '/preview'
-            + '?design=' + encodeURIComponent(design.slug)
-            + '&shop=' + encodeURIComponent(boutique());
-
-    cadre.classList.add('on', 'chargement');
-    img.alt = design.nom || '';
-    img.onload  = function () { cadre.classList.remove('chargement'); };
-    img.onerror = function () { cadre.classList.remove('on', 'chargement'); };
-    img.src = url;
-    return url;
   }
 
   // ── Rendu ─────────────────────────────────────────────────────────────────
@@ -234,8 +190,6 @@
     var avecSearch = conteneur.getAttribute('data-tsl-search') !== '0';
     var enGrille   = conteneur.getAttribute('data-tsl-layout') === 'grid';
 
-    var avecApercu = conteneur.getAttribute('data-tsl-preview') !== '0';
-
     var html = '<div class="tsld-head"><p class="tsld-title">' + esc(titre) + '</p><span class="tsld-count"></span></div>';
     if (avecCats && data.categories.length > 1) {
       html += '<div class="tsld-cats"><button type="button" class="tsld-cat" data-cat="" aria-pressed="true">Tous</button>';
@@ -249,15 +203,6 @@
       html += '<input type="search" class="tsld-search" placeholder="Rechercher un design…" aria-label="Rechercher un design">';
     }
     html += '<div class="tsld-grid' + (enGrille ? ' tsld-wrap' : '') + '"></div>';
-    // L'aperçu vient APRÈS la grille, délibérément. Placé au-dessus, il
-    // repoussait toute la grille de sa hauteur au moment du clic : la vignette
-    // qu'on venait de toucher sortait de l'écran sur mobile. En dessous, rien
-    // ne bouge au-dessus du doigt, et le résultat apparaît là où le regard va
-    // ensuite — juste avant le bouton « Personnaliser ».
-    if (avecApercu) {
-      html += '<div class="tsld-apercu"><img alt="" loading="lazy">'
-            +   '<span class="tsld-apercu-att">Aperçu en cours…</span></div>';
-    }
     conteneur.innerHTML = html;
     conteneur.classList.add('tsld');
 

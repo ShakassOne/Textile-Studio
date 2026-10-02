@@ -52,7 +52,8 @@ le studio pour personnaliser s'il le souhaite.
 | B | `GET` public « quels visuels pour ce produit » : règle de compatibilité par la zone, exclusions, cache | 0,5 j | **fait** |
 | C | Block de thème « Sélecteur de design » : grille, catégories, recherche, `?design=`, mobile | 2–3 j | **fait** |
 | D | Aperçu : vignettes en superposition, grand visuel via le pipeline sharp, cache | 1 j | **fait** |
-| E | Panier sans passer par le studio : propriété de ligne, référence de prix par produit, fichier d'impression à la commande | 1,5–2 j | **suivant** |
+| H | **Rendu sur la photo produit** : zone à 4 coins par produit vierge, admin de calibration, composition sur l'image commerciale | 2–3 j | **en cours** |
+| E | Panier sans passer par le studio : propriété de ligne, référence de prix par produit, fichier d'impression à la commande | 1,5–2 j | à faire |
 | F | Ouverture du studio avec le visuel déjà placé (`?product_id=…&visual=…`) | 0,5 j | **fait** |
 | G | Tests, recette, passage dev puis prod | 1 j | à faire |
 
@@ -318,6 +319,64 @@ sortait de l'écran sur mobile. Vérifié après correction : déplacement de la
 vignette cliquée = 0 px.
 
 Réglage de block « Afficher l'aperçu sur le produit », activé par défaut.
+
+### 2026-10-02 — Lot D retiré, lot H ouvert
+
+Alan a refusé l'aperçu du lot D : il ne voulait pas d'une image de plus à
+côté de la grille, mais que le design s'applique **sur l'image principale du
+produit**, celle de gauche. Le panneau d'aperçu est retiré.
+
+Le moteur de composition n'est pas perdu, mais il ne suffit pas : il compose
+sur le packshot à plat, où la zone est un rectangle. Sur une photo
+commerciale, le vêtement est porté de biais et la zone est un
+quadrilatère — sans compter que les packshots sont blancs alors que le sac
+Kimood a quatorze coloris.
+
+**Décisions arbitrées avec Alan (ne pas les rouvrir) :**
+
+6. Deux zones, deux tables, aucun champ ni chemin de code commun.
+
+   | | `studio_print_zone` | `product_display_zone` |
+   |---|---|---|
+   | où | `mockups.views_json[i].zone` | table `product_display_zones` |
+   | forme | rectangle | quadrilatère (4 coins) |
+   | repère | back-office 440×340 | pourcentage de la photo |
+   | sert à | le fichier d'impression | l'affichage sur la fiche |
+
+   La zone existante n'est **pas** renommée en base : elle est lue en
+   production par le studio, le générateur, les templates et les commandes.
+   Le nom vit dans le code et la documentation.
+
+7. La calibration se fait **une fois par produit**, pas par design ni par
+   couleur. Alan l'accepte explicitement, y compris pour une cinquantaine de
+   références Toptex.
+
+8. Composer sur la photo réelle règle la couleur gratuitement : le design se
+   pose sur le tissu bleu ou terracotta de la photo, avec ses ombres. Plus
+   besoin d'un mockup par coloris.
+
+**Point ouvert, à traiter dans le lot :** le sac Kimood a quatorze pastilles
+de couleur, et Shopify change l'image principale à chaque clic. Une zone liée
+à une seule image ne correspondrait plus dès la première pastille. La zone
+s'appliquera donc à toutes les images du produit partageant le cadrage de
+l'image de référence (mêmes dimensions) — vrai pour des déclinaisons
+colorimétriques, à vérifier sur un produit aux angles de vue différents.
+
+Fait dans cette étape :
+- `utils/perspective.js` (module pur) : homographie carré → quadrilatère,
+  inverse pour le rendu pixel par pixel, cadre englobant borné, conversion
+  pourcentage → pixels, aire. 8 tests.
+- `db/database.js` : table `product_display_zones`.
+- `public/tl-designs.js` : panneau d'aperçu retiré.
+- Le réglage de block devient « Appliquer le design sur la photo du produit ».
+
+Un bug trouvé par les tests au passage : quatre coins confondus passaient par
+la branche affine et rendaient une matrice dégénérée — rendu vide, sans la
+moindre erreur pour l'expliquer. L'aire du quadrilatère est désormais
+contrôlée en entrée.
+
+Reste sur le lot H : écran de calibration dans l'admin, endpoint de rendu,
+remplacement de l'image principale côté vitrine.
 
 ## Contraintes permanentes d'Alan
 
