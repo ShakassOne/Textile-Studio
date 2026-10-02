@@ -378,6 +378,40 @@ contrôlée en entrée.
 Reste sur le lot H : écran de calibration dans l'admin, endpoint de rendu,
 remplacement de l'image principale côté vitrine.
 
+### 2026-10-02 — Lot H : écran de calibration
+
+`routes/product-display-zones.js` — lecture et écriture de la zone, plus la
+liste des photos du produit tirée de l'API Shopify pour que l'écran ait
+quelque chose à afficher. Les coins sont validés en entrée : quatre
+exactement, numériques, dans les bornes, et formant une vraie surface
+(`homographieDepuisCarre` refuse un quadrilatère plat).
+
+Admin → **Zones produit**, nouvelle entrée sous Catalogue, distincte de
+« Mockups & Zones » pour qu'aucune confusion ne s'installe. Choix du
+produit, choix de la photo parmi celles du produit, quatre poignées à
+glisser, polygone de contrôle, enregistrement.
+
+Deux détails qui comptent :
+- si la photo calibrée a disparu du produit, l'écran le dit au lieu de
+  garder une zone qui tomberait au mauvais endroit ;
+- enregistrer ou supprimer une zone efface les rendus déjà composés pour ce
+  produit — le cache est un fichier sur disque, il n'expire jamais tout
+  seul, et sans cette purge un coin déplacé resterait invisible.
+
+Bug trouvé en regardant l'écran : le polygone ne s'affichait pas. L'attribut
+`points` d'un `<polygon>` SVG n'accepte pas les pourcentages, contrairement
+aux propriétés CSS de position — les poignées étaient donc bien placées mais
+reliées par rien. Corrigé par un `viewBox="0 0 100 100"` avec
+`preserveAspectRatio="none"`, où une unité vaut un pour cent.
+
+Vérifié dans un navigateur, thèmes sombre et clair : sélection du produit,
+vignettes des photos, glissement d'une poignée, enregistrement, badge, liste
+des produits calibrés.
+
+Reste sur le lot H : l'endpoint de rendu (projeter le design dans le
+quadrilatère, reprendre les ombres de la photo), puis le remplacement de
+l'image principale côté vitrine.
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.

@@ -51,6 +51,24 @@ function _cacheEcrire(cle, v) {
 /** Vide le cache (appelé quand la bibliothèque change). */
 function viderCacheDesigns() { _cache.clear(); }
 
+/**
+ * Efface les rendus déjà composés pour un produit.
+ * Appelé quand sa zone d'affichage change : le cache est un fichier sur
+ * disque, il n'expire jamais tout seul, et sans cette purge un coin déplacé
+ * resterait invisible.
+ */
+function purgerRendusProduit(productId) {
+  const fs = require('fs'), path = require('path');
+  const dir = path.join(process.env.DATA_DIR || path.join(__dirname, '..'),
+                        'uploads', 'generated', 'photos');
+  try {
+    const prefixe = `p${String(productId).replace(/\D/g, '')}_`;
+    for (const f of fs.readdirSync(dir)) {
+      if (f.startsWith(prefixe)) { try { fs.unlinkSync(path.join(dir, f)); } catch {} }
+    }
+  } catch { /* dossier absent : rien à purger */ }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/products/:productId/designs
 // ─────────────────────────────────────────────────────────────────────────────
@@ -291,3 +309,4 @@ router.get('/products/:productId/preview', attachShopId, async (req, res) => {
 
 module.exports = router;
 module.exports.viderCacheDesigns = viderCacheDesigns;
+module.exports.purgerRendusProduit = purgerRendusProduit;

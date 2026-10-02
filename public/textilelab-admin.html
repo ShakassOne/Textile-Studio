@@ -242,6 +242,14 @@ tr:hover td{background:var(--glass)}
 .view-status.empty{background:var(--bg3);color:var(--text3);border:1px solid var(--border)}
 .zone-editor-canvas-wrap{position:relative;background:var(--bg3);border:1px solid var(--border);border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center;min-height:300px}
 .zone-editor-canvas-wrap canvas{display:block}
+.dz-handle{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;
+  background:var(--amber);border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.45);cursor:grab;z-index:3;
+  display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#000;touch-action:none}
+.dz-handle:active{cursor:grabbing;transform:scale(1.15)}
+.dz-thumb{flex:0 0 auto;width:72px;height:72px;border-radius:8px;border:2px solid var(--border);overflow:hidden;
+  cursor:pointer;background:var(--bg3);padding:2px}
+.dz-thumb img{width:100%;height:100%;object-fit:contain;display:block}
+.dz-thumb.on{border-color:var(--amber)}
 .zone-editor-canvas-wrap .no-img-msg{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--text3);pointer-events:none;transition:background .15s;border-radius:10px}
 .mockup-modal.open .zone-editor-canvas-wrap .no-img-msg{pointer-events:all}
 .zone-editor-canvas-wrap .no-img-msg:hover{background:rgba(245,158,11,.05)}
@@ -346,6 +354,10 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
       <div class="nav-item" onclick="showView('templates')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
         Templates produit
+      </div>
+      <div class="nav-item" onclick="showView('display-zones')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7l6-3 10 4-6 3z"/><path d="M4 7v10l10 4 6-3V8"/><path d="M14 11v10"/></svg>
+        Zones produit
       </div>
       <div class="nav-item" onclick="showView('library')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
@@ -613,6 +625,77 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
               <div style="color:var(--text3);font-size:13px;padding:12px">Chargement…</div>
             </div>
           </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ══ ZONES D'AFFICHAGE PRODUIT ══ -->
+    <!-- À ne pas confondre avec « Mockups & Zones » : ici on calibre la surface
+         imprimable sur la PHOTO COMMERCIALE d'un produit vierge, pour afficher
+         les designs dessus sur la fiche. La zone des mockups, elle, sert à
+         produire le fichier d'impression. Deux objets distincts. -->
+    <div class="view" id="view-display-zones">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Zones produit</div>
+          <div class="page-sub">Où poser les designs sur la photo d'un produit vierge — une fois par produit</div>
+        </div>
+        <div class="page-actions">
+          <button class="btn" onclick="loadDisplayZones()">↺ Produits</button>
+          <button class="btn btn-danger" id="dz-del" onclick="deleteDisplayZone()" style="display:none">🗑 Supprimer la zone</button>
+          <button class="btn btn-primary" id="dz-save" onclick="saveDisplayZone()" disabled>💾 Enregistrer la zone</button>
+        </div>
+      </div>
+      <div style="padding:24px;display:flex;flex-direction:column;gap:18px">
+
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+          <div style="flex:1;min-width:260px">
+            <label style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px">Produit vierge</label>
+            <select id="dz-product" onchange="selectDisplayZoneProduct(this.value)"
+              style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:9px 12px;color:var(--text);font-size:13px;outline:none">
+              <option value="">Chargement…</option>
+            </select>
+          </div>
+          <div id="dz-badge" style="font-size:11px;padding:5px 12px;border-radius:20px;font-family:'DM Mono',monospace;background:var(--bg3);border:1px solid var(--border);color:var(--text3)">—</div>
+        </div>
+
+        <div id="dz-images" style="display:flex;gap:8px;overflow-x:auto;padding-bottom:6px"></div>
+
+        <div class="zone-editor-canvas-wrap" id="dz-stage-wrap" style="min-height:360px">
+          <div id="dz-stage" style="position:relative;display:none;max-width:100%">
+            <img id="dz-img" alt="" style="display:block;max-width:100%;max-height:60vh;user-select:none;-webkit-user-drag:none">
+            <!-- viewBox 0 0 100 100 + preserveAspectRatio="none" : une unité SVG
+                 vaut exactement 1 % de l'image, donc les coins s'écrivent tels
+                 quels. L'attribut `points` d'un polygone n'accepte PAS les
+                 pourcentages, contrairement aux attributs de position CSS.
+                 vector-effect garde le trait d'épaisseur constante malgré
+                 l'étirement non uniforme du viewBox. -->
+            <svg id="dz-poly" viewBox="0 0 100 100" preserveAspectRatio="none"
+                 style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible">
+              <polygon points="" fill="rgba(245,158,11,.18)" stroke="var(--amber)" stroke-width="2"
+                       stroke-dasharray="3 2" vector-effect="non-scaling-stroke"></polygon>
+            </svg>
+          </div>
+          <div class="no-img-msg" id="dz-vide">
+            <div style="font-size:26px">🖼</div>
+            <div style="font-size:13px">Choisissez un produit pour poser sa zone</div>
+          </div>
+        </div>
+
+        <div style="font-size:11.5px;color:var(--text3);line-height:1.6;max-width:760px">
+          Placez les quatre poignées aux coins de la surface imprimable, dans l'ordre
+          haut-gauche, haut-droit, bas-droit, bas-gauche. Quatre coins et non un cadre :
+          le vêtement est photographié de biais, un rectangle y collerait le design comme
+          un autocollant. La zone vaut pour toutes les images de ce produit qui ont le même
+          cadrage — vos déclinaisons de couleur sont donc couvertes par un seul réglage.
+        </div>
+
+        <div class="table-card" style="padding:0;overflow:hidden">
+          <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-family:'Syne',sans-serif;font-weight:700;font-size:13px">
+            Produits calibrés
+          </div>
+          <div id="dz-list" style="padding:14px 18px;font-size:13px;color:var(--text3)">Chargement…</div>
         </div>
 
       </div>
@@ -1457,6 +1540,7 @@ function showView(name) {
   if (name === 'categories') loadCategoriesView();
   if (name === 'mockups')   loadMockupsView();
   if (name === 'library')   loadLibrary();
+  if (name === 'display-zones') loadDisplayZones();
   if (name === 'templates') loadTemplatesList();
   if (name === 'settings')  loadAiQuotaAdmin();
   if (name === 'pricing')   { loadProductLinks(); loadPricingEditor(); loadVariantMapping(); }
@@ -3496,6 +3580,215 @@ async function _onPlChange(sel) {
   } else {
     showToast('⚠ Erreur lors de la sauvegarde');
   }
+}
+
+// ============================================
+// ZONES D'AFFICHAGE PRODUIT
+// ============================================
+// Calibration de la surface imprimable sur la PHOTO COMMERCIALE d'un produit
+// vierge. Rien à voir avec « Mockups & Zones », qui définit la zone du
+// fichier d'impression sur un packshot à plat : formes, repères et usages
+// différents, et deux tables distinctes en base.
+//
+// Les coins sont enregistrés en POURCENTAGE de l'image, jamais en pixels : le
+// CDN Shopify sert la même photo en plusieurs définitions.
+
+let _dzProducts = [], _dzImages = [], _dzImage = null, _dzCorners = null, _dzZones = [];
+
+// Zone de départ : un cadre raisonnable au centre, que l'admin ajuste.
+// Ordre imposé : haut-gauche, haut-droit, bas-droit, bas-gauche.
+const DZ_DEPART = [{ x: 32, y: 26 }, { x: 68, y: 26 }, { x: 68, y: 64 }, { x: 32, y: 64 }];
+const DZ_LETTRES = ['1', '2', '3', '4'];
+
+async function loadDisplayZones() {
+  const sel = document.getElementById('dz-product');
+  const [res, zones] = await Promise.all([
+    _fetchShopifyProducts(),
+    api('/api/admin/product-display-zones').catch(() => []),
+  ]);
+  _dzProducts = res.products || [];
+  _dzZones    = Array.isArray(zones) ? zones : [];
+
+  const calibres = new Set(_dzZones.map(z => String(z.productId)));
+  sel.innerHTML = '<option value="">— Choisir un produit —</option>' +
+    _dzProducts.map(p => {
+      const id = String(p.id || '').replace(/\D/g, '');
+      return `<option value="${id}">${calibres.has(id) ? '✓ ' : ''}${_esc(p.title)}</option>`;
+    }).join('');
+
+  _dzRenderList();
+}
+
+function _dzRenderList() {
+  const el = document.getElementById('dz-list');
+  if (!_dzZones.length) {
+    el.innerHTML = 'Aucun produit calibré pour l\'instant.';
+    return;
+  }
+  const titres = {};
+  _dzProducts.forEach(p => { titres[String(p.id || '').replace(/\D/g, '')] = p.title; });
+  el.innerHTML = _dzZones.map(z => `
+    <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)">
+      <span style="color:var(--amber)">◆</span>
+      <span style="flex:1;color:var(--text)">${_esc(titres[String(z.productId)] || ('Produit ' + z.productId))}</span>
+      <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text3)">${_esc(z.updatedAt || '')}</span>
+      <button class="btn btn-sm" onclick="selectDisplayZoneProduct('${z.productId}', true)">Modifier</button>
+    </div>`).join('');
+}
+
+async function selectDisplayZoneProduct(productId, depuisListe) {
+  const stage = document.getElementById('dz-stage');
+  const vide  = document.getElementById('dz-vide');
+  const badge = document.getElementById('dz-badge');
+  document.getElementById('dz-save').disabled = true;
+  document.getElementById('dz-del').style.display = 'none';
+
+  if (depuisListe) document.getElementById('dz-product').value = productId;
+
+  if (!productId) {
+    stage.style.display = 'none'; vide.style.display = ''; badge.textContent = '—';
+    document.getElementById('dz-images').innerHTML = '';
+    return;
+  }
+
+  badge.textContent = '⏳ chargement…';
+  const data = await api(`/api/admin/products/${productId}/display-zone`);
+  if (!data) { badge.textContent = '⚠ illisible'; return; }
+
+  _dzImages  = data.images || [];
+  _dzCorners = (data.zone?.corners?.length === 4)
+    ? data.zone.corners.map(c => ({ x: c.x, y: c.y }))
+    : DZ_DEPART.map(c => ({ ...c }));
+
+  // Image de référence : celle déjà calibrée si elle existe encore, sinon la
+  // première. Si la photo de référence a disparu du produit, on le dit —
+  // garder la zone en silence la ferait tomber au mauvais endroit.
+  const refId = data.zone?.referenceMediaId || null;
+  const ref   = refId ? _dzImages.find(i => i.id === refId) : null;
+  if (refId && !ref) {
+    showToast('⚠ L\'image calibrée n\'existe plus sur ce produit — repositionnez la zone');
+  }
+  _dzImage = ref || _dzImages[0] || null;
+
+  if (!_dzImage) {
+    stage.style.display = 'none'; vide.style.display = '';
+    badge.textContent = '⚠ ce produit n\'a aucune image';
+    document.getElementById('dz-images').innerHTML = '';
+    return;
+  }
+
+  badge.textContent = data.zone ? '✓ zone enregistrée' : 'zone à poser';
+  document.getElementById('dz-del').style.display = data.zone ? '' : 'none';
+  vide.style.display = 'none';
+  stage.style.display = '';
+  _dzRenderImages();
+  _dzAfficherImage();
+}
+
+function _dzRenderImages() {
+  document.getElementById('dz-images').innerHTML = _dzImages.map(i => `
+    <div class="dz-thumb ${_dzImage && i.id === _dzImage.id ? 'on' : ''}" data-id="${_esc(i.id)}"
+         title="${i.width}×${i.height}" onclick="_dzChoisirImage('${_esc(i.id)}')">
+      <img src="${_esc(i.url)}" alt="" loading="lazy">
+    </div>`).join('');
+}
+
+function _dzChoisirImage(id) {
+  const img = _dzImages.find(i => i.id === id);
+  if (!img) return;
+  _dzImage = img;
+  _dzRenderImages();
+  _dzAfficherImage();
+}
+
+function _dzAfficherImage() {
+  const img = document.getElementById('dz-img');
+  img.onload = () => { _dzPoserPoignees(); document.getElementById('dz-save').disabled = false; };
+  img.src = _dzImage.url;
+  if (img.complete && img.naturalWidth) img.onload();
+}
+
+/** (Re)crée les quatre poignées et les positionne en pourcentage. */
+function _dzPoserPoignees() {
+  const stage = document.getElementById('dz-stage');
+  stage.querySelectorAll('.dz-handle').forEach(h => h.remove());
+  _dzCorners.forEach((c, i) => {
+    const h = document.createElement('div');
+    h.className = 'dz-handle';
+    h.dataset.i = i;
+    h.textContent = DZ_LETTRES[i];
+    h.style.left = c.x + '%';
+    h.style.top  = c.y + '%';
+    h.addEventListener('pointerdown', _dzDebutGlisse);
+    stage.appendChild(h);
+  });
+  _dzMajPolygone();
+}
+
+function _dzDebutGlisse(e) {
+  e.preventDefault();
+  const poignee = e.currentTarget;
+  const i = Number(poignee.dataset.i);
+  const img = document.getElementById('dz-img');
+  poignee.setPointerCapture(e.pointerId);
+
+  const bouger = (ev) => {
+    const r = img.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    // Un peu de débordement toléré : un design peut mordre le bord d'un sac.
+    const x = Math.max(-10, Math.min(110, ((ev.clientX - r.left) / r.width) * 100));
+    const y = Math.max(-10, Math.min(110, ((ev.clientY - r.top) / r.height) * 100));
+    _dzCorners[i] = { x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100 };
+    poignee.style.left = x + '%';
+    poignee.style.top  = y + '%';
+    _dzMajPolygone();
+  };
+  const finir = () => {
+    poignee.removeEventListener('pointermove', bouger);
+    poignee.removeEventListener('pointerup', finir);
+    poignee.removeEventListener('pointercancel', finir);
+  };
+  poignee.addEventListener('pointermove', bouger);
+  poignee.addEventListener('pointerup', finir);
+  poignee.addEventListener('pointercancel', finir);
+}
+
+function _dzMajPolygone() {
+  const poly = document.querySelector('#dz-poly polygon');
+  // Unités SVG, pas de pourcentages : le viewBox est calé sur 0→100.
+  if (poly) poly.setAttribute('points', _dzCorners.map(c => `${c.x},${c.y}`).join(' '));
+}
+
+async function saveDisplayZone() {
+  const productId = document.getElementById('dz-product').value;
+  if (!productId || !_dzImage || !_dzCorners) return;
+  const r = await api(`/api/admin/products/${productId}/display-zone`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      corners:          _dzCorners,
+      referenceMediaId: _dzImage.id,
+      referenceWidth:   _dzImage.width,
+      referenceHeight:  _dzImage.height,
+    }),
+  });
+  if (r === null) return showToast('⚠ ' + (window.__TL_LAST_API_ERROR || 'Enregistrement impossible'));
+  showToast('✅ Zone enregistrée — les designs s\'y afficheront');
+  document.getElementById('dz-badge').textContent = '✓ zone enregistrée';
+  document.getElementById('dz-del').style.display = '';
+  _dzZones = await api('/api/admin/product-display-zones').catch(() => _dzZones) || _dzZones;
+  _dzRenderList();
+}
+
+async function deleteDisplayZone() {
+  const productId = document.getElementById('dz-product').value;
+  if (!productId) return;
+  if (!confirm('Supprimer la zone de ce produit ? Les designs ne s\'afficheront plus sur sa photo.')) return;
+  const r = await api(`/api/admin/products/${productId}/display-zone`, { method: 'DELETE' });
+  if (r === null) return showToast('⚠ Suppression impossible');
+  showToast('🗑 Zone supprimée');
+  _dzZones = (await api('/api/admin/product-display-zones').catch(() => [])) || [];
+  _dzRenderList();
+  selectDisplayZoneProduct(productId);
 }
 
 async function refreshShopifyProducts() {

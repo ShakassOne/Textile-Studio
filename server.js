@@ -557,6 +557,8 @@ app.use('/api/shop-settings',  require('./routes/shop-settings'));
 app.use('/api',                require('./routes/product-templates'));
 // Catalogue de visuels proposés sur une fiche produit (public, via App Proxy).
 app.use('/api',                require('./routes/product-designs'));
+// Zone d'affichage calibrée sur la photo commerciale d'un produit vierge.
+app.use('/api',                require('./routes/product-display-zones'));
 app.use('/proxy',             require('./routes/app-proxy'));
 
 // ── Fix webhooks : réenregistre orders/paid sur tous les shops actifs ─────────
