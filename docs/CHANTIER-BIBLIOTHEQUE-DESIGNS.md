@@ -412,6 +412,50 @@ Reste sur le lot H : l'endpoint de rendu (projeter le design dans le
 quadrilatère, reprendre les ombres de la photo), puis le remplacement de
 l'image principale côté vitrine.
 
+### 2026-10-02 — Lot H : rendu et remplacement de l'image
+
+`GET /api/products/:productId/preview?design=…&media=…` compose désormais sur
+la PHOTO du produit, plus sur un packshot. Trois étapes :
+
+1. le design est projeté dans le quadrilatère calibré, en perspective ;
+2. les ombres de la photo sont reportées dessus — chaque pixel est multiplié
+   par la luminance locale du tissu rapportée à sa moyenne, bornée pour qu'un
+   pli n'avale pas le design ni qu'un reflet ne le délave. Sans ce report, le
+   design flotte au-dessus du vêtement et l'œil voit un collage ;
+3. composition, écriture sur disque, redirection vers le fichier.
+
+`projeterDansQuadrilatere` (utils/perspective.js) fait le travail pixel par
+pixel, en projection inverse et en échantillonnage bilinéaire. 5 tests de
+plus, dont un qui vérifie qu'un trapèze déplace bien la matière en
+descendant — c'est-à-dire que la perspective est réelle et pas un simple
+cadrage.
+
+**Le paramètre `media`** accepte un GID Shopify ou l'URL que la vitrine
+affiche déjà — le DOM n'expose pas les identifiants de média, le thème ne
+peut donner que l'URL. Les noms de fichier sont comparés après avoir retiré
+les suffixes de taille des anciens thèmes (`sac_600x800.jpg`). La photo
+demandée n'est acceptée que si elle appartient au produit ET partage les
+dimensions de celle calibrée : sans ce contrôle, une vue de dos recevrait les
+coins de la vue de face.
+
+Côté vitrine, `tl-designs.js` remplace la source de l'image principale —
+repérée comme la plus grande image de la page hors notre grille, ce qui ne
+dépend d'aucun thème. Deux pièges traités :
+- `srcset` est vidé, sinon le navigateur y repioche l'image d'origine et le
+  remplacement reste sans effet visible ;
+- un MutationObserver repose le rendu quand le thème reconstruit sa galerie,
+  et en profite pour **recomposer sur la nouvelle photo** : c'est ce qui fait
+  fonctionner les quatorze coloris du sac Kimood.
+
+Si le rendu échoue, la photo d'origine reste. La fiche n'est jamais cassée
+par cette fonctionnalité.
+
+Vérifié en rejouant la chaîne hors HTTP sur un vrai design et une vraie
+photo : projection correcte, trapèze visiblement incliné, transparence du PNG
+conservée. **Le jugement esthétique du report d'ombres demande une photo
+portée réelle** — impossible depuis ici, le store de dev est protégé par mot
+de passe. À regarder avec Alan sur son premier produit calibré.
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.

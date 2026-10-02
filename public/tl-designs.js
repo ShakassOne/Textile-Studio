@@ -134,11 +134,109 @@
       else        ctas[j].removeAttribute('data-tsl-visual');
     }
 
+    appliquerSurLaPhoto(conteneur, design);
+
     try {
       document.dispatchEvent(new CustomEvent('tsl:design', {
         detail: { design: design, productId: conteneur.__tsldProduct },
       }));
     } catch (e) { /* CustomEvent indisponible : non bloquant */ }
+  }
+
+  // ── Le design sur la photo du produit ─────────────────────────────────────
+  //
+  // C'est la cible : pas une image de plus à côté de la grille, mais LA photo
+  // du produit qui porte le design. Le serveur compose, ici on ne fait que
+  // remplacer la source de l'image principale.
+  //
+  // Trouver « l'image principale » sans rien savoir du thème : c'est la plus
+  // grande image affichée de la page, hors notre propre grille. Sur une fiche
+  // produit, c'est toujours le visuel du produit — aucun autre élément n'en
+  // approche la surface.
+  function imagePrincipale() {
+    var imgs = document.querySelectorAll('img');
+    var meilleure = null, aireMax = 0;
+    for (var i = 0; i < imgs.length; i++) {
+      var im = imgs[i];
+      if (im.closest('.tsld')) continue;                 // nos vignettes
+      var r = im.getBoundingClientRect();
+      var aire = r.width * r.height;
+      if (aire < 40000) continue;                        // moins de 200×200 : pas le visuel produit
+      if (aire > aireMax) { aireMax = aire; meilleure = im; }
+    }
+    return meilleure;
+  }
+
+  function urlApercu(conteneur, design, source) {
+    return BACKEND + '/api/products/' + conteneur.__tsldProduct + '/preview'
+         + '?design=' + encodeURIComponent(design.slug)
+         + '&shop=' + encodeURIComponent(boutique())
+         + (source ? '&media=' + encodeURIComponent(source) : '');
+  }
+
+  /**
+   * Remplace la source de l'image principale par le rendu, ou la restaure.
+   *
+   * `srcset` doit être vidé : laissé en place, le navigateur y repioche une
+   * variante de l'image d'origine et notre remplacement n'a aucun effet
+   * visible — panne classique et déroutante.
+   *
+   * Si le rendu échoue (produit non calibré, serveur indisponible), la photo
+   * d'origine reste : la fiche n'est jamais cassée par cette fonctionnalité.
+   */
+  function appliquerSurLaPhoto(conteneur, design) {
+    if (conteneur.getAttribute('data-tsl-apply-image') === '0') return;
+    var img = imagePrincipale();
+    if (!img) return;
+
+    if (!img.__tsldOrigine) {
+      img.__tsldOrigine = { src: img.getAttribute('src'), srcset: img.getAttribute('srcset') };
+    }
+    var origine = img.__tsldOrigine;
+
+    if (!design) {
+      img.__tsldRendu = null;
+      if (origine.src) img.setAttribute('src', origine.src);
+      if (origine.srcset) img.setAttribute('srcset', origine.srcset);
+      return;
+    }
+
+    // La source demandée au serveur est la photo actuellement affichée : c'est
+    // ainsi que les coloris fonctionnent. Le client clique « terracotta », le
+    // thème change la photo, et le design se recompose sur celle-là.
+    var url = urlApercu(conteneur, design, origine.src || '');
+    var sonde = new Image();
+    sonde.onload = function () {
+      img.__tsldRendu = url;
+      img.removeAttribute('srcset');
+      img.setAttribute('src', url);
+      surveillerPhoto(conteneur, img);
+    };
+    sonde.onerror = function () { /* pas de rendu : la photo d'origine reste */ };
+    sonde.src = url;
+  }
+
+  /**
+   * Les thèmes reconstruisent leur galerie à chaque changement de variante ou
+   * de vignette, ce qui efface notre remplacement. On le repose, et on en
+   * profite pour recomposer sur la NOUVELLE photo — c'est exactement ce qu'il
+   * faut quand le client change de couleur.
+   */
+  function surveillerPhoto(conteneur, img) {
+    if (img.__tsldObs) return;
+    img.__tsldObs = new MutationObserver(function () {
+      var actuel = img.getAttribute('src');
+      if (!img.__tsldRendu || actuel === img.__tsldRendu) return;
+      // Le thème a repris la main : nouvelle photo d'origine, nouveau rendu.
+      img.__tsldOrigine = { src: actuel, srcset: img.getAttribute('srcset') };
+      var slug = etat[conteneur.__tsldId];
+      var design = null;
+      for (var i = 0; i < (conteneur.__tsldTous || []).length; i++) {
+        if (conteneur.__tsldTous[i].slug === slug) design = conteneur.__tsldTous[i];
+      }
+      if (design) appliquerSurLaPhoto(conteneur, design);
+    });
+    img.__tsldObs.observe(img, { attributes: true, attributeFilter: ['src'] });
   }
 
   // ── Rendu ─────────────────────────────────────────────────────────────────

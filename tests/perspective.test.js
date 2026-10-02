@@ -100,3 +100,86 @@ test('l\'aire permet de rejeter une zone invisible', () => {
   assert.equal(P.aire([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }]), 100);
   assert.equal(P.aire([{ x: 3, y: 3 }, { x: 3, y: 3 }, { x: 3, y: 3 }, { x: 3, y: 3 }]), 0);
 });
+
+// ── Projection pixel par pixel ─────────────────────────────────────────────
+
+/** Design 2×2 opaque : rouge, vert / bleu, blanc. */
+function design2x2() {
+  return new Uint8Array([
+    255, 0, 0, 255,   0, 255, 0, 255,
+    0, 0, 255, 255,   255, 255, 255, 255,
+  ]);
+}
+const px = (buf, largeur, x, y) => {
+  const o = (y * largeur + x) * 4;
+  return [buf[o], buf[o + 1], buf[o + 2], buf[o + 3]];
+};
+
+test('chaque coin du design arrive au bon coin de la zone', () => {
+  const out = P.projeterDansQuadrilatere(design2x2(), 2, 2,
+    [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }],
+    { x: 0, y: 0, w: 10, h: 10 });
+  assert.ok(out);
+  // Chaque coin doit être dominé par sa couleur d'origine. L'interpolation
+  // bilinéaire mélange légèrement avec les voisins, d'où le seuil.
+  const dominante = (p) => p.indexOf(Math.max(p[0], p[1], p[2]));
+  assert.equal(dominante(px(out, 10, 0, 0)), 0, 'haut-gauche rouge');
+  assert.equal(dominante(px(out, 10, 9, 0)), 1, 'haut-droit vert');
+  assert.equal(dominante(px(out, 10, 0, 9)), 2, 'bas-gauche bleu');
+  const bd = px(out, 10, 9, 9);
+  assert.ok(bd[0] > 200 && bd[1] > 200 && bd[2] > 200, 'bas-droit blanc');
+});
+
+test('hors du quadrilatère, rien n\'est peint', () => {
+  // Sans ça, le design déborderait du vêtement sur le fond de la photo.
+  const out = P.projeterDansQuadrilatere(design2x2(), 2, 2,
+    [{ x: 3, y: 3 }, { x: 7, y: 3 }, { x: 7, y: 7 }, { x: 3, y: 7 }],
+    { x: 0, y: 0, w: 10, h: 10 });
+  assert.equal(px(out, 10, 0, 0)[3], 0, 'coin de la sortie transparent');
+  assert.equal(px(out, 10, 9, 9)[3], 0, 'autre coin transparent');
+  assert.equal(px(out, 10, 5, 5)[3], 255, 'centre peint');
+});
+
+test('la transparence du design est conservée', () => {
+  // Un design PNG détouré ne doit pas se retrouver sur fond opaque : les
+  // pixels transparents laissent voir le tissu.
+  //
+  // On ne teste PAS un alpha nul au sommet : avec une source de deux pixels
+  // de haut, le premier pixel de sortie est déjà à 6 % de la seconde ligne et
+  // l'interpolation bilinéaire l'y mélange — c'est précisément son rôle, et
+  // sur un design réel de plusieurs centaines de pixels ce mélange est
+  // inférieur au pixel. Ce qui compte, c'est que le dégradé aille bien du
+  // transparent vers l'opaque.
+  const d = new Uint8Array([
+    255, 0, 0, 0,     255, 0, 0, 0,
+    255, 0, 0, 255,   255, 0, 0, 255,
+  ]);
+  const out = P.projeterDansQuadrilatere(d, 2, 2,
+    [{ x: 0, y: 0 }, { x: 8, y: 0 }, { x: 8, y: 8 }, { x: 0, y: 8 }],
+    { x: 0, y: 0, w: 8, h: 8 });
+  const haut = px(out, 8, 4, 0)[3], milieu = px(out, 8, 4, 4)[3], bas = px(out, 8, 4, 7)[3];
+  assert.ok(haut < 30, `sommet quasi transparent (${haut})`);
+  assert.ok(bas > 230, `base opaque (${bas})`);
+  assert.ok(haut < milieu && milieu < bas, 'dégradé monotone');
+});
+
+test('la projection suit la perspective, elle ne se contente pas d\'un cadre', () => {
+  // Quadrilatère en trapèze : le haut est deux fois plus étroit que le bas.
+  // La frontière rouge/vert doit donc se déplacer en descendant.
+  const out = P.projeterDansQuadrilatere(design2x2(), 2, 2,
+    [{ x: 20, y: 0 }, { x: 40, y: 0 }, { x: 60, y: 40 }, { x: 0, y: 40 }],
+    { x: 0, y: 0, w: 60, h: 40 });
+  assert.ok(out);
+  // En haut, la zone va de x=20 à x=40 : à x=10 il n'y a rien.
+  assert.equal(px(out, 60, 10, 1)[3], 0, 'hors zone en haut');
+  // En bas, elle va de 0 à 60 : à x=10 il y a de la matière.
+  assert.equal(px(out, 60, 10, 38)[3], 255, 'dans la zone en bas');
+});
+
+test('une zone inexploitable rend null plutôt que des pixels faux', () => {
+  const d = design2x2();
+  const carre = [{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 5, y: 5 }, { x: 0, y: 5 }];
+  assert.equal(P.projeterDansQuadrilatere(d, 2, 2, [{ x: 0, y: 0 }], { x: 0, y: 0, w: 5, h: 5 }), null);
+  assert.equal(P.projeterDansQuadrilatere(d, 2, 2, carre, { x: 0, y: 0, w: 0, h: 5 }), null);
+  assert.equal(P.projeterDansQuadrilatere(d, 0, 0, carre, { x: 0, y: 0, w: 5, h: 5 }), null);
+});

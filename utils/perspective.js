@@ -132,8 +132,70 @@ function aire(coins) {
   return Math.abs(s) / 2;
 }
 
+/**
+ * Projette une image RGBA dans un quadrilatère.
+ * ──────────────────────────────────────────────────────────────────────────
+ * On parcourt les pixels de la SORTIE et on cherche, pour chacun, d'où il
+ * vient dans le design. C'est le seul sens praticable : la projection directe
+ * laisserait des trous dès que la zone est plus grande que le design, et des
+ * pixels écrasés dans le cas inverse.
+ *
+ * Échantillonnage bilinéaire — en plus proche voisin, les bords d'un design
+ * vectorisé deviennent des escaliers bien visibles sur une photo.
+ *
+ * @param {Uint8Array|Buffer} design  pixels RGBA du design, largeur × hauteur × 4
+ * @param {number} dw, dh             dimensions du design
+ * @param {{x:number,y:number}[]} coins  les 4 coins, en pixels de la sortie
+ * @param {{x:number,y:number,w:number,h:number}} cadre  zone de sortie à peindre
+ * @returns {Uint8Array|null} pixels RGBA du cadre (w × h × 4), transparent
+ *                            hors du quadrilatère. null si la zone est
+ *                            inexploitable.
+ */
+function projeterDansQuadrilatere(design, dw, dh, coins, cadre) {
+  const m = homographieDepuisCarre(coins);
+  if (!m) return null;
+  const inv = inverse3x3(m);
+  if (!inv) return null;
+  if (!(cadre.w > 0) || !(cadre.h > 0) || !(dw > 0) || !(dh > 0)) return null;
+
+  const out = new Uint8Array(cadre.w * cadre.h * 4); // transparent par défaut
+  const [i0, i1, i2, i3, i4, i5, i6, i7, i8] = inv;
+
+  for (let y = 0; y < cadre.h; y++) {
+    const py = cadre.y + y + 0.5; // centre du pixel
+    for (let x = 0; x < cadre.w; x++) {
+      const px = cadre.x + x + 0.5;
+
+      const w = i6 * px + i7 * py + i8;
+      if (w === 0) continue;
+      const u = (i0 * px + i1 * py + i2) / w;
+      const v = (i3 * px + i4 * py + i5) / w;
+      if (u < 0 || u > 1 || v < 0 || v > 1) continue; // hors du quadrilatère
+
+      // Coordonnées dans le design, en pixels.
+      const sx = u * (dw - 1);
+      const sy = v * (dh - 1);
+      const x0 = Math.floor(sx), y0 = Math.floor(sy);
+      const x1 = Math.min(x0 + 1, dw - 1), y1 = Math.min(y0 + 1, dh - 1);
+      const fx = sx - x0, fy = sy - y0;
+
+      const a = (y0 * dw + x0) * 4, b = (y0 * dw + x1) * 4;
+      const c = (y1 * dw + x0) * 4, d = (y1 * dw + x1) * 4;
+      const o = (y * cadre.w + x) * 4;
+
+      for (let k = 0; k < 4; k++) {
+        const haut = design[a + k] * (1 - fx) + design[b + k] * fx;
+        const bas  = design[c + k] * (1 - fx) + design[d + k] * fx;
+        out[o + k] = Math.round(haut * (1 - fy) + bas * fy);
+      }
+    }
+  }
+  return out;
+}
+
 module.exports = {
   homographieDepuisCarre,
+  projeterDansQuadrilatere,
   inverse3x3,
   projeter,
   cadreEnglobant,

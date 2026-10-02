@@ -175,31 +175,73 @@ router.get('/products/:productId/designs', attachShopId, (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/products/:productId/preview?design=<slug|id>&view=0
+// GET /api/products/:productId/preview?design=<slug|id>&media=<gid>
 // ─────────────────────────────────────────────────────────────────────────────
-// Le vêtement avec le design dessus. Sans ça, le client choisit un visuel sans
-// voir ce qu'il achète.
+// La PHOTO du produit avec le design dessus. Pas un packshot à côté : l'image
+// que le client regarde déjà, avec son tissu, sa couleur et ses plis.
 //
-// On réutilise le moteur de compositing du back-office (routes/mockup-gen.js) :
-// même displacement map, mêmes plis du tissu, donc un aperçu fidèle plutôt
-// qu'une image collée à plat. Il tourne en 900 px et non en 2000 : c'est une
-// vignette de fiche produit, pas un fichier d'impression.
+// Trois étapes :
+//   1. le design est projeté dans le quadrilatère calibré en admin
+//      (product_display_zone), donc en perspective et pas à plat ;
+//   2. les ombres de la photo sont reportées dessus, sinon le design flotte
+//      au-dessus du vêtement au lieu de reposer sur le tissu ;
+//   3. le tout est composé sur la photo et mis en cache sur disque.
 //
-// Le résultat est écrit sur disque et la requête redirige vers le fichier
-// statique. Les visites suivantes ne repassent plus par ce calcul, qui coûte
-// une bonne seconde de CPU.
+// Le paramètre `media` permet de demander une AUTRE photo du même produit —
+// c'est ce qui fait fonctionner les quatorze coloris du sac Kimood avec une
+// seule calibration : même cadrage, donc mêmes coins.
 const fs   = require('fs');
 const path = require('path');
-const APERCU_TAILLE = 900;
-const APERCU_MARGE  = 0.9; // même marge que centerObjectInPrintFrame dans le studio
-const APERCU_DIR = path.join(process.env.DATA_DIR || path.join(__dirname, '..'), 'uploads', 'generated', 'apercus');
+const PERSP = require('../utils/perspective');
 
-// Deux visiteurs peuvent demander le même aperçu en même temps : sans ce
-// registre, on paierait le compositing deux fois.
+const PHOTO_LARGEUR_MAX = 1000; // la fiche produit n'affiche jamais plus
+const OMBRE_MIN = 0.55;         // jusqu'où un pli peut assombrir le design
+const OMBRE_MAX = 1.35;         // jusqu'où un reflet peut l'éclaircir
+const PHOTOS_DIR = path.join(process.env.DATA_DIR || path.join(__dirname, '..'),
+                             'uploads', 'generated', 'photos');
+
+// Deux visiteurs peuvent demander le même rendu en même temps : sans ce
+// registre, on paierait la composition deux fois.
 const _enCours = new Map();
 
-function _versBuffer(dataUrl) {
-  return Buffer.from(String(dataUrl || '').replace(/^data:image\/\w+;base64,/, ''), 'base64');
+// Les photos d'un produit changent rarement ; un appel Admin API par rendu
+// serait du gaspillage.
+const MEDIA_TTL = 5 * 60 * 1000;
+const _mediaCache = new Map();
+
+/**
+ * Nom de fichier d'une URL d'image, sans les paramètres de transformation du
+ * CDN Shopify (?v=…&width=…). C'est la seule partie stable entre la vignette
+ * servie à la vitrine et l'URL renvoyée par l'Admin API.
+ */
+function _nomDeFichier(u) {
+  const s = String(u || '').split('?')[0];
+  if (!s.includes('/')) return '';
+  return s.slice(s.lastIndexOf('/') + 1).toLowerCase()
+    // Anciens thèmes : « sac_600x800.jpg », « sac_600x.jpg » désignent le même
+    // fichier que « sac.jpg » à une taille près.
+    .replace(/_\d+x\d*(?=\.[a-z0-9]+$)/, '');
+}
+
+/** Identifiant Shopify → fragment de nom de fichier sûr. */
+function _cleFichier(v) {
+  return String(v || '').replace(/[^a-zA-Z0-9]/g, '').slice(-16) || 'x';
+}
+
+async function _photosDuProduit(shop, token, productId) {
+  const cle = `${shop}:${productId}`;
+  const e = _mediaCache.get(cle);
+  if (e && Date.now() - e.t < MEDIA_TTL) return e.v;
+
+  const { adminGraphQL } = require('./admin-graphql');
+  const out = await adminGraphQL(shop, token, `
+    query TslPhotos($id: ID!) {
+      product(id: $id) { images(first: 30) { edges { node { id url width height } } } }
+    }`, { id: `gid://shopify/Product/${productId}` });
+
+  const v = (out?.data?.product?.images?.edges || []).map(x => x.node);
+  _mediaCache.set(cle, { t: Date.now(), v });
+  return v;
 }
 
 /** Octets d'un visuel, qu'il soit sur le disque local ou sur un CDN. */
@@ -214,39 +256,42 @@ async function _octetsDuVisuel(url) {
 }
 
 /**
- * Pose le visuel au centre d'un calque transparent aux dimensions de la zone.
+ * Reporte les ombres de la photo sur le design projeté.
  *
- * generateMockup étire ce qu'on lui donne aux dimensions de la zone : lui
- * passer le visuel brut le déformerait. On le place donc « contenu », à la
- * même marge que le studio quand il dépose une image dans le cadre — l'aperçu
- * montre ainsi exactement ce que le client verra en cliquant Personnaliser.
+ * Sans ça, le design est un rectangle de couleur posé par-dessus : l'œil voit
+ * immédiatement un collage. En multipliant chaque pixel par la luminance
+ * locale du tissu rapportée à sa moyenne, les plis et les ombres traversent
+ * le design — c'est le même principe que le mode Produit de Photoshop, en
+ * plus simple.
+ *
+ * Les bornes évitent qu'une ombre très marquée n'avale le design, ou qu'un
+ * reflet ne le délave.
  */
-async function _calquePourZone(octets, zone) {
-  const sharp = require('sharp');
-  const dispoW = Math.max(1, Math.round(zone.w * APERCU_MARGE));
-  const dispoH = Math.max(1, Math.round(zone.h * APERCU_MARGE));
-  const visuel = await sharp(octets)
-    .resize(dispoW, dispoH, { fit: 'inside', withoutEnlargement: false })
-    .ensureAlpha()
-    .png()
-    .toBuffer();
-  const m = await sharp(visuel).metadata();
-  return sharp({
-    create: { width: zone.w, height: zone.h, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
-  })
-    .composite([{
-      input: visuel,
-      left:  Math.max(0, Math.round((zone.w - m.width) / 2)),
-      top:   Math.max(0, Math.round((zone.h - m.height) / 2)),
-    }])
-    .png()
-    .toBuffer();
+function _appliquerOmbres(calque, photoGris, w, h) {
+  let somme = 0, n = 0;
+  for (let i = 0; i < w * h; i++) {
+    if (calque[i * 4 + 3] > 8) { somme += photoGris[i]; n++; }
+  }
+  if (!n) return calque;
+  const moyenne = somme / n;
+  if (moyenne < 1) return calque;
+
+  for (let i = 0; i < w * h; i++) {
+    if (calque[i * 4 + 3] <= 8) continue;
+    let f = photoGris[i] / moyenne;
+    if (f < OMBRE_MIN) f = OMBRE_MIN;
+    if (f > OMBRE_MAX) f = OMBRE_MAX;
+    const o = i * 4;
+    calque[o]     = Math.min(255, Math.round(calque[o]     * f));
+    calque[o + 1] = Math.min(255, Math.round(calque[o + 1] * f));
+    calque[o + 2] = Math.min(255, Math.round(calque[o + 2] * f));
+  }
+  return calque;
 }
 
 router.get('/products/:productId/preview', attachShopId, async (req, res) => {
   const productId = String(req.params.productId || '').replace(/\D/g, '');
   const ref       = String(req.query.design || '').trim();
-  const viewIndex = Math.max(0, Number.parseInt(req.query.view, 10) || 0);
   if (!productId || !ref) return res.status(400).json({ error: 'productId et design requis' });
 
   try {
@@ -257,44 +302,101 @@ router.get('/products/:productId/preview', attachShopId, async (req, res) => {
       : db.prepare('SELECT * FROM library WHERE shop_id=? AND slug=? AND is_active=1').get(req.shopId, ref);
     if (!visuel) return res.status(404).json({ error: 'Visuel introuvable' });
 
-    const lien = db.prepare(
-      `SELECT mockup_id FROM product_mockup_links
-       WHERE shop_id=? AND (shopify_product_id=? OR shopify_product_id=?)`
-    ).get(req.shopId, productId, `gid://shopify/Product/${productId}`);
-    if (!lien?.mockup_id) return res.status(404).json({ error: 'Produit sans mockup lié' });
+    const zone = db.prepare(
+      `SELECT * FROM product_display_zones
+       WHERE shop_id=? AND shopify_product_id=? AND zone_type='product_display_zone'`
+    ).get(req.shopId, productId);
+    if (!zone) return res.status(404).json({ error: 'Produit sans zone d\'affichage calibrée' });
 
-    const fichier = `a${req.shopId}_m${lien.mockup_id}_v${viewIndex}_d${visuel.id}.png`;
-    const chemin  = path.join(APERCU_DIR, fichier);
-    const publique = `/uploads/generated/apercus/${fichier}`;
+    let coinsPct = [];
+    try { coinsPct = JSON.parse(zone.corners_json || '[]'); } catch { coinsPct = []; }
+    if (coinsPct.length !== 4) return res.status(409).json({ error: 'Zone illisible' });
+
+    const boutique = db.prepare('SELECT shop_domain, access_token FROM shops WHERE id=? AND is_active=1')
+                       .get(req.shopId);
+    if (!boutique?.access_token) return res.status(503).json({ error: 'Shopify non configuré' });
+
+    const photos = await _photosDuProduit(boutique.shop_domain, boutique.access_token, productId);
+    if (!photos.length) return res.status(404).json({ error: 'Produit sans photo' });
+
+    // Photo demandée, à condition qu'elle appartienne au produit ET partage le
+    // cadrage de celle sur laquelle les coins ont été posés. Sans ce contrôle,
+    // une vue de dos recevrait les coins de la vue de face.
+    //
+    // `media` peut être un GID Shopify ou l'URL que la vitrine affiche déjà —
+    // c'est cette seconde forme que le thème sait fournir, le DOM n'exposant
+    // pas les identifiants de média. On compare alors les noms de fichier.
+    const demandee = String(req.query.media || '').trim();
+    const reference = photos.find(p => p.id === zone.reference_media_id) || photos[0];
+    let photo = reference;
+    if (demandee) {
+      const cle = _nomDeFichier(demandee);
+      const candidate = photos.find(p =>
+        p.id === demandee ||
+        _cleFichier(p.id) === _cleFichier(demandee) ||
+        (cle && _nomDeFichier(p.url) === cle));
+      if (candidate &&
+          (!zone.reference_width  || candidate.width  === zone.reference_width) &&
+          (!zone.reference_height || candidate.height === zone.reference_height)) {
+        photo = candidate;
+      }
+    }
+
+    const fichier  = `p${productId}_m${_cleFichier(photo.id)}_d${visuel.id}.png`;
+    const chemin   = path.join(PHOTOS_DIR, fichier);
+    const publique = `/uploads/generated/photos/${fichier}`;
 
     if (fs.existsSync(chemin)) return res.redirect(302, publique);
     if (_enCours.has(fichier)) { await _enCours.get(fichier); return res.redirect(302, publique); }
 
     const travail = (async () => {
-      const MG = require('./mockup-gen');
       const sharp = require('sharp');
-      const m = db.prepare('SELECT views_json FROM mockups WHERE id=? AND shop_id=?')
-                  .get(lien.mockup_id, req.shopId);
-      let vues = [];
-      try { vues = JSON.parse(m?.views_json || '[]'); } catch { vues = []; }
-      const vue = vues[viewIndex];
-      if (!vue?.imageData || !vue.zone?.w) throw new Error('Vue de mockup inexploitable');
 
-      const mockupBuffer = _versBuffer(vue.imageData);
-      const meta = await sharp(mockupBuffer).metadata();
-      const zone = MG.zoneVersSortie(vue.zone, meta.width, meta.height, APERCU_TAILLE);
-      const calque = await _calquePourZone(await _octetsDuVisuel(visuel.url), zone);
+      // ── 1. La photo, ramenée à une taille d'affichage ────────────────────
+      const photoBrute = Buffer.from(await (await fetch(photo.url)).arrayBuffer());
+      const fond = sharp(photoBrute).resize({ width: PHOTO_LARGEUR_MAX, withoutEnlargement: true });
+      const { data: fondPix, info } = await fond.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+      const W = info.width, H = info.height;
 
-      const png = await MG.generateMockup({
-        designBuffer: calque,
-        mockupBuffer,
-        naturalW: meta.width,
-        naturalH: meta.height,
-        zone,
-        dispIntensity: MG.DISP_INTENSITY,
-        outputSize: APERCU_TAILLE,
-      });
-      await fs.promises.mkdir(APERCU_DIR, { recursive: true });
+      // ── 2. Les coins, en pixels de cette image ───────────────────────────
+      const coins = PERSP.coinsEnPixels(coinsPct, W, H);
+      if (!coins) throw new Error('Coins inexploitables');
+      const cadre = PERSP.cadreEnglobant(coins, W, H);
+      if (!cadre.w || !cadre.h) throw new Error('Zone hors de la photo');
+
+      // ── 3. Le design, à une définition adaptée à la zone ─────────────────
+      //    Inutile d'échantillonner une image de 4000 px pour une zone de 300.
+      const cote = Math.max(cadre.w, cadre.h);
+      const { data: dPix, info: dInfo } = await sharp(await _octetsDuVisuel(visuel.url))
+        .resize({ width: cote, height: cote, fit: 'inside', withoutEnlargement: true })
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+
+      // ── 4. Projection dans le quadrilatère ───────────────────────────────
+      const calque = PERSP.projeterDansQuadrilatere(dPix, dInfo.width, dInfo.height, coins, cadre);
+      if (!calque) throw new Error('Projection impossible');
+
+      // ── 5. Ombres du tissu reportées sur le design ───────────────────────
+      const gris = await sharp(fondPix, { raw: { width: W, height: H, channels: 4 } })
+        .extract({ left: cadre.x, top: cadre.y, width: cadre.w, height: cadre.h })
+        .grayscale()
+        .raw()
+        .toBuffer();
+      _appliquerOmbres(calque, gris, cadre.w, cadre.h);
+
+      // ── 6. Composition ───────────────────────────────────────────────────
+      const png = await sharp(fondPix, { raw: { width: W, height: H, channels: 4 } })
+        .composite([{
+          input: Buffer.from(calque),
+          raw:   { width: cadre.w, height: cadre.h, channels: 4 },
+          left:  cadre.x,
+          top:   cadre.y,
+        }])
+        .png()
+        .toBuffer();
+
+      await fs.promises.mkdir(PHOTOS_DIR, { recursive: true });
       await fs.promises.writeFile(chemin, png);
     })();
 
