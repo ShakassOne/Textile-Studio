@@ -111,7 +111,7 @@ test('une exclusion visant un AUTRE support ne change rien', async () => {
   assert.equal(corps.total, 1);
 });
 
-test('un visuel trop petit pour la zone est écarté, avec son DPI', async () => {
+test('un visuel trop petit pour le format d\'impression est écarté, avec son DPI', async () => {
   DONNEES.visuels = [visuel({ id: 1, display_name: 'Minuscule', width: 300, height: 300 })];
   const { corps } = await catalogue();
   assert.equal(corps.total, 0);
@@ -142,21 +142,48 @@ test('dimensions inconnues : le visuel passe quand même', async () => {
 test('produit non lié à un mockup : tout le catalogue est proposé', async () => {
   DONNEES.lien = undefined;
   DONNEES.visuels = [
-    visuel({ id: 1, display_name: 'A', width: 300, height: 300 }),       // serait écarté avec une zone
-    visuel({ id: 2, display_name: 'B', excluded_mockups: '[7]' }),       // exclusion sans objet
+    visuel({ id: 1, display_name: 'A' }),
+    visuel({ id: 2, display_name: 'B', excluded_mockups: '[7]' }), // exclusion sans objet
   ];
   const { corps } = await catalogue();
   assert.equal(corps.mockupId, null);
-  assert.equal(corps.total, 2);
+  assert.equal(corps.total, 2, 'aucune exclusion ne s\'applique sans support connu');
   DONNEES.lien = { mockup_id: 7 };
 });
 
-test('mockup sans zone calibrée : tout passe aussi', async () => {
+test('mockup sans zone : les proportions ne sont plus jugées, la résolution si', async () => {
+  // Sans zone, on ignore tout de la FORME du support — mais le format
+  // d'impression reste connu (A4), donc une image de 300 px reste
+  // inimprimable quel que soit le support.
   DONNEES.mockup = { views_json: JSON.stringify([{ printWidthMm: 420 }]) };
-  DONNEES.visuels = [visuel({ id: 1, display_name: 'Minuscule', width: 300, height: 300 })];
+  DONNEES.visuels = [
+    visuel({ id: 1, display_name: 'Minuscule',  width: 300,  height: 300 }),
+    visuel({ id: 2, display_name: 'Très large', width: 4000, height: 500 }),
+  ];
   const { corps } = await catalogue();
   assert.equal(corps.zone, null);
+  assert.deepEqual(corps.designs.map(d => d.nom), ['Très large'],
+    'des proportions extrêmes passent faute de zone, pas une résolution ruineuse');
+  assert.equal(corps.ecartes[0].raison, 'resolution-insuffisante');
+  DONNEES.mockup = { views_json: JSON.stringify([{ zone: { w: 300, h: 400 }, printWidthMm: 420 }]) };
+});
+
+test('le format du mockup prime sur le format par défaut', async () => {
+  DONNEES.mockup = { views_json: JSON.stringify([{ zone: { w: 300, h: 400 }, printWidthMm: 420, defaultFormat: 'A6' }]) };
+  DONNEES.visuels = [visuel({ id: 1, display_name: 'Moyenne', width: 600, height: 800 })];
+  const { corps } = await catalogue();
+  assert.equal(corps.format, 'A6');
+  // 600 px sur 105 mm = 145 DPI : passe en A6 alors qu'en A4 (210 mm) il
+  // tomberait à 72 DPI.
   assert.equal(corps.total, 1);
+  DONNEES.mockup = { views_json: JSON.stringify([{ zone: { w: 300, h: 400 }, printWidthMm: 420 }]) };
+});
+
+test('un format inconnu retombe sur A4 au lieu de planter', async () => {
+  DONNEES.mockup = { views_json: JSON.stringify([{ zone: { w: 300, h: 400 }, printWidthMm: 420, defaultFormat: 'A0' }]) };
+  DONNEES.visuels = [visuel({ id: 1 })];
+  const { corps } = await catalogue();
+  assert.equal(corps.format, 'A4');
   DONNEES.mockup = { views_json: JSON.stringify([{ zone: { w: 300, h: 400 }, printWidthMm: 420 }]) };
 });
 

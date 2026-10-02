@@ -212,49 +212,93 @@ function zoneEnMm(view, largeurParDefautMm = 420) {
 }
 
 /**
+ * Formats d'impression standard, en millimètres. Ce sont des tailles
+ * physiques CERTAINES, contrairement à `printWidthMm` (voir plus bas).
+ */
+const FORMATS_MM = {
+  A6: { w: 105, h: 148 },
+  A5: { w: 148, h: 210 },
+  A4: { w: 210, h: 297 },
+  A3: { w: 297, h: 420 },
+};
+
+/**
+ * Format d'impression retenu quand le mockup n'en déclare pas.
+ * A4 est le choix d'Alan pour le sélecteur de la fiche produit : un seul
+ * format par produit, et le client passe par le studio s'il veut autre chose.
+ */
+const FORMAT_PAR_DEFAUT = 'A4';
+
+/**
  * Un visuel a-t-il sa place sur ce support ?
  *
- * Le visuel est supposé posé « contenu » dans la zone : mis à l'échelle au
- * maximum sans débordement ni déformation. On en tire deux mesures.
+ * Deux critères, volontairement adossés à deux sources différentes.
  *
- *  • `dpi`         — résolution effective à l'impression.
- *  • `remplissage` — part de la surface de la zone réellement couverte. Ne
- *                    dépend que des proportions : un visuel et une zone de
- *                    même rapport donnent 1, des proportions opposées
- *                    donnent très peu.
+ *  • `dpi` — résolution une fois le visuel imprimé AU FORMAT retenu (A4 par
+ *    défaut). On se cale sur le format et non sur la zone, parce que le
+ *    format est une taille physique certaine là où `printWidthMm` ne l'est
+ *    pas : sur les mockups réels de WinShirt il vaut 420 partout, soit la
+ *    valeur par défaut jamais recalibrée. Le studio s'en sert comme d'une
+ *    échelle relative pour classer les formats, pas comme d'une mesure.
+ *    S'y fier pour juger une résolution revenait à croire qu'on imprime sur
+ *    42 × 72 cm, et à refuser 16 visuels sur 18.
+ *
+ *  • `remplissage` — part de la zone que le visuel couvre une fois contenu
+ *    dedans. Ne dépend QUE des proportions de la zone, c'est-à-dire de
+ *    géométrie réelle, indépendante de toute calibration. C'est ce critère
+ *    qui écarte un grand visuel vertical d'une casquette.
  *
  * Principe directeur : **on n'écarte jamais un visuel faute de données.**
- * Dimensions inconnues, zone non calibrée, nombre aberrant → compatible.
+ * Dimensions inconnues → compatible. Zone non renseignée → seule la
+ * résolution est jugée, les proportions ne le sont pas.
  *
- * @returns {{compatible:boolean, raison:string, dpi:number|null, remplissage:number|null}}
+ * @param {{width:number|null, height:number|null}} visuel
+ * @param {{widthMm:number, heightMm:number}|null} zoneMm  proportions de la zone
+ * @param {{format?:string, seuils?:object}} [options]
+ * @returns {{compatible:boolean, raison:string, dpi:number|null, remplissage:number|null, format:string}}
  */
-function evaluerCompatibilite(visuel, zoneMm, seuils = COMPAT) {
+function evaluerCompatibilite(visuel, zoneMm, options = {}) {
+  const seuils = options.seuils || COMPAT;
+  const nomFormat = FORMATS_MM[options.format] ? options.format : FORMAT_PAR_DEFAUT;
+  const f = FORMATS_MM[nomFormat];
+
   const vw = Number(visuel && visuel.width), vh = Number(visuel && visuel.height);
   if (!(vw > 0) || !(vh > 0)) {
-    return { compatible: true, raison: 'dimensions-inconnues', dpi: null, remplissage: null };
-  }
-  const zw = Number(zoneMm && zoneMm.widthMm), zh = Number(zoneMm && zoneMm.heightMm);
-  if (!(zw > 0) || !(zh > 0)) {
-    return { compatible: true, raison: 'zone-inconnue', dpi: null, remplissage: null };
+    return { compatible: true, raison: 'dimensions-inconnues', dpi: null, remplissage: null, format: nomFormat };
   }
 
-  // Millimètres par pixel une fois le visuel contenu dans la zone.
-  const echelle = Math.min(zw / vw, zh / vh);
+  // Le cadre d'impression s'oriente comme le visuel : un visuel paysage
+  // s'imprime dans un A4 paysage, sinon on le pénaliserait sans raison.
+  const paysage = vw > vh;
+  const cadreW = paysage ? f.h : f.w;
+  const cadreH = paysage ? f.w : f.h;
+
+  // Millimètres par pixel une fois le visuel contenu dans le cadre.
+  const echelle = Math.min(cadreW / vw, cadreH / vh);
   const dpi = Math.round(25.4 / echelle);
-  const remplissage = Math.round(((vw * echelle) * (vh * echelle)) / (zw * zh) * 1000) / 1000;
+
+  // Remplissage : rapport des proportions, rien d'autre.
+  let remplissage = null;
+  const zw = Number(zoneMm && zoneMm.widthMm), zh = Number(zoneMm && zoneMm.heightMm);
+  if (zw > 0 && zh > 0) {
+    const e = Math.min(zw / vw, zh / vh);
+    remplissage = Math.round(((vw * e) * (vh * e)) / (zw * zh) * 1000) / 1000;
+  }
 
   if (dpi < seuils.DPI_MIN) {
-    return { compatible: false, raison: 'resolution-insuffisante', dpi, remplissage };
+    return { compatible: false, raison: 'resolution-insuffisante', dpi, remplissage, format: nomFormat };
   }
-  if (remplissage < seuils.REMPLISSAGE_MIN) {
-    return { compatible: false, raison: 'proportions-inadaptees', dpi, remplissage };
+  if (remplissage !== null && remplissage < seuils.REMPLISSAGE_MIN) {
+    return { compatible: false, raison: 'proportions-inadaptees', dpi, remplissage, format: nomFormat };
   }
-  return { compatible: true, raison: 'ok', dpi, remplissage };
+  return { compatible: true, raison: 'ok', dpi, remplissage, format: nomFormat };
 }
 
 module.exports = {
   SLUG_MAX,
   COMPAT,
+  FORMATS_MM,
+  FORMAT_PAR_DEFAUT,
   zoneEnMm,
   evaluerCompatibilite,
   slugify,

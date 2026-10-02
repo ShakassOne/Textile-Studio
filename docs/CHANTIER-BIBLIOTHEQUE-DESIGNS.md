@@ -192,6 +192,43 @@ référence de prix au lot E. Deux options :
 À trancher avant le lot E. En attendant, évaluer contre la zone complète est
 le choix conservateur et explicable.
 
+### 2026-10-02 — Lot B corrigé sur données réelles
+
+Deux défauts trouvés en interrogeant le store de dev, aucun des deux
+visible en relisant le code.
+
+**1. La liaison produit ne se trouvait jamais.** `product_mockup_links`
+mélange des identifiants numériques et des GID complets
+(`gid://shopify/Product/10787150004551`) ; la route cherchait les chiffres
+seuls. Sans mockup trouvé, aucune zone, donc aucun filtrage : tout le
+catalogue ressortait partout, en silence. On interroge désormais les deux
+écritures.
+
+**2. Le critère de résolution s'appuyait sur une valeur non calibrée.**
+Premier appel réel : 16 visuels sur 18 refusés pour pixellisation.
+`printWidthMm` vaut 420 sur TOUS les mockups de WinShirt — la valeur par
+défaut, jamais changée. Le studio s'en sert comme d'une échelle relative
+pour classer les formats (`_pxToFormat` plafonne à A3), pas comme d'une
+mesure physique. La règle croyait donc imprimer sur 42 × 72 cm.
+
+Correction : les deux critères s'adossent maintenant à deux sources
+distinctes, chacune fiable pour ce qu'elle mesure.
+
+| Critère | Source | Pourquoi elle est fiable |
+|---|---|---|
+| Résolution | le format d'impression retenu (A4 par défaut) | taille physique certaine, indépendante de toute calibration |
+| Remplissage | les proportions de la zone | géométrie réelle, aucune unité en jeu |
+
+Après correction, sur les mêmes données : les visuels réels passent entre
+112 et 300 DPI, une image de 300 × 300 px reste écartée à 36 DPI, et un
+grand vertical sur une casquette reste écarté sur ses proportions.
+
+Le format se lit dans `views[i].defaultFormat` s'il existe, sinon A4. **Ce
+champ n'existe pas encore dans l'écran Mockups & Zones** : c'est le réglage
+à ajouter, et c'est la même valeur qui servira de référence de prix au lot
+E. La question posée plus haut est donc tranchée par les faits — il faut un
+champ explicite, parce que `printWidthMm` ne peut pas en tenir lieu.
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.

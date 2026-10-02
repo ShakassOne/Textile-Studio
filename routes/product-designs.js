@@ -85,14 +85,19 @@ router.get('/products/:productId/designs', attachShopId, (req, res) => {
     ).get(req.shopId, productId, `gid://shopify/Product/${productId}`);
     const mockupId = lien?.mockup_id || null;
 
-    // 2. Zone d'impression de la vue demandée.
-    let zoneMm = null;
+    // 2. Zone d'impression de la vue demandée, et format retenu pour ce
+    //    support. `defaultFormat` n'existe pas encore dans l'admin : tant
+    //    qu'il n'est pas posé, A4 s'applique — le choix d'Alan pour le
+    //    sélecteur de la fiche produit.
+    let zoneMm = null, format = DL.FORMAT_PAR_DEFAUT;
     if (mockupId) {
       const m = db.prepare('SELECT views_json FROM mockups WHERE id=? AND shop_id=?')
                   .get(mockupId, req.shopId);
       let vues = [];
       try { vues = JSON.parse(m?.views_json || '[]'); } catch { vues = []; }
-      zoneMm = DL.zoneEnMm(vues[viewIndex]);
+      const vue = vues[viewIndex];
+      zoneMm = DL.zoneEnMm(vue);
+      if (vue && DL.FORMATS_MM[vue.defaultFormat]) format = vue.defaultFormat;
     }
 
     // 3. Visuels proposés à la vente, dans l'ordre choisi par le marchand.
@@ -112,7 +117,7 @@ router.get('/products/:productId/designs', attachShopId, (req, res) => {
         ecartes.push({ id: v.id, nom: v.display_name, raison: 'exclu-manuellement', dpi: null, remplissage: null });
         continue;
       }
-      const verdict = DL.evaluerCompatibilite(v, zoneMm);
+      const verdict = DL.evaluerCompatibilite(v, zoneMm, { format });
       if (!verdict.compatible) {
         ecartes.push({ id: v.id, nom: v.display_name, raison: verdict.raison, dpi: verdict.dpi, remplissage: verdict.remplissage });
         continue;
@@ -135,6 +140,7 @@ router.get('/products/:productId/designs', attachShopId, (req, res) => {
       mockupId,
       viewIndex,
       zone:  zoneMm,
+      format,
       total: designs.length,
       categories: [...new Set(designs.map(d => d.categorie).filter(Boolean))],
       designs,
