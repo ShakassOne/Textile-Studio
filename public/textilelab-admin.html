@@ -963,6 +963,27 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
           </div>
         </div>
 
+        <!-- Studio — Preuve sociale visuelle ("Ils l'ont fait") -->
+        <div class="table-card" style="padding:20px">
+          <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px">✅ Studio — Preuve sociale visuelle</h3>
+          <p style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5">Affiche jusqu'à 4 vignettes de vraies réalisations clients (photo du produit fini) au-dessus du bouton panier, en complément du bandeau de réassurance. Curation manuelle : ajoutez l'URL d'une image déjà hébergée (ex. Shopify Files) et une légende courte. <strong style="color:var(--text2)">Désactivée par défaut</strong> — reste vide tant qu'aucune vignette n'est ajoutée. Prise en compte côté boutique en ~1 min.</p>
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px">
+            <label class="tl-switch">
+              <input type="checkbox" id="social-proof-toggle" onchange="_applySocialProofToggle(this.checked)">
+              <span class="tl-switch-slider"></span>
+            </label>
+            <span id="social-proof-state" style="font-size:13px;color:var(--text3)">…</span>
+            <button class="btn btn-primary" id="social-proof-save-btn" onclick="saveSocialProofToggle()" style="margin-left:auto">💾 Enregistrer</button>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+            <input type="url" id="social-proof-url" placeholder="URL de l'image (https://...)" style="flex:2;min-width:180px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg2);color:var(--text)">
+            <input type="text" id="social-proof-caption" placeholder="Légende (optionnel)" style="flex:1;min-width:140px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg2);color:var(--text)">
+            <button class="btn btn-sm" type="button" onclick="addSocialProofItem()">➕ Ajouter</button>
+          </div>
+          <div id="social-proof-list" style="display:flex;flex-direction:column;gap:6px"></div>
+          <span id="social-proof-result" style="font-size:12px;color:var(--text3);min-height:16px;display:block;margin-top:6px"></span>
+        </div>
+
         <!-- Stockage / Maintenance -->
         <div class="table-card" style="padding:20px">
           <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px">🧹 Stockage — fichiers inutilisés</h3>
@@ -4071,6 +4092,7 @@ async function loadSettingsInfo() {
   loadAiPhotoStyles();
   loadReassuranceBanner();
   loadMobilePriceBar();
+  loadSocialProof();
   const [aiStatus, shopStatus] = await Promise.all([api('/api/ai/status'), api('/api/shopify/status')]);
   const svcEl = document.getElementById('services-status');
   if (svcEl) {
@@ -4271,6 +4293,95 @@ async function saveMobilePriceBar() {
   } else {
     if (out) { out.textContent = '❌ ' + (data?.error || 'Erreur inconnue'); out.style.color = 'var(--danger)'; }
   }
+}
+
+// ── Studio : preuve sociale visuelle ("Ils l'ont fait") ─────────────────────
+function _applySocialProofToggle(enabled) {
+  const tog = document.getElementById('social-proof-toggle');
+  const st  = document.getElementById('social-proof-state');
+  if (tog) tog.checked = !!enabled;
+  if (st) {
+    st.textContent  = enabled ? 'Activée — vignettes visibles côté boutique' : 'Désactivée — bloc masqué côté boutique';
+    st.style.color  = enabled ? 'var(--success)' : 'var(--text3)';
+  }
+}
+
+async function loadSocialProof() {
+  const data = await api('/api/shop-settings/style');
+  _applySocialProofToggle(!!(data && data.social_proof_enabled));
+  await loadSocialProofItems();
+}
+
+async function saveSocialProofToggle() {
+  const tog = document.getElementById('social-proof-toggle');
+  const out = document.getElementById('social-proof-result');
+  const btn = document.getElementById('social-proof-save-btn');
+  const enabled = !!(tog && tog.checked);
+  if (out) { out.textContent = '⏳ Sauvegarde…'; out.style.color = 'var(--text3)'; }
+  if (btn) btn.disabled = true;
+  const data = await api('/api/shop-settings/style', {
+    method: 'POST',
+    body:   JSON.stringify({ social_proof_enabled: enabled }),
+  });
+  if (btn) btn.disabled = false;
+  if (data?.ok) {
+    _applySocialProofToggle(!!data.social_proof_enabled);
+    if (out) { out.textContent = '✅ Enregistré — visible côté boutique dans ~1 min'; out.style.color = 'var(--success)'; }
+    showToast('✅ Preuve sociale ' + (data.social_proof_enabled ? 'activée' : 'désactivée'));
+  } else {
+    if (out) { out.textContent = '❌ ' + (data?.error || 'Erreur inconnue'); out.style.color = 'var(--danger)'; }
+  }
+}
+
+function _escHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
+async function loadSocialProofItems() {
+  const list = document.getElementById('social-proof-list');
+  if (!list) return;
+  const items = await api('/api/social-proof');
+  if (!Array.isArray(items) || items.length === 0) {
+    list.innerHTML = '<span style="font-size:12px;color:var(--text3)">Aucune vignette ajoutée.</span>';
+    return;
+  }
+  list.innerHTML = items.map(it => `
+    <div style="display:flex;align-items:center;gap:10px;padding:6px 8px;border:1px solid var(--border);border-radius:8px">
+      <img src="${_escHtml(it.image_url)}" alt="" style="width:36px;height:36px;object-fit:cover;border-radius:6px;flex-shrink:0">
+      <span style="flex:1;font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escHtml(it.caption) || '<em style="color:var(--text3)">Sans légende</em>'}</span>
+      <button class="btn btn-sm" type="button" onclick="deleteSocialProofItem(${it.id})">🗑️</button>
+    </div>
+  `).join('');
+}
+
+async function addSocialProofItem() {
+  const urlInput = document.getElementById('social-proof-url');
+  const capInput = document.getElementById('social-proof-caption');
+  const out = document.getElementById('social-proof-result');
+  const image_url = urlInput ? urlInput.value.trim() : '';
+  const caption   = capInput ? capInput.value.trim() : '';
+  if (!image_url) {
+    if (out) { out.textContent = '❌ URL d\'image requise'; out.style.color = 'var(--danger)'; }
+    return;
+  }
+  const data = await api('/api/social-proof', {
+    method: 'POST',
+    body:   JSON.stringify({ image_url, caption }),
+  });
+  if (data?.ok) {
+    if (urlInput) urlInput.value = '';
+    if (capInput) capInput.value = '';
+    if (out) { out.textContent = '✅ Vignette ajoutée'; out.style.color = 'var(--success)'; }
+    await loadSocialProofItems();
+  } else {
+    if (out) { out.textContent = '❌ ' + (data?.error || 'Erreur inconnue'); out.style.color = 'var(--danger)'; }
+  }
+}
+
+async function deleteSocialProofItem(id) {
+  if (!confirm('Supprimer cette vignette ?')) return;
+  await api(`/api/social-proof/${id}`, { method: 'DELETE' });
+  await loadSocialProofItems();
 }
 
 // ── Stockage : nettoyage des fichiers de rendu orphelins ───────────────

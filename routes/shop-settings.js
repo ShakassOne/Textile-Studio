@@ -22,6 +22,10 @@
  *      aujourd'hui, aucun total n'est visible hors ouverture d'un drawer).
  *      Désactivée par défaut : c'est un changement de mise en page mobile,
  *      à valider sur un vrai téléphone avant diffusion large.
+ *    social_proof_enabled       bool  — bloc "Ils l'ont fait" (vignettes de
+ *      vraies réalisations clients, curées en admin via /api/social-proof)
+ *      affiché au-dessus du bouton panier. Désactivé par défaut : vide tant
+ *      qu'aucune vignette n'a été ajoutée par l'admin.
  *
  *  Cors public : Cross-origin (shop_domain.myshopify.com → textile-studio-production)
  *    → le storefront fait fetch direct, on autorise tout origin sur le GET public.
@@ -68,6 +72,9 @@ const REASSURANCE_BANNER_DEFAULT = true;
 // Barre de prix mobile désactivée par défaut (changement de mise en page,
 // activation manuelle une fois vérifiée sur un vrai mobile).
 const MOBILE_PRICE_BAR_DEFAULT = false;
+// Preuve sociale désactivée par défaut : vide tant que l'admin n'a pas curé
+// au moins une vignette (pas de fallback automatique, cf. ROADMAP §2bis).
+const SOCIAL_PROOF_DEFAULT = false;
 
 // ── GET /api/shop-settings/style — lecture admin ────────────────────────────
 router.get('/style', requireAuth, attachShopId, (req, res) => {
@@ -76,6 +83,7 @@ router.get('/style', requireAuth, attachShopId, (req, res) => {
     ai_photo_styles_enabled:    readBoolSetting(req.shopId, 'ai_photo_styles_enabled', AI_PHOTO_STYLES_DEFAULT),
     reassurance_banner_enabled: readBoolSetting(req.shopId, 'reassurance_banner_enabled', REASSURANCE_BANNER_DEFAULT),
     mobile_price_bar_enabled:   readBoolSetting(req.shopId, 'mobile_price_bar_enabled', MOBILE_PRICE_BAR_DEFAULT),
+    social_proof_enabled:       readBoolSetting(req.shopId, 'social_proof_enabled', SOCIAL_PROOF_DEFAULT),
   });
 });
 
@@ -106,12 +114,17 @@ router.post('/style', requireAuth, attachShopId, express.json(), (req, res) => {
     setSetting(req.shopId, 'mobile_price_bar_enabled', coerceBool(body.mobile_price_bar_enabled) ? '1' : '0');
   }
 
+  if ('social_proof_enabled' in body) {
+    setSetting(req.shopId, 'social_proof_enabled', coerceBool(body.social_proof_enabled) ? '1' : '0');
+  }
+
   res.json({
     ok: true,
     cart_drawer_bg_color:       getSetting(req.shopId, 'cart_drawer_bg_color') || '',
     ai_photo_styles_enabled:    readBoolSetting(req.shopId, 'ai_photo_styles_enabled', AI_PHOTO_STYLES_DEFAULT),
     reassurance_banner_enabled: readBoolSetting(req.shopId, 'reassurance_banner_enabled', REASSURANCE_BANNER_DEFAULT),
     mobile_price_bar_enabled:   readBoolSetting(req.shopId, 'mobile_price_bar_enabled', MOBILE_PRICE_BAR_DEFAULT),
+    social_proof_enabled:       readBoolSetting(req.shopId, 'social_proof_enabled', SOCIAL_PROOF_DEFAULT),
   });
 });
 
@@ -129,6 +142,7 @@ router.get('/style/public', (req, res) => {
       ai_photo_styles_enabled: AI_PHOTO_STYLES_DEFAULT,
       reassurance_banner_enabled: REASSURANCE_BANNER_DEFAULT,
       mobile_price_bar_enabled: MOBILE_PRICE_BAR_DEFAULT,
+      social_proof_enabled: SOCIAL_PROOF_DEFAULT,
     });
   }
   const shopId = getShopIdByDomain(shopDomain);
@@ -138,6 +152,7 @@ router.get('/style/public', (req, res) => {
       ai_photo_styles_enabled: AI_PHOTO_STYLES_DEFAULT,
       reassurance_banner_enabled: REASSURANCE_BANNER_DEFAULT,
       mobile_price_bar_enabled: MOBILE_PRICE_BAR_DEFAULT,
+      social_proof_enabled: SOCIAL_PROOF_DEFAULT,
     });
   }
   res.json({
@@ -145,6 +160,7 @@ router.get('/style/public', (req, res) => {
     ai_photo_styles_enabled:    readBoolSetting(shopId, 'ai_photo_styles_enabled', AI_PHOTO_STYLES_DEFAULT),
     reassurance_banner_enabled: readBoolSetting(shopId, 'reassurance_banner_enabled', REASSURANCE_BANNER_DEFAULT),
     mobile_price_bar_enabled:   readBoolSetting(shopId, 'mobile_price_bar_enabled', MOBILE_PRICE_BAR_DEFAULT),
+    social_proof_enabled:       readBoolSetting(shopId, 'social_proof_enabled', SOCIAL_PROOF_DEFAULT),
   });
 });
 

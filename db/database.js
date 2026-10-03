@@ -360,6 +360,23 @@ function initDB() {
   `);
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_upsell_candidates_source ON upsell_candidates(shop_id, source_shopify_product_id)"); } catch {}
 
+  // ── Table: social_proof_items (vignettes "Ils l'ont fait" curées par shop) ──
+  // Backlog item 18 (docs/ROADMAP-DEV.md §2) : preuve sociale visuelle dans le
+  // studio (photos de vraies réalisations clients), en complément du bandeau
+  // de réassurance textuel déjà livré. Curation manuelle par l'admin (URL
+  // d'image + légende), pas d'algorithme automatique ni d'upload de fichier.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS social_proof_items (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      shop_id     INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+      image_url   TEXT NOT NULL,
+      caption     TEXT NOT NULL DEFAULT '',
+      sort_order  INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_social_proof_items_shop ON social_proof_items(shop_id, sort_order)"); } catch {}
+
   // ── Table: ai_styles (styles visuels appliqués aux photos clients via OpenAI) ──
   // Scopée par shop. Les styles "built-in" sont créés au démarrage pour chaque
   // shop existant ; l'admin peut ajouter ses propres styles custom.
