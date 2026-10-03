@@ -521,6 +521,32 @@ référence, photo 2 qui en hérite comme point de départ, photo 2 corrigée sa
 que le master bouge, retour sur photo 1 intacte, puis « Suivre la référence »
 qui rend la photo 2 à son héritage.
 
+### 2026-10-03 — Lot E entamé : le champ « Format par défaut » dans l'admin
+
+Préalable posé le 2026-10-02 (question tranchée par les faits : il fallait un
+champ explicite, `printWidthMm` ne pouvant pas en tenir lieu). `routes/
+product-designs.js` savait déjà lire `views[i].defaultFormat` avec repli sur
+A4 ; il manquait l'écran pour le régler.
+
+Ajouté dans `public/textilelab-admin.html`, modale « Mockups & Zones » :
+un sélecteur A6/A5/A4/A3 sous « Largeur réelle de la zone », par vue
+(`ED.views[i].defaultFormat`, init `'A4'` sur une vue neuve,
+`updateDefaultFormat()` le pose, `loadZoneCanvas()` le relit avec le même
+repli que `printWidthMm`). Rien à changer côté serveur : `routes/mockups.js`
+sérialise `views` tel quel, aucun filtrage de champs.
+
+Vérifié avec un bouchon Node (`stub.js`/`cdp.js` recréés dans le scratchpad de
+la session, port 3001, même méthode que les lots précédents) : champ affiché
+et lisible en thème sombre et clair, changement de valeur répercuté dans
+`ED.views`, `Enregistrer le mockup` envoie bien `defaultFormat` au serveur
+(vérifié par relecture après écriture). Écran admin desktop, pas de volet
+mobile à tester ici. `npm test` : 94 tests, 93 passent, 1 ignoré (identique,
+non lié).
+
+Reste sur le lot E : propriété de ligne de panier, référence de prix par
+produit à partir de ce format, génération du fichier d'impression à la
+commande (sans passer par le studio). Pas encore commencé.
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.

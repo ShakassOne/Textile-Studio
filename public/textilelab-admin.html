@@ -1139,6 +1139,23 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
           T-shirt : ~420 mm (A3 plein) · Casquette : ~140 mm · Tote bag : ~340 mm
         </div>
       </div>
+      <div class="zone-info-bar" style="margin-top:8px;align-items:center;gap:10px;flex-wrap:wrap">
+        <div class="zone-coord" style="flex:1;min-width:200px">
+          <label style="white-space:nowrap">Format par défaut</label>
+          <select id="zc-default-format"
+            style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-family:'DM Mono',monospace;font-size:12px"
+            onchange="updateDefaultFormat(this.value)">
+            <option value="A6">A6</option>
+            <option value="A5">A5</option>
+            <option value="A4" selected>A4</option>
+            <option value="A3">A3</option>
+          </select>
+        </div>
+        <div style="font-size:10px;color:var(--text3);max-width:260px;line-height:1.4">
+          Taille unique proposée sur la fiche produit (sélecteur de design).
+          Le client qui veut un autre format passe par le studio.
+        </div>
+      </div>
     </div>
   </div>
   <div class="mockup-modal-footer">
@@ -3105,7 +3122,7 @@ function populateMockupModal() {
 
 function addView(defaultName) {
   const name = defaultName || `Vue ${ED.views.length+1}`;
-  ED.views.push({id:'v'+Date.now()+Math.random(),name,imageData:null,previewW:0,previewH:0,zone:null,printWidthMm:420});
+  ED.views.push({id:'v'+Date.now()+Math.random(),name,imageData:null,previewW:0,previewH:0,zone:null,printWidthMm:420,defaultFormat:'A4'});
   renderViewsList(); renderViewSelector();
   ED.activeViewIdx = ED.views.length-1;
   loadZoneCanvas(ED.activeViewIdx);
@@ -3119,6 +3136,15 @@ function updatePrintWidthMm(val) {
   if (!v) return;
   const n = Math.max(20, Math.min(1500, parseInt(val, 10) || 420));
   v.printWidthMm = n;
+}
+
+// Format unique proposé sur la fiche produit (sélecteur de design, lot B/E).
+// Distinct de printWidthMm : celui-ci calibre le studio, celui-là choisit
+// quel format standard (A6…A3) sert de référence hors studio.
+function updateDefaultFormat(val) {
+  const v = ED.views[ED.activeViewIdx];
+  if (!v) return;
+  v.defaultFormat = ['A6','A5','A4','A3'].includes(val) ? val : 'A4';
 }
 
 function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
@@ -3213,6 +3239,11 @@ function loadZoneCanvas(viewIdx) {
   if (pwEl) {
     if (v && typeof v.printWidthMm !== 'number') v.printWidthMm = 420;
     pwEl.value = v?.printWidthMm ?? 420;
+  }
+  const dfEl = document.getElementById('zc-default-format');
+  if (dfEl) {
+    if (v && !['A6','A5','A4','A3'].includes(v.defaultFormat)) v.defaultFormat = 'A4';
+    dfEl.value = v?.defaultFormat ?? 'A4';
   }
   zImg=null;
   if(v?.imageData){const img=new Image();img.onload=()=>{zImg=img;startZoneLoop();};img.src=v.imageData;}
