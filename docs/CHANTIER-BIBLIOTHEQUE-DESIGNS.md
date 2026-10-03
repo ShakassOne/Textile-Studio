@@ -618,6 +618,39 @@ seul. La suite dépend de décisions à prendre avec Alan — voir ci-dessous.
    (colonnes `format`/`format_price`, déjà lues par le webhook) pour garder
    un historique côté admin ? Les deux sont de taille très différente.
 
+### 2026-10-03 — Deux défauts remontés par l'usage
+
+**Le premier ajout au panier était toujours perdu.** `tl-modal.js` lisait la
+réponse de `/cart/add.json` sans vérifier qu'elle avait réussi : un refus 422
+passait pour un succès, le modal se fermait, le tiroir s'ouvrait vide. Cause
+du 422 : au premier ajout d'une combinaison taille + impression, le backend
+vient de créer la variante pré-tarifée et Shopify met un instant à la
+publier. Trois tentatives espacées (0, 0,9 et 2 s), message explicite en cas
+d'échec, et réactivation des boutons du studio — personne ne les réveillait,
+le client restait devant un bouton mort.
+
+**Le studio proposait 36 teintes sur un sac qui n'en vend que 14.**
+`GET /api/products/:id/colors` renvoie désormais les coloris réels, et le
+studio les fait passer avant le nuancier du mockup puis la palette générique.
+
+Chemin parcouru, parce qu'il est instructif : la pastille native de Shopify
+(`optionValues.swatch`) n'existe qu'à partir de l'API 2024-07 alors que le
+projet est en 2024-01 — `adminGraphQL` accepte donc une version forcée pour
+ce seul appel. Mais une fois la requête faite, **les quatorze valeurs
+n'avaient aucune pastille**, ni native ni par la taxonomie. Le thème, lui,
+en affiche : il les tient de ses propres réglages, inaccessibles sans le
+scope `read_themes` — qu'on ne va pas demander au marchand pour lire une
+donnée de thème.
+
+D'où le repli retenu : **déduire la teinte de la photo de chaque variante.**
+Les packshots Toptex sont sur fond blanc ; écarter les pixels quasi blancs
+ne laisse que le tissu, dont on prend la médiane par canal — une ombre
+portée ou un reflet tirerait la moyenne, la médiane les ignore.
+
+Résultat sur le sac : 14 teintes sur 14, fidèles aux pastilles du thème
+(#ede3d4 Naturel, #a36237 Caramel Coffee, #fcda4a Lemon Zest…). Et zéro
+saisie manuelle, ce qui compte avec cinquante références Toptex à venir.
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.
