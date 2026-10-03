@@ -678,12 +678,39 @@
             var _sectionId = _tlCartDrawerSectionId();
             var _addBody = { items: _items };
             if (_sectionId) { _addBody.sections = _sectionId; _addBody.sections_url = window.location.pathname; }
-            fetch('/cart/add.json', {
-              method:  'POST',
-              headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-              body: JSON.stringify(_addBody),
-            })
-            .then(function(r) { return r.json(); })
+            // Une variante d'impression tout juste créée par le backend n'est pas
+            // immédiatement ajoutable : Shopify met un instant à la publier sur
+            // la boutique, et répond 422 entre-temps. D'où les tentatives
+            // espacées — sans elles, le premier ajout échouait systématiquement
+            // et il fallait recommencer.
+            //
+            // Et surtout : on VÉRIFIE la réponse. Le code se contentait de
+            // r.json() ; un refus 422 passait donc pour un succès, le modal se
+            // fermait et le tiroir s'ouvrait vide, sans un mot d'explication.
+            var _essais = [0, 900, 2000];
+            var _tenterAjout = function (n) {
+              return fetch('/cart/add.json', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify(_addBody),
+              })
+              .then(function (r) {
+                return r.json().catch(function () { return null; }).then(function (data) {
+                  // Shopify renvoie {status, message, description} en cas de refus.
+                  var echec = !r.ok || !data || data.status >= 400;
+                  if (!echec) return data;
+                  if (n + 1 < _essais.length) {
+                    return new Promise(function (ok) { setTimeout(ok, _essais[n + 1]); })
+                      .then(function () { return _tenterAjout(n + 1); });
+                  }
+                  var err = new Error((data && (data.description || data.message)) || ('HTTP ' + r.status));
+                  err.panierRefuse = true;
+                  throw err;
+                });
+              });
+            };
+
+            _tenterAjout(0)
             .then(function(data) {
               // Fermer le modal APRÈS succès
               closeModal();
@@ -727,8 +754,23 @@
                 document.body.classList.remove('tl-cart-loading');
               }, 1800);
             })
-            .catch(function() {
+            .catch(function(err) {
               document.body.classList.remove('tl-cart-loading');
+              // Refus explicite de Shopify après toutes les tentatives : le
+              // renvoyer vers /cart afficherait un panier vide sans rien
+              // expliquer. On le dit, et on laisse le studio ouvert pour
+              // réessayer sans tout refaire.
+              if (err && err.panierRefuse) {
+                try {
+                  var f = document.querySelector('#tl-modal iframe, .tl-modal iframe');
+                  if (f && f.contentWindow) {
+                    f.contentWindow.postMessage({ type: 'tl-add-failed', message: err.message }, '*');
+                  }
+                } catch (e2) {}
+                alert('L\'ajout au panier a été refusé : ' + err.message
+                    + '\n\nRéessayez dans quelques secondes.');
+                return;
+              }
               window.location.href = '/cart';
             });
 

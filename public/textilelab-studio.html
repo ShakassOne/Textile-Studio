@@ -6156,9 +6156,18 @@ function initPalette() {
 // palette générique + picker libre. Nuancier défini → seules CES couleurs,
 // picker libre masqué, et bascule sur la 1re couleur si l'actuelle n'y est pas.
 function _setPaletteForMockup(mockup) {
-  const colors = Array.isArray(mockup?.colors)
+  // Ordre de priorité : les coloris RÉELLEMENT vendus par le produit Shopify
+  // lié, puis le nuancier du mockup, puis la palette générique.
+  //
+  // Le produit fait autorité parce qu'il est la vérité commerciale : proposer
+  // 36 teintes textile sur un sac qui n'en vend que quatorze laisse le client
+  // composer dans un coloris inexistant, et personne ne s'en aperçoit avant
+  // la commande.
+  const duProduit = Array.isArray(window._TL_PRODUCT_COLORS) ? window._TL_PRODUCT_COLORS : [];
+  const duMockup = Array.isArray(mockup?.colors)
     ? mockup.colors.filter(c => c && /^#[0-9a-fA-F]{3,6}$/.test(String(c.hex || '')))
     : [];
+  const colors = duProduit.length ? duProduit : duMockup;
   const restricted = colors.length > 0;
   const next = restricted ? colors : TOPTEX_COLORS;
 
@@ -6171,7 +6180,9 @@ function _setPaletteForMockup(mockup) {
   if (customSection) customSection.style.display = restricted ? 'none' : '';
   const title = document.getElementById('palette-title');
   if (title) title.textContent = restricted
-    ? `Couleurs disponibles (${_activePalette.length})`
+    ? (duProduit.length
+        ? `Coloris du produit (${_activePalette.length})`
+        : `Couleurs disponibles (${_activePalette.length})`)
     : 'Palette textile (36 couleurs)';
 
   // Couleur courante indisponible sur ce produit → prendre la 1re du nuancier.
@@ -7607,6 +7618,18 @@ function addMobileTicketBatch() {
 // ============================================
 // CART
 // ============================================
+// ── Réveil des boutons si le parent n'a pas réussi l'ajout ────────────────
+// Le studio désactive ses boutons avant de confier l'ajout à tl-modal.js. Si
+// le panier refuse, personne ne les réactivait : le client se retrouvait
+// devant un bouton mort et devait recharger pour réessayer.
+window.addEventListener('message', (e) => {
+  if (e.data?.type !== 'tl-add-failed') return;
+  document.querySelectorAll('.btn-cart-big, [onclick*="addToCart"]').forEach(b => {
+    if (b.tagName === 'BUTTON') { b.disabled = false; b.textContent = '🛒 Ajouter au panier'; }
+  });
+  showToast('⚠️ ' + (e.data.message || 'Ajout au panier refusé — réessayez'));
+});
+
 // ── Checkout Shopify direct (depuis fiche produit via bouton Personnaliser) ──
 async function _checkoutShopifyDirect() {
   const allBtns = document.querySelectorAll('.btn-cart-big, [onclick*="addToCart"]');
@@ -9350,6 +9373,9 @@ function init() {
     // template. Le template est appliqué APRÈS la résolution automatique et
     // la remplace (produit, couleur, mockup, format).
     _tplInitAdminBar();
+    // Coloris réellement vendus par le produit : ils remplacent la palette
+    // générique dès qu'ils sont connus (cf. _setPaletteForMockup).
+    _tlChargerColorisProduit(_up.get('product_id') || '');
     const _tplProductId = _up.get('product_id') || '';
     // ?visual=<slug|id> — le client a choisi son design sur la fiche produit
     // (sélecteur du thème) et arrive ici pour le personnaliser.
@@ -9848,6 +9874,26 @@ async function _tplLoadForProduct(productId) {
   if (applique) showToast('🎨 Design chargé — personnalisez-le');
   try { updatePrice(); } catch (_) {}
   return applique;
+}
+
+/**
+ * Coloris réellement vendus par le produit Shopify lié.
+ *
+ * Sans eux, le studio propose sa palette textile générique — y compris des
+ * teintes que le produit ne vend pas. Le client composait alors un sac dans
+ * un coloris inexistant.
+ *
+ * Non bloquant : une erreur laisse simplement la palette générique en place.
+ */
+async function _tlChargerColorisProduit(productId) {
+  if (!productId) return;
+  try {
+    const d = await apiFetch(`/api/products/${encodeURIComponent(productId)}/colors`);
+    if (!d?.exists || !Array.isArray(d.colors) || !d.colors.length) return;
+    window._TL_PRODUCT_COLORS = d.colors;
+    // Le mockup est déjà appliqué à ce stade : on repasse la palette.
+    try { _setPaletteForMockup(STATE_mockup); } catch (_) {}
+  } catch (_) { /* palette générique conservée */ }
 }
 
 // ── Visuel choisi sur la fiche produit (?visual=) ──────────────────────────

@@ -421,6 +421,65 @@ router.get('/products/:productId/preview', attachShopId, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/products/:productId/colors — coloris réellement vendus
+// ─────────────────────────────────────────────────────────────────────────────
+// Le studio affichait sa palette générique de 36 couleurs textile, y compris
+// sur un produit qui n'en vend que quatorze. Le client pouvait donc composer
+// un sac dans un coloris inexistant.
+//
+// On lit les pastilles natives de Shopify (`optionValues.swatch`), celles-là
+// mêmes qui s'affichent sur la fiche produit. Elles n'existent qu'à partir de
+// l'API 2024-07, d'où la version forcée sur cet appel précis.
+const COULEURS_TTL = 10 * 60 * 1000;
+const _couleursCache = new Map();
+
+router.get('/products/:productId/colors', attachShopId, async (req, res) => {
+  const productId = String(req.params.productId || '').replace(/\D/g, '');
+  if (!productId) return res.status(400).json({ error: 'productId invalide' });
+
+  const cle = `${req.shopId}:${productId}`;
+  const e = _couleursCache.get(cle);
+  if (e && Date.now() - e.t < COULEURS_TTL) return res.json({ ...e.v, cached: true });
+
+  try {
+    const db = getDB();
+    const boutique = db.prepare('SELECT shop_domain, access_token FROM shops WHERE id=? AND is_active=1')
+                       .get(req.shopId);
+    if (!boutique?.access_token) return res.json({ exists: false, colors: [] });
+
+    const { adminGraphQL } = require('./admin-graphql');
+    const out = await adminGraphQL(boutique.shop_domain, boutique.access_token, `
+      query TslCouleurs($id: ID!) {
+        product(id: $id) {
+          options { name optionValues { name swatch { color } } }
+        }
+      }`, { id: `gid://shopify/Product/${productId}` }, '2025-01');
+
+    const options = out?.data?.product?.options || [];
+    const optCouleur = options.find(o => /couleur|colou?r|teinte/i.test(o.name || ''));
+
+    // Sans pastille renseignée, pas de couleur exploitable : on préfère ne
+    // rien imposer plutôt que d'inventer une teinte approximative.
+    const colors = (optCouleur?.optionValues || [])
+      .map(v => ({ name: v.name, hex: (v.swatch?.color || '').trim() }))
+      .filter(c => /^#[0-9a-fA-F]{6}$/.test(c.hex));
+
+    const corps = {
+      exists: colors.length > 0,
+      optionName: optCouleur?.name || null,
+      total: (optCouleur?.optionValues || []).length,
+      colors,
+    };
+    _couleursCache.set(cle, { t: Date.now(), v: corps });
+    res.json(corps);
+  } catch (err) {
+    // Jamais bloquant : sans coloris, le studio garde sa palette générique.
+    console.warn('GET /products/:id/colors :', err.message);
+    res.json({ exists: false, colors: [], error: err.message });
+  }
+});
+
 module.exports = router;
 module.exports.viderCacheDesigns = viderCacheDesigns;
 module.exports.purgerRendusProduit = purgerRendusProduit;
