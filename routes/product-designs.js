@@ -434,6 +434,77 @@ router.get('/products/:productId/preview', attachShopId, async (req, res) => {
 const COULEURS_TTL = 10 * 60 * 1000;
 const _couleursCache = new Map();
 
+/**
+ * Teinte dominante d'une photo de produit.
+ * ──────────────────────────────────────────────────────────────────────────
+ * Les packshots Toptex sont sur fond blanc : en écartant les pixels quasi
+ * blancs, il ne reste que le tissu. On prend la MÉDIANE par canal et non la
+ * moyenne — une ombre portée ou un reflet tirerait la moyenne, la médiane
+ * les ignore.
+ *
+ * @returns {Promise<string|null>} "#rrggbb", ou null si rien d'exploitable
+ */
+async function _teinteDominante(url) {
+  try {
+    const sharp = require('sharp');
+    const r = await fetch(url.split('?')[0] + '?width=120');
+    if (!r.ok) return null;
+    const { data, info } = await sharp(Buffer.from(await r.arrayBuffer()))
+      .resize(100, 100, { fit: 'inside' })
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    const rs = [], gs = [], bs = [];
+    for (let i = 0; i < info.width * info.height; i++) {
+      const o = i * info.channels;
+      const a = data[o + 3];
+      if (a < 128) continue;                                   // transparent
+      const R = data[o], G = data[o + 1], B = data[o + 2];
+      if (Math.min(R, G, B) > 245) continue;                   // fond blanc
+      if (Math.max(R, G, B) < 18) continue;                    // ombre noire
+      rs.push(R); gs.push(G); bs.push(B);
+    }
+    if (rs.length < 200) return null; // trop peu de matière pour conclure
+
+    const med = (t) => { t.sort((a, b) => a - b); return t[Math.floor(t.length / 2)]; };
+    const hex = (n) => n.toString(16).padStart(2, '0');
+    return `#${hex(med(rs))}${hex(med(gs))}${hex(med(bs))}`;
+  } catch { return null; }
+}
+
+/**
+ * Un coloris par valeur de l'option couleur, déduit de la photo de la
+ * première variante qui la porte.
+ */
+async function _couleursDepuisLesPhotos(boutique, productId, nomOption) {
+  const { adminGraphQL } = require('./admin-graphql');
+  const out = await adminGraphQL(boutique.shop_domain, boutique.access_token, `
+    query TslVariantes($id: ID!) {
+      product(id: $id) {
+        variants(first: 100) {
+          edges { node { selectedOptions { name value } image { url } } }
+        }
+      }
+    }`, { id: `gid://shopify/Product/${productId}` });
+
+  // Une photo par valeur de couleur : la première rencontrée fait foi.
+  const parValeur = new Map();
+  for (const e of out?.data?.product?.variants?.edges || []) {
+    const v = e.node;
+    const opt = (v.selectedOptions || []).find(o => o.name === nomOption);
+    const url = v.image?.url;
+    if (!opt?.value || !url || parValeur.has(opt.value)) continue;
+    parValeur.set(opt.value, url);
+  }
+
+  const entrees = [...parValeur.entries()];
+  const teintes = await Promise.all(entrees.map(([, url]) => _teinteDominante(url)));
+  return entrees
+    .map(([name], i) => ({ name, hex: teintes[i], source: 'photo' }))
+    .filter(c => c.hex);
+}
+
 router.get('/products/:productId/colors', attachShopId, async (req, res) => {
   const productId = String(req.params.productId || '').replace(/\D/g, '');
   if (!productId) return res.status(400).json({ error: 'productId invalide' });
@@ -471,17 +542,33 @@ router.get('/products/:productId/colors', attachShopId, async (req, res) => {
 
     const options = out?.data?.product?.options || [];
     const optCouleur = options.find(o => /couleur|colou?r|teinte/i.test(o.name || ''));
+    if (!optCouleur) {
+      const vide = { exists: false, optionName: null, total: 0, colors: [] };
+      _couleursCache.set(cle, { t: Date.now(), v: vide });
+      return res.json(vide);
+    }
 
-    // Sans pastille renseignée, pas de couleur exploitable : on préfère ne
-    // rien imposer plutôt que d'inventer une teinte approximative.
-    const colors = (optCouleur?.optionValues || [])
-      .map(v => ({ name: v.name, hex: (v.swatch?.color || '').trim() }))
+    let colors = (optCouleur.optionValues || [])
+      .map(v => ({ name: v.name, hex: (v.swatch?.color || '').trim(), source: 'pastille' }))
       .filter(c => /^#[0-9a-fA-F]{6}$/.test(c.hex));
+
+    // Repli : déduire la teinte de la photo de chaque variante.
+    //
+    // Les pastilles natives de Shopify ne sont pas toujours renseignées — sur
+    // le catalogue Toptex de WinShirt, aucune ne l'est, alors que le thème
+    // affiche pourtant des pastilles justes (il les tient de ses propres
+    // réglages, auxquels l'app n'a pas accès faute du scope read_themes).
+    // Plutôt que d'imposer une saisie manuelle sur cinquante références, on
+    // lit la couleur là où elle est de toute façon : sur la photo du produit
+    // dans ce coloris.
+    if (!colors.length) {
+      colors = await _couleursDepuisLesPhotos(boutique, productId, optCouleur.name);
+    }
 
     const corps = {
       exists: colors.length > 0,
-      optionName: optCouleur?.name || null,
-      total: (optCouleur?.optionValues || []).length,
+      optionName: optCouleur.name,
+      total: (optCouleur.optionValues || []).length,
       colors,
     };
     _couleursCache.set(cle, { t: Date.now(), v: corps });
