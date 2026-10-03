@@ -651,6 +651,39 @@ Résultat sur le sac : 14 teintes sur 14, fidèles aux pastilles du thème
 (#ede3d4 Naturel, #a36237 Caramel Coffee, #fcda4a Lemon Zest…). Et zéro
 saisie manuelle, ce qui compte avec cinquante références Toptex à venir.
 
+### 2026-10-03 — Session de vérification : lot E toujours bloqué sur les 3 questions
+
+Repris le fil du journal. Arbre de travail propre, toujours sur `dev`, rien
+commité par un autre agent entretemps.
+
+Les trois questions posées à Alan dans l'entrée « Lot E : le moteur du
+fichier d'impression » (quand générer le fichier, comment la ligne de panier
+référence le choix, ce que recouvre « référence de prix ») sont encore sans
+réponse. Les trois pièces qui restent sur le lot E — propriété de ligne de
+panier, référence de prix, génération à la commande — en dépendent toutes les
+trois : aucune ne se code sans trancher au moins une des trois, et ce sont
+des choix qui engagent la suite (modèle de données, ce que `orders/paid`
+attend, ce que verra l'admin). Conformément à la consigne, je n'ai pas deviné
+et je n'ai touché aucun fichier de code.
+
+Vérifié qu'il n'y avait rien d'indépendant de ces trois questions à avancer
+dans le lot E : le moteur (`utils/print-file.js`) est déjà fait et testé ; la
+lecture d'un visuel de bibliothèque qu'il soit local ou sur un CDN existe
+déjà (`_octetsDuVisuel` dans `routes/product-designs.js`), rien à bâtir de ce
+côté-là avant de savoir où ce fichier doit être branché. Le lot G (recette,
+passage dev puis prod) vient explicitement après le lot E dans le tableau :
+pas de raison de l'entamer en avance.
+
+`npm test` : 104 tests, 102 passent, 2 ignorés — `upsell-candidates` (connu)
+et `social-proof` (même cause, binaire natif better-sqlite3 absent sur cette
+machine ; ce test existait déjà avant le lot E et n'a pas été touché
+aujourd'hui). Aucune régression, aucun fichier modifié hors ce journal.
+
+**Pour les prochaines sessions automatiques sur ce chantier : si les trois
+questions ci-dessus sont encore sans réponse d'Alan, inutile de refaire cette
+analyse — se contenter de vérifier qu'aucune réponse n'est arrivée, confirmer
+que les tests passent toujours, et s'arrêter là plutôt que de deviner.**
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.
