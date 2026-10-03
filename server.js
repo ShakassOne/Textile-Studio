@@ -232,7 +232,7 @@ initDB();
 setImmediate(async () => {
   try {
     const db     = require('./db/database').getDB();
-    const shops  = db.prepare('SELECT shop_domain, access_token FROM shops WHERE access_token IS NOT NULL AND access_token != ""').all();
+    const shops  = db.prepare("SELECT shop_domain, access_token FROM shops WHERE access_token IS NOT NULL AND access_token != ''").all();
     const appUrl = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
     if (!shops.length || !appUrl) {
       console.log('🪝  reRegisterWebhooks — aucun shop en DB ou APP_URL absent');
