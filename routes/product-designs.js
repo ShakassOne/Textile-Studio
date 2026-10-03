@@ -449,12 +449,25 @@ router.get('/products/:productId/colors', attachShopId, async (req, res) => {
     if (!boutique?.access_token) return res.json({ exists: false, colors: [] });
 
     const { adminGraphQL } = require('./admin-graphql');
+    // Trois sources possibles pour une pastille, selon la façon dont le
+    // marchand a renseigné ses coloris :
+    //   • swatch.color              — pastille native Shopify
+    //   • linkedMetafield           — option reliée à la taxonomie Shopify
+    //   • métachamp couleur du produit
     const out = await adminGraphQL(boutique.shop_domain, boutique.access_token, `
       query TslCouleurs($id: ID!) {
         product(id: $id) {
-          options { name optionValues { name swatch { color } } }
+          options {
+            name
+            linkedMetafield { namespace key }
+            optionValues { name linkedMetafieldValue swatch { color image { id } } }
+          }
         }
       }`, { id: `gid://shopify/Product/${productId}` }, '2025-01');
+
+    if (String(req.query.debug || '') === '1') {
+      return res.json({ brut: out?.data?.product?.options || null, erreurs: out?.errors || null });
+    }
 
     const options = out?.data?.product?.options || [];
     const optCouleur = options.find(o => /couleur|colou?r|teinte/i.test(o.name || ''));
