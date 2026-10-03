@@ -547,6 +547,77 @@ Reste sur le lot E : propriété de ligne de panier, référence de prix par
 produit à partir de ce format, génération du fichier d'impression à la
 commande (sans passer par le studio). Pas encore commencé.
 
+### 2026-10-03 — Lot E : le moteur du fichier d'impression
+
+Avant de câbler quoi que ce soit (panier, webhook), le morceau qui ne dépend
+d'aucune décision d'architecture : produire le FICHIER D'IMPRESSION lui-même
+à partir d'un visuel de bibliothèque, sans studio.
+
+Ce n'est pas le moteur de mockup (`routes/mockup-gen.js`) : celui-là compose
+le visuel SUR LA PHOTO du vêtement (displacement map, plis, multiply) pour
+montrer un aperçu. Le fichier d'impression est le visuel nu, à la taille
+physique réelle du format retenu — ce qui part en production.
+
+`utils/print-file.js` (nouveau) :
+- `canvasImpressionPx(format, paysage)` — taille du canevas en pixels à
+  300 DPI, à partir de `FORMATS_MM` (utils/design-library.js, déjà utilisé
+  par la règle de compatibilité du lot B). A4 portrait → 2480×3508, les mêmes
+  pixels que les libellés `dpi300` de `routes/pricing.js` — vérifié par test,
+  pas recopié à la main ;
+- `placerContenu(visuel, cadre)` — le visuel contenu et centré dans le
+  canevas, proportions conservées, même formule d'échelle que
+  `evaluerCompatibilite` (mesurer vs rendre, même méthode) ;
+- `genererFichierImpression({ visuelBuffer, format })` — sharp : lit les
+  dimensions réelles du visuel, pose le canevas orienté comme lui (paysage
+  s'il est paysage, même convention que le lot B), compose sur fond
+  transparent. Pas de disque, pas de DB : retourne un buffer.
+
+9 tests (`tests/print-file.test.js`) : tailles de canevas pour les 4 formats,
+orientation paysage, repli sur A4 si format inconnu, centrage horizontal et
+vertical sans étirement (fonctions pures), puis bout-en-bout avec un vrai
+visuel via sharp — taille de sortie, transparence hors placement, couleur et
+opacité au centre du visuel, canevas paysage pour un visuel paysage. Suite
+complète : 103 tests, 102 passent, 1 ignoré (identique, non lié).
+
+**Rien de câblé.** Ni route, ni panier, ni webhook : juste le moteur, testé
+seul. La suite dépend de décisions à prendre avec Alan — voir ci-dessous.
+
+**Questions en attente pour Alan, avant de câbler le reste du lot E.**
+
+1. *Quand générer le fichier ?* À l'ajout au panier (le webhook `orders/paid`
+   doit répondre en moins de 5 s à Shopify — composer une image dedans est
+   risqué), au prix de générer un fichier pour des paniers jamais payés ; ou
+   à la commande confirmée, en acceptant de composer dans le budget du
+   webhook (l'opération mesurée ci-dessus prend quelques centaines de ms,
+   donc probablement tenable, mais pas mesuré en charge réelle).
+
+2. *Comment la ligne de panier référence le choix, pour que la production le
+   retrouve ?* Le webhook `orders/paid` (routes/shopify.js) sait déjà lire un
+   `design_id`/`_design_id` depuis les propriétés de ligne — son commentaire
+   anticipe même un « nouveau flow cart direct ». Mais `design_id` pointe
+   vers la table `designs`, dont `layers_json`/`frame_x..h` encodent l'état
+   complet d'un canvas Fabric côté studio (espace canvas du navigateur, pas
+   le repère backoffice 440×340 de la zone) : une ligne `designs` créée
+   côté serveur pour un ajout direct ne serait pas rejouable dans le studio,
+   et je ne veux pas improviser ce format sans vérifier avec toi qu'aucun
+   écran (admin, email de confirmation) ne s'attend à un vrai historique
+   Fabric derrière chaque `design_id`. Alternative : un chemin séparé (une
+   colonne `orders.library_id`, le fichier d'impression stocké à part) qui
+   ne mélange pas les deux concepts. À trancher avant de toucher au webhook.
+
+3. *« Référence de prix par produit » veut-elle dire quoi exactement ?* Il
+   existe déjà un mécanisme `pricingReference`/`extraDue`
+   (utils/print-tiers.js) pour les produits TEMPLATE
+   (`custom.tsl_template`) : un montant figé sur le produit Shopify,
+   recalculé si le client va plus loin dans le studio. Il dépend lui aussi du
+   canvas Fabric (bounding box des calques). Pour un ajout direct sans
+   studio il n'y a rien « de plus » à calculer — le prix Shopify du produit
+   suffit (décision n°2). Est-ce que « référence de prix » du tableau des
+   lots voulait dire ce mécanisme-là (écrire un `pricingReference` sur le
+   produit), ou simplement tracer le format/prix utilisé dans `orders`
+   (colonnes `format`/`format_price`, déjà lues par le webhook) pour garder
+   un historique côté admin ? Les deux sont de taille très différente.
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.
