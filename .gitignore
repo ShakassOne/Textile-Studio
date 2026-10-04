@@ -13,4 +13,4 @@ uploads/
 # Elles sont mises en cache sur le volume de données, pas versionnées : une
 # trentaine de familles Google pèseraient des dizaines de mégaoctets, et
 # elles se retéléchargent toutes seules au besoin.
-fonts/
+/fonts/

@@ -41,8 +41,10 @@ const DPI = 300;
 //   2. à défaut, on résout la famille demandée contre celles que l'hôte
 //      possède réellement, par une chaîne de repli — et jamais vers une
 //      famille incapable d'afficher un « é ».
-const REPLIS = ['Montserrat', 'Helvetica Neue', 'Helvetica', 'Arial',
-                'DejaVu Sans', 'Liberation Sans', 'Noto Sans', 'Verdana'];
+// La police embarquée vient en TÊTE : sur un hôte sans police, les suivantes
+// n'existent pas, et sur un hôte qui en a, la sienne peut être incomplète.
+const REPLIS = ['TSL Montserrat', 'Montserrat', 'Helvetica Neue', 'Helvetica',
+                'Arial', 'DejaVu Sans', 'Liberation Sans', 'Noto Sans', 'Verdana'];
 let _polices = null;
 let _dejaSignale = false;
 
@@ -69,6 +71,22 @@ function _chargerPolices() {
   const fs = require('fs');
   const path = require('path');
 
+  // La police EMBARQUÉE d'abord, et sous son nom réservé.
+  //
+  // Un conteneur Linux n'a pas de police utilisable : le premier rendu en
+  // production est sorti entièrement en carrés, alors que tout fonctionnait
+  // en local. Le téléchargement à la demande ne suffit donc pas comme seul
+  // filet — il dépend du réseau au moment précis où l'on imprime. Montserrat
+  // est embarquée (104 Ko, licence OFL) pour que le texte sorte toujours.
+  const embarquees = path.join(__dirname, '..', 'assets', 'fonts');
+  if (fs.existsSync(embarquees)) {
+    for (const f of fs.readdirSync(embarquees)) {
+      const m = /^([A-Za-z]+)-(\d{3})-/.exec(f);
+      if (!m) continue;
+      try { GlobalFonts.registerFromPath(path.join(embarquees, f), ALIAS_PREFIXE + m[1]); } catch {}
+    }
+  }
+
   [process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'fonts') : null,
    path.join(process.env.DATA_DIR || require('os').tmpdir(), 'tsl-fonts')].forEach((dir) => {
     if (!dir || !fs.existsSync(dir)) return;
@@ -90,9 +108,8 @@ function _chargerPolices() {
   const defaut = REPLIS.find((f) => dispo.has(f)) || GlobalFonts.families[0]?.family || null;
   if (!defaut) {
     if (premiereFois) console.warn('[impression] AUCUNE police disponible : les textes ne seront pas rendus.');
-  } else if (premiereFois && !dispo.has('Montserrat')) {
-    console.warn(`[impression] Montserrat absente, repli sur « ${defaut} ». `
-      + 'Déposez les fichiers .ttf dans <DATA_DIR>/fonts pour un rendu fidèle.');
+  } else if (premiereFois && !dispo.has('TSL Montserrat')) {
+    console.warn(`[impression] police embarquée introuvable, repli sur « ${defaut} ».`);
   }
   _polices = { dispo, defaut };
   return _polices;
@@ -432,4 +449,11 @@ async function rendreToutesLesFaces(composition, opts = {}) {
   return out;
 }
 
-module.exports = { DPI, tailleImpression, rendreFace, rendreToutesLesFaces, resoudrePolice, assurerPolice };
+/** État des polices, pour diagnostic depuis /api/version. */
+function etatPolices() {
+  const { dispo, defaut } = _chargerPolices();
+  return { total: dispo.size, defaut, embarquee: dispo.has('TSL Montserrat') };
+}
+
+module.exports = { DPI, tailleImpression, rendreFace, rendreToutesLesFaces,
+                   resoudrePolice, assurerPolice, etatPolices };

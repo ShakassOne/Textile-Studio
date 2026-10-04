@@ -630,6 +630,14 @@ app.get('/api/version', (_req, res) => {
     commit:    sha ? sha.slice(0, 7) : null,
     branch:    process.env.RAILWAY_GIT_BRANCH || null,
     startedAt: _BOOT_TS,
+    // État des polices du rendu serveur. Un conteneur sans police sort les
+    // fichiers d'impression entièrement en carrés, et rien ne le signale
+    // depuis l'extérieur — d'où ce relevé, qui évite d'avoir à fouiller les
+    // journaux pour s'en apercevoir.
+    polices: (() => {
+      try { return require('./utils/print-composition').etatPolices(); }
+      catch (e) { return { erreur: e.message }; }
+    })(),
   });
 });
 
