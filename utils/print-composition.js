@@ -53,16 +53,15 @@ let _dejaSignale = false;
 const ALIAS_PREFIXE = 'TSL ';
 
 /**
- * Nom réservé d'une famille.
+ * Nom réservé d'une famille, UN PAR GRAISSE.
  *
- * Un seul nom, sans déclinaison de graisse : @napi-rs/canvas ne garde qu'une
- * fonte par nom de famille ET lit mal le nom interne des WOFF2 de Google —
- * deux fichiers de graisses différentes y atterrissent sous la même famille.
- * Le gras est donc synthétisé au dessin (cf. _dessinerTexte) plutôt que
- * cherché dans une seconde fonte qu'on ne saurait pas adresser.
+ * @napi-rs/canvas ne garde qu'une fonte par nom de famille : le mot-clé
+ * `bold` y est sans effet. Chaque graisse a donc son propre nom, et le
+ * dessin choisit lequel employer. Faute de seconde graisse, il épaissit le
+ * tracé (cf. _dessinerTexte).
  */
-function _alias(nom) {
-  return ALIAS_PREFIXE + nom;
+function _alias(nom, poids) {
+  return ALIAS_PREFIXE + nom + (Number(poids) >= 600 ? ' Bold' : '');
 }
 
 function _chargerPolices() {
@@ -86,8 +85,9 @@ function _chargerPolices() {
   if (fs.existsSync(embarquees)) {
     for (const f of fs.readdirSync(embarquees)) {
       if (!/\.(ttf|otf)$/i.test(f)) continue;
-      const famille = f.split('-')[0];
-      try { GlobalFonts.registerFromPath(path.join(embarquees, f), ALIAS_PREFIXE + famille); } catch {}
+      const m = /^([A-Za-z0-9 ]+)-(\d{3})\./.exec(f);
+      if (!m) continue;
+      try { GlobalFonts.registerFromPath(path.join(embarquees, f), _alias(m[1], m[2])); } catch {}
     }
   }
 
@@ -167,12 +167,12 @@ async function assurerPolice(demandee) {
   const { dispo } = _chargerPolices();
   // La version que NOUS avons récupérée l'emporte toujours sur celle du
   // système, qui peut être incomplète.
-  if (dispo.has(_alias(nom))) return _alias(nom);
+  if (dispo.has(_alias(nom, 400))) return _alias(nom, 400);
   if (dispo.has(nom)) return nom;
   if (_enRoute.has(nom)) return _enRoute.get(nom);
 
   const promesse = _telechargerPolice(nom)
-    .then((ok) => (ok ? _alias(nom) : resoudrePolice(nom)))
+    .then((ok) => (ok ? _alias(nom, 400) : resoudrePolice(nom)))
     .catch(() => resoudrePolice(nom))
     .finally(() => _enRoute.delete(nom));
   _enRoute.set(nom, promesse);
@@ -195,7 +195,8 @@ async function _telechargerPolice(nom) {
     .filter((f) => f.toLowerCase().startsWith(prefixe));
   if (deja.length) {
     deja.forEach((f) => {
-      try { GlobalFonts.registerFromPath(path.join(dossier, f), _alias(nom)); } catch {}
+      const poids = (f.match(/-(\d{3})[-.]/) || [])[1] || '400';
+      try { GlobalFonts.registerFromPath(path.join(dossier, f), _alias(nom, poids)); } catch {}
     });
     _polices = null; // forcer la relecture des familles
     return true;
@@ -216,14 +217,19 @@ async function _telechargerPolice(nom) {
   //
   // @napi-rs/canvas ne gardant qu'une fonte par nom de famille, chaque
   // graisse est enregistrée sous son propre nom (cf. _alias).
+  // User-Agent d'un Android 2.3 : c'est le seul essayé qui fasse servir du
+  // TrueType STATIQUE, un fichier par graisse. Les autres donnent soit de
+  // l'EOT illisible (IE6), soit du WOFF2 que la version Linux de la
+  // bibliothèque ne décompresse pas, soit la fonte variable — dont le moteur
+  // ne lit que la graisse minimale de l'axe, 100, d'où des textes en filet.
   const ua = { 'User-Agent':
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 '
-    + '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' };
+    'Mozilla/5.0 (Linux; U; Android 2.3.5; fr-fr) AppleWebKit/533.1 '
+    + '(KHTML, like Gecko) Version/4.0 Mobile Safari/533.1' };
   const base = 'https://fonts.googleapis.com/css?family='
              + encodeURIComponent(nom).replace(/%20/g, '+');
 
   let n = 0;
-  for (const poids of [400]) {
+  for (const poids of [400, 700]) {
     try {
       const r = await fetch(`${base}:${poids}`, { headers: ua });
       if (!r.ok) continue;
@@ -242,11 +248,11 @@ async function _telechargerPolice(nom) {
         if (!lien) continue;
         const res = await fetch(lien, { headers: ua });
         if (!res.ok) continue;
-        const fichier = path.join(dossier, `${nom.replace(/\s+/g, '')}-${poids}-${k}.woff2`);
+        const fichier = path.join(dossier, `${nom.replace(/\s+/g, '')}-${poids}-${k}.ttf`);
         await fs.promises.writeFile(fichier, Buffer.from(await res.arrayBuffer()));
         // registerFromPath rend false quand le fichier n'est pas lisible : on
         // ne compte que les vraies réussites, sinon l'échec repasse inaperçu.
-        if (GlobalFonts.registerFromPath(fichier, _alias(nom))) n++;
+        if (GlobalFonts.registerFromPath(fichier, _alias(nom, poids))) n++;
         else await fs.promises.unlink(fichier).catch(() => {});
       }
     } catch { /* graisse indisponible : on garde celles qu'on a */ }
@@ -423,7 +429,17 @@ function _dessinerTexte(ctx, calque, boite) {
   // couleur, d'une épaisseur proportionnelle au corps. Le résultat est
   // prévisible avec n'importe quelle police, y compris celles du système.
   const veutGras = String(f.fontWeight || '') === 'bold' || Number(f.fontWeight) >= 600;
-  const epaisseur = veutGras ? Math.max(1, taille * 0.045) : 0;
+  let epaisseur = 0;
+  if (veutGras) {
+    const { dispo } = _chargerPolices();
+    if (famille.startsWith(ALIAS_PREFIXE) && dispo.has(famille + ' Bold')) {
+      // Vraie fonte grasse : toujours préférable à un tracé épaissi.
+      famille += ' Bold';
+      ctx.font = `${italique}${taille}px "${famille}"`;
+    } else {
+      epaisseur = Math.max(1, taille * 0.045);
+    }
+  }
   ctx.fillStyle = f.fill || '#000000';
   ctx.textBaseline = 'top';
 
