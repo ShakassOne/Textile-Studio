@@ -454,6 +454,86 @@ router.post('/cart-set/:design_id', attachShopId, renderRateLimiter,
 
 // ── GET /api/render/file/:design_id/:filename ─ servir les fichiers de /data/renders
 // Sécurisé : pas de traversée (filename limité à [a-z0-9_.-]+).
+// ── POST /api/render/from-composition/:design_id ─────────────────────────────
+// Fabrique les fichiers d'impression À PARTIR DE LA COMPOSITION ENREGISTRÉE.
+//
+// Diffère de /cart-set, qui reçoit des PNG déjà rendus par le studio. Ici le
+// navigateur n'envoie rien : on relit la composition en base et on reconstruit.
+// Deux conséquences qui justifient à elles seules ce chemin :
+//
+//   • le bloc de la fiche produit peut déclencher une commande sans avoir
+//     ouvert de canevas Fabric — c'était tout l'objet du lot E ;
+//   • surtout, le fichier devient VÉRIFIABLE. Un PNG fourni par le client ne
+//     prouve rien ; reconstruire depuis ce qui est enregistré garantit qu'on
+//     imprime la commande et pas autre chose.
+//
+// Retour : { ok, faces: { front: {url, w, h, format}, … }, properties }
+// `properties` est prêt à être posé en propriétés de ligne du panier.
+router.post('/from-composition/:design_id', attachShopId, renderRateLimiter, async (req, res) => {
+  const designId = Number(req.params.design_id);
+  if (!designId) return res.status(400).json({ error: 'design_id invalide' });
+
+  const db = getDB();
+  const design = db.prepare(
+    'SELECT id, product, color, edit_token, composition_json FROM designs WHERE id = ? AND shop_id = ?'
+  ).get(designId, req.shopId);
+  if (!design) return res.status(404).json({ error: 'Design introuvable pour ce shop' });
+  if (!_designTokenOk(design, req)) return res.status(403).json({ error: 'Token design invalide' });
+
+  const COMP = require('../utils/composition');
+  const PRINT = require('../utils/print-composition');
+
+  let composition;
+  try { composition = COMP.normaliser(JSON.parse(design.composition_json || '{}')); }
+  catch { composition = COMP.creer(); }
+  if (COMP.estVide(composition)) {
+    return res.status(409).json({ error: 'Aucune composition à imprimer sur ce design' });
+  }
+
+  // Déclaré ici, comme dans les autres handlers de ce fichier : APP_URL n'est
+  // pas une constante de module.
+  const APP_URL = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
+
+  const dossier = path.join(DATA_DIR, 'renders', String(designId));
+  await fs.promises.mkdir(dossier, { recursive: true });
+
+  const faces = {};
+  const manques = [];
+  for (const face of COMP.facesUtilisees(composition)) {
+    try {
+      const r = await PRINT.rendreFace(composition, face, { racineLocale: DATA_DIR });
+      if (!r) continue;
+      const nom = `print-${face}.png`;
+      await fs.promises.writeFile(path.join(dossier, nom), r.buffer);
+      faces[face] = {
+        url: `${APP_URL}/api/render/file/${designId}/${nom}`,
+        w: r.w, h: r.h, format: r.format, calques: r.calques,
+      };
+      if (r.manques && r.manques.length) manques.push(...r.manques);
+    } catch (e) {
+      console.error(`[from-composition] face ${face} :`, e.message);
+      manques.push({ face, raison: e.message });
+    }
+  }
+
+  if (!Object.keys(faces).length) {
+    return res.status(500).json({ error: 'Aucune face n\'a pu être rendue', manques });
+  }
+
+  // Propriétés de ligne : préfixées « _ » pour rester masquées côté client
+  // (tl-modal.js les filtre dans le tiroir), sauf le récapitulatif lisible.
+  const nomsFaces = Object.keys(faces);
+  const properties = {
+    _design_id: String(designId),
+    _composition: 'v' + (composition.v || 1),
+    _print_front: faces.front ? faces.front.url : '',
+    _print_back:  faces.back ? faces.back.url : '',
+    Personnalisation: nomsFaces.length > 1 ? 'Recto et verso' : (faces.front ? 'Recto' : 'Verso'),
+  };
+
+  res.json({ ok: true, faces, properties, manques });
+});
+
 router.get('/file/:design_id/:filename', (req, res) => {
   const { design_id, filename } = req.params;
   if (!/^[\w.-]+$/.test(filename) || !/^\d+$/.test(design_id)) {
