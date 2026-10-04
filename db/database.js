@@ -262,6 +262,14 @@ function initDB() {
     )
   `);
 
+  // ── Migration designs — composition au format partagé ───────────────────
+  // Le bloc de la fiche produit et le configurateur écrivent désormais la
+  // même structure (cf. utils/composition.js) : faces nommées, positions
+  // relatives à la zone d'impression. `layers_json` reste en place pour les
+  // designs déjà enregistrés et pour le rendu du configurateur actuel ; les
+  // deux cohabiteront le temps du raccordement.
+  try { db.exec("ALTER TABLE designs ADD COLUMN composition_json TEXT DEFAULT NULL"); } catch {}
+
   // ── Table: product_display_zones (zone d'affichage sur la PHOTO produit) ──
   // ──────────────────────────────────────────────────────────────────────────
   // À NE PAS CONFONDRE avec la zone d'impression des mockups

@@ -1,5 +1,6 @@
 'use strict';
 const express = require('express');
+const COMP = require('../utils/composition');
 const router  = express.Router();
 const crypto    = require('crypto');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
@@ -51,25 +52,44 @@ router.get('/:id', attachShopIdSoft, (req, res) => {
 
 // POST /api/designs — create (public — studio auto-saves designs avant checkout)
 // shop_id obligatoire (résolu via header/query/bootstrap)
+/** JSON toléré : une chaîne illisible ne doit pas faire échouer l'enregistrement. */
+function _lireJson(s) {
+  try { return JSON.parse(s); } catch { return null; }
+}
+
 router.post('/', attachShopId, createDesignLimiter, (req, res) => {
   const db = getDB();
   const {
     name = 'Sans titre', product = 'tshirt', color = '#FFFFFF', format = 'A4',
     frame_x = 0, frame_y = 0, frame_w = 200, frame_h = 260,
     layers_json = '[]', ticket_on = 0, ticket_start = 1,
-    ticket_prefix = '', ticket_suffix = '', thumbnail = ''
+    ticket_prefix = '', ticket_suffix = '', thumbnail = '',
+    composition = null
   } = req.body;
 
   const layers = typeof layers_json === 'string' ? layers_json : JSON.stringify(layers_json);
   const editToken = crypto.randomBytes(16).toString('hex');
 
+  // Composition au format partagé (bloc fiche produit ou configurateur).
+  // Elle passe par le normaliseur plutôt que d'être stockée telle quelle :
+  // c'est elle qui produira le fichier d'impression, elle ne peut pas
+  // contenir n'importe quoi. Un corps illisible donne une composition vide,
+  // jamais une erreur — le design reste enregistré.
+  let compJson = null;
+  if (composition) {
+    const c = COMP.normaliser(typeof composition === 'string' ? _lireJson(composition) : composition);
+    if (!COMP.estVide(c)) compJson = JSON.stringify(c);
+  }
+
   const info = db.prepare(`
     INSERT INTO designs
       (shop_id, name, product, color, format, frame_x, frame_y, frame_w, frame_h,
-       layers_json, ticket_on, ticket_start, ticket_prefix, ticket_suffix, thumbnail, edit_token)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       layers_json, ticket_on, ticket_start, ticket_prefix, ticket_suffix, thumbnail,
+       edit_token, composition_json)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(req.shopId, name, product, color, format, frame_x, frame_y, frame_w, frame_h,
-         layers, ticket_on, ticket_start, ticket_prefix, ticket_suffix, thumbnail, editToken);
+         layers, ticket_on, ticket_start, ticket_prefix, ticket_suffix, thumbnail,
+         editToken, compJson);
 
   // Seul endroit qui renvoie edit_token : le créateur le garde en mémoire pour
   // signer les écritures /api/render/* (save, save-views, cart-set).
