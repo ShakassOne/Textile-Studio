@@ -60,6 +60,19 @@ function identityLines(genericIdentityPrompt) {
   ];
 }
 
+// Ligne de cadrage d'IMAGE A (structure Image A/Image B) — doit rester cohérente
+// avec identityLines() ci-dessus : sinon le flag générique active bien les 2 lignes
+// de détail ("subject's key identifying features") mais cette ligne-ci restait figée
+// sur "the people... their likeness", contredisant juste en dessous la formulation
+// neutre voulue pour une photo sans visage. Trouvé en relisant la sortie complète de
+// buildTransformPrompt(..., true, '', true) — le test du 04/10 vérifiait la présence
+// des lignes génériques sans vérifier l'absence de cette incohérence.
+function imageASourceLine(genericIdentityPrompt) {
+  return genericIdentityPrompt
+    ? 'IMAGE A (the FIRST image) = SOURCE IDENTITY. The subject(s), their count and their appearance must come EXCLUSIVELY from IMAGE A.'
+    : 'IMAGE A (the FIRST image) = SOURCE IDENTITY. The people, their count and their likeness must come EXCLUSIVELY from IMAGE A.';
+}
+
 // hasStyleReference=true → prompt structuré Image A (identité) / Image B (style),
 // sinon fallback texte seul (point 5). Le prompt custom du style est conservé
 // puis enrichi (point 9) avec les contraintes d'identité et de rendu.
@@ -76,7 +89,7 @@ function buildTransformPrompt(customPrompt, hasStyleReference, userPrompt, gener
   if (hasStyleReference) {
     return [
       'You are given TWO reference images.',
-      'IMAGE A (the FIRST image) = SOURCE IDENTITY. The people, their count and their likeness must come EXCLUSIVELY from IMAGE A.',
+      imageASourceLine(genericIdentityPrompt),
       'IMAGE B (the SECOND image) = STYLE REFERENCE. Use IMAGE B ONLY as a strict graphic-style reference (line work, shading, color treatment, finish). Do NOT copy the people, faces, objects, composition or background of IMAGE B.',
       '',
       'Redraw the subject of IMAGE A in this style: ' + base,

@@ -45,6 +45,18 @@ test('buildTransformPrompt structure Image A/Image B quand une référence de st
   assert.ok(prompt.includes("Preserve each subject's key identifying features"));
 });
 
+test('buildTransformPrompt avec référence de style + flag générique : la ligne IMAGE A ne parle plus de "people"/"likeness" (cohérence avec identityLines)', () => {
+  const generic = buildTransformPrompt('style cartoon', true, '', true);
+  assert.ok(generic.includes('The subject(s), their count and their appearance must come EXCLUSIVELY from IMAGE A.'));
+  assert.ok(!generic.includes('The people, their count and their likeness'));
+});
+
+test('buildTransformPrompt avec référence de style + flag historique : la ligne IMAGE A garde "people"/"likeness"', () => {
+  const historic = buildTransformPrompt('style cartoon', true, '', false);
+  assert.ok(historic.includes('The people, their count and their likeness must come EXCLUSIVELY from IMAGE A.'));
+  assert.ok(!historic.includes('The subject(s), their count and their appearance'));
+});
+
 test('buildTransformPrompt priorise la consigne libre du client sur le prompt du style', () => {
   const prompt = buildTransformPrompt('style cartoon', false, 'transforme en affiche vintage');
   assert.ok(prompt.startsWith('transforme en affiche vintage'));
