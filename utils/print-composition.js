@@ -106,8 +106,13 @@ function _chargerPolices() {
   // normale. Le Montserrat installé sur un Mac, par exemple, ne contient que
   // du Thin 100 : s'y fier imprimait tous les textes en filet, gras compris,
   // et empêchait d'aller chercher la vraie police.
+  // Les familles que NOUS enregistrons échappent au filtre : la fonte
+  // variable embarquée déclare la graisse minimale de son axe (100), et le
+  // filtre l'écartait donc comme il écarte un Thin de système — en laissant
+  // croire que la police embarquée était introuvable.
   const dispo = new Set(GlobalFonts.families
-    .filter((f) => (f.styles || []).some((st) => Number(st.weight) >= 400))
+    .filter((f) => f.family.startsWith(ALIAS_PREFIXE)
+                || (f.styles || []).some((st) => Number(st.weight) >= 400))
     .map((f) => f.family));
   const defaut = REPLIS.find((f) => dispo.has(f)) || GlobalFonts.families[0]?.family || null;
   if (!defaut) {
