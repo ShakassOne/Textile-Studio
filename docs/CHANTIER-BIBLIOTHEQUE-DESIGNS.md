@@ -794,6 +794,67 @@ revient ; `__tsldRendu` simulé → `_preview_img` le reprend tel quel dans le
 corps de `POST /cart/add.json`. `npm test` : 116 tests, 114 passent, 2
 ignorés (inchangé).
 
+### 2026-10-04 — Moteur partagé et circuit de commande
+
+Trois pièces, aucune branchée au configurateur : il tourne inchangé.
+
+**`utils/composition.js`** — le contrat commun. Faces nommées (`front`,
+`back`) au lieu d'un index `<mockup>_<vue>`, positions RELATIVES à la zone
+d'impression. Une composition rend identiquement à n'importe quelle taille
+d'écran, ce qui supprime par construction le recalage et sa cascade de
+tentatives. Les templates v1–v3 restent lisibles via leur `frame`.
+
+**`public/tsl-engine.js`** — le canevas partagé. Propriétaire unique de la
+conversion composition ⇄ canevas et de l'export. Pas d'interface : le bloc
+et le configurateur ont des habillages différents et doivent pouvoir
+diverger. Vérifié avec Fabric 5.3 dans un navigateur.
+
+**`utils/print-composition.js` + `POST /api/render/from-composition/:id`** —
+le fichier d'impression, reconstruit côté serveur depuis la composition
+enregistrée. Un PNG fourni par le navigateur ne prouve rien ; reconstruire
+garantit qu'on imprime la commande. Le placement vient de
+`utils/composition.js`, la même arithmétique que l'écran.
+
+Vérifié de bout en bout sur dev : design créé avec composition → fichier A4
+2480×3508 à 300 dpi → propriétés de ligne prêtes pour le panier.
+
+#### Le chemin des polices, parce qu'il se reproduira
+
+Le rendu serveur n'a pas les polices du navigateur, et le premier fichier
+produit en production était **entièrement en carrés** alors que tout
+fonctionnait en local. Quatre formats essayés avant d'aboutir :
+
+| source | format servi | verdict |
+|---|---|---|
+| User-Agent IE6 | EOT | illisible par le moteur |
+| navigateur récent | WOFF2 | la version Linux ne décompresse pas le Brotli |
+| dépôt GitHub Google | fonte variable | lue à la graisse 100 → tout en filet |
+| **User-Agent Android 2.3** | **TrueType statique** | **✓** |
+
+Montserrat romain et gras sont embarqués (88 Ko, OFL) pour que le texte
+sorte toujours ; les trente autres familles se téléchargent à la demande et
+se mettent en cache sur le volume. Trois pièges annexes valent d'être
+notés : `sans-serif` n'est pas une famille enregistrée côté serveur ; le
+motif `fonts/` du .gitignore écartait aussi la police embarquée ; et le
+filtre « graisse ≥ 400 », ajouté pour écarter un Thin de système, rejetait
+notre propre fonte variable.
+
+`/api/version` expose désormais l'état des polices. Sans ce relevé, un
+conteneur qui imprime des carrés ne se signale nulle part.
+
+#### Une faille corrigée
+
+La lecture des sources de calques acceptait n'importe quel chemin local.
+Les compositions venant du navigateur d'un client, `../../..` dans un
+calque faisait ouvrir un fichier arbitraire du serveur. Sources locales
+confinées à `/uploads`, vérifié APRÈS résolution du chemin.
+
+#### Reste à faire
+
+Raccorder le configurateur au moteur. Tant que ce n'est pas fait, « un seul
+moteur » reste une intention : deux implémentations coexistent. À faire
+quand Alan peut valider sur le dev store derrière.
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.
