@@ -77,13 +77,17 @@ function _chargerPolices() {
   // production est sorti entièrement en carrés, alors que tout fonctionnait
   // en local. Le téléchargement à la demande ne suffit donc pas comme seul
   // filet — il dépend du réseau au moment précis où l'on imprime. Montserrat
-  // est embarquée (104 Ko, licence OFL) pour que le texte sorte toujours.
+  // est embarquée pour que le texte sorte toujours.
+  //
+  // TTF et non WOFF2 : la version Linux de la bibliothèque ne décompresse
+  // pas le Brotli du WOFF2. La police s'enregistrait sans erreur et rendait
+  // quand même des carrés — un échec parfaitement silencieux.
   const embarquees = path.join(__dirname, '..', 'assets', 'fonts');
   if (fs.existsSync(embarquees)) {
     for (const f of fs.readdirSync(embarquees)) {
-      const m = /^([A-Za-z]+)-(\d{3})-/.exec(f);
-      if (!m) continue;
-      try { GlobalFonts.registerFromPath(path.join(embarquees, f), ALIAS_PREFIXE + m[1]); } catch {}
+      if (!/\.(ttf|otf)$/i.test(f)) continue;
+      const famille = f.split('-')[0];
+      try { GlobalFonts.registerFromPath(path.join(embarquees, f), ALIAS_PREFIXE + famille); } catch {}
     }
   }
 
