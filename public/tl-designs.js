@@ -74,6 +74,13 @@
     + '.tsld-thumb{width:100%;aspect-ratio:1;object-fit:contain;display:block;border-radius:6px;background:rgba(127,127,127,.08)}'
     + '.tsld-name{font-size:.72rem;line-height:1.3;margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.85}'
     + '.tsld-empty{font-size:.85rem;opacity:.6;padding:10px 0}'
+    + '.tsld-cart{display:none;margin-top:12px}'
+    + '.tsld-cart.tsld-show{display:block}'
+    + '.tsld-cart-btn{width:100%;box-sizing:border-box;padding:12px 16px;font:inherit;font-size:.95rem;'
+    +   'font-weight:600;border:1px solid currentColor;border-radius:8px;background:transparent;color:inherit;'
+    +   'cursor:pointer;opacity:.9}'
+    + '.tsld-cart-btn:hover{opacity:1}'
+    + '.tsld-cart-btn:disabled{opacity:.5;cursor:default}'
     + '@media (max-width:600px){.tsld-grid{grid-auto-columns:96px}}';
 
   function injecterStyles() {
@@ -136,11 +143,68 @@
 
     appliquerSurLaPhoto(conteneur, design);
 
+    var barrePanier = conteneur.querySelector('.tsld-cart');
+    if (barrePanier) barrePanier.classList.toggle('tsld-show', !!design);
+
     try {
       document.dispatchEvent(new CustomEvent('tsl:design', {
         detail: { design: design, productId: conteneur.__tsldProduct },
       }));
     } catch (e) { /* CustomEvent indisponible : non bloquant */ }
+  }
+
+  // ── Ajout direct au panier, sans studio ──────────────────────────────────
+  //
+  // Lot E : le client choisit un visuel et l'ajoute tel quel, à la taille/
+  // format déjà réglés sur le produit (pas de studio, pas de canvas à ouvrir).
+  // Le fichier d'impression, lui, est généré côté serveur à la commande
+  // confirmée (routes/shopify.js, webhook orders/paid) — décision prise avec
+  // Alan le 2026-10-03.
+  //
+  // On ne réimplémente pas l'ajout panier ici : on réutilise le canal
+  // postMessage que tl-modal.js écoute déjà pour le studio (ouverture du
+  // tiroir, nouvelles tentatives si Shopify répond 422, injection de l'image
+  // dans le panier via la propriété _preview_img — déjà générique, déjà
+  // théma-agnostique). tl-designs.js et tl-modal.js tournent dans la même
+  // page (pas une iframe), donc ce postMessage reste local à l'onglet.
+  function _tsldVariantId() {
+    var input = document.querySelector('form[action*="/cart/add"] input[name="id"]')
+      || document.querySelector('product-form input[name="id"]')
+      || document.querySelector('input[name="id"][value]');
+    var value = input && input.value ? String(input.value).trim() : '';
+    return /^\d+$/.test(value) ? value : '';
+  }
+
+  function ajouterAuPanier(design, bouton) {
+    var variantId = _tsldVariantId();
+    if (!variantId) {
+      alert('Choisissez d’abord une taille avant d’ajouter au panier.');
+      return;
+    }
+    var previewUrl = absolu(design.thumb);
+    var props = {
+      'Visuel':       design.nom,
+      '_library_id':  String(design.id),
+      '_preview_img': previewUrl,
+    };
+
+    bouton.disabled = true;
+    var texteOrigine = bouton.textContent;
+    bouton.textContent = 'Ajout…';
+    var fini = function () {
+      bouton.disabled = false;
+      bouton.textContent = texteOrigine;
+    };
+    document.addEventListener('cart:update', fini, { once: true });
+    setTimeout(fini, 3500); // filet de sécurité si l'évènement de succès n'arrive pas
+
+    window.postMessage({
+      type: 'tl-add-to-cart',
+      variantId: variantId,
+      quantity: 1,
+      properties: props,
+      previewUrl: previewUrl,
+    }, window.location.origin);
   }
 
   // ── Le design sur la photo du produit ─────────────────────────────────────
@@ -301,6 +365,7 @@
       html += '<input type="search" class="tsld-search" placeholder="Rechercher un design…" aria-label="Rechercher un design">';
     }
     html += '<div class="tsld-grid' + (enGrille ? ' tsld-wrap' : '') + '"></div>';
+    html += '<div class="tsld-cart"><button type="button" class="tsld-cart-btn">Ajouter au panier</button></div>';
     conteneur.innerHTML = html;
     conteneur.classList.add('tsld');
 
@@ -309,6 +374,16 @@
     conteneur.__tsldQuery = '';
 
     conteneur.addEventListener('click', function (e) {
+      var btnPanier = e.target.closest ? e.target.closest('.tsld-cart-btn') : null;
+      if (btnPanier) {
+        var slugChoisi = etat[conteneur.__tsldId];
+        var designChoisi = null;
+        for (var p = 0; p < data.designs.length; p++) {
+          if (data.designs[p].slug === slugChoisi) designChoisi = data.designs[p];
+        }
+        if (designChoisi) ajouterAuPanier(designChoisi, btnPanier);
+        return;
+      }
       var cat = e.target.closest ? e.target.closest('.tsld-cat') : null;
       if (cat) {
         conteneur.__tsldCat = cat.getAttribute('data-cat') || '';

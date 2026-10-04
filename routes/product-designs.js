@@ -69,6 +69,30 @@ function purgerRendusProduit(productId) {
   } catch { /* dossier absent : rien à purger */ }
 }
 
+/**
+ * Mockup lié à un produit, et format d'impression retenu pour sa vue par
+ * défaut. Même lecture que GET /products/:id/designs ci-dessous, réutilisée
+ * par le webhook orders/paid (routes/shopify.js) pour générer le fichier
+ * d'impression d'un achat direct de bibliothèque, sans studio (lot E) : le
+ * format n'a pas besoin d'être stocké sur la commande, il se retrouve ici.
+ */
+function resoudreFormatProduit(db, shopId, productId, viewIndex = 0) {
+  const lien = db.prepare(
+    `SELECT mockup_id FROM product_mockup_links
+     WHERE shop_id=? AND (shopify_product_id=? OR shopify_product_id=?)`
+  ).get(shopId, productId, `gid://shopify/Product/${productId}`);
+  const mockupId = lien?.mockup_id || null;
+  if (!mockupId) return { mockupId: null, format: DL.FORMAT_PAR_DEFAUT };
+
+  const m = db.prepare('SELECT views_json FROM mockups WHERE id=? AND shop_id=?')
+              .get(mockupId, shopId);
+  let vues = [];
+  try { vues = JSON.parse(m?.views_json || '[]'); } catch { vues = []; }
+  const vue = vues[viewIndex];
+  const format = (vue && DL.FORMATS_MM[vue.defaultFormat]) ? vue.defaultFormat : DL.FORMAT_PAR_DEFAUT;
+  return { mockupId, format };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/products/:productId/designs
 // ─────────────────────────────────────────────────────────────────────────────
@@ -581,5 +605,7 @@ router.get('/products/:productId/colors', attachShopId, async (req, res) => {
 });
 
 module.exports = router;
-module.exports.viderCacheDesigns = viderCacheDesigns;
-module.exports.purgerRendusProduit = purgerRendusProduit;
+module.exports.viderCacheDesigns     = viderCacheDesigns;
+module.exports.purgerRendusProduit   = purgerRendusProduit;
+module.exports.resoudreFormatProduit = resoudreFormatProduit;
+module.exports.octetsDuVisuel        = _octetsDuVisuel;

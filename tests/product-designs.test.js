@@ -232,3 +232,31 @@ test('la liaison produit est cherchée sous ses deux écritures', async () => {
   assert.deepEqual(DERNIERE_RECHERCHE_LIEN,
     [1, '10743954145607', 'gid://shopify/Product/10743954145607']);
 });
+
+// ── resoudreFormatProduit (lot E — webhook orders/paid) ────────────────────
+// Même lecture mockup → vue → defaultFormat que la route ci-dessus, exportée
+// pour que le webhook retrouve le format sans avoir à le stocker sur la
+// commande (décision du 2026-10-03 avec Alan : pas de taille à saisir en
+// plus par produit, elle se retrouve via le mockup).
+
+test('resoudreFormatProduit : aucun mockup lié → format par défaut, pas de mockupId', () => {
+  DONNEES.lien = null;
+  const r = router.resoudreFormatProduit(faussebase, 1, '42');
+  assert.deepEqual(r, { mockupId: null, format: 'A4' });
+});
+
+test('resoudreFormatProduit : lit defaultFormat sur la vue demandée', () => {
+  DONNEES.lien   = { mockup_id: 7 };
+  DONNEES.mockup = { views_json: JSON.stringify([{ defaultFormat: 'A3' }]) };
+  const r = router.resoudreFormatProduit(faussebase, 1, '42');
+  assert.deepEqual(r, { mockupId: 7, format: 'A3' });
+});
+
+test('resoudreFormatProduit : defaultFormat absent ou invalide → repli A4', () => {
+  DONNEES.lien   = { mockup_id: 7 };
+  DONNEES.mockup = { views_json: JSON.stringify([{}]) };
+  assert.equal(router.resoudreFormatProduit(faussebase, 1, '42').format, 'A4');
+
+  DONNEES.mockup = { views_json: JSON.stringify([{ defaultFormat: 'XXL' }]) };
+  assert.equal(router.resoudreFormatProduit(faussebase, 1, '42').format, 'A4');
+});

@@ -53,7 +53,7 @@ le studio pour personnaliser s'il le souhaite.
 | C | Block de thème « Sélecteur de design » : grille, catégories, recherche, `?design=`, mobile | 2–3 j | **fait** |
 | D | Aperçu : vignettes en superposition, grand visuel via le pipeline sharp, cache | 1 j | **fait** |
 | H | **Rendu sur la photo produit** : zone à 4 coins par produit vierge, admin de calibration, composition sur l'image commerciale | 2–3 j | **fait** |
-| E | Panier sans passer par le studio : propriété de ligne, référence de prix par produit, fichier d'impression à la commande | 1,5–2 j | **suivant** |
+| E | Panier sans passer par le studio : propriété de ligne, référence de prix par produit, fichier d'impression à la commande | 1,5–2 j | **câblé, à valider sur une vraie commande** |
 | F | Ouverture du studio avec le visuel déjà placé (`?product_id=…&visual=…`) | 0,5 j | **fait** |
 | G | Tests, recette, passage dev puis prod | 1 j | à faire |
 
@@ -683,6 +683,88 @@ aujourd'hui). Aucune régression, aucun fichier modifié hors ce journal.
 questions ci-dessus sont encore sans réponse d'Alan, inutile de refaire cette
 analyse — se contenter de vérifier qu'aucune réponse n'est arrivée, confirmer
 que les tests passent toujours, et s'arrêter là plutôt que de deviner.**
+
+### 2026-10-04 — Lot E câblé : panier direct, webhook, fichier d'impression
+
+Les 3 questions bloquantes ont été tranchées avec Alan :
+
+1. **Quand générer le fichier** → à la commande confirmée (webhook
+   `orders/paid`), pas à l'ajout au panier. Alan a maintenant une boutique de
+   test pour valider sans crainte de polluer de vraies ventes.
+2. **Comment la ligne de panier référence le visuel** → une clé séparée,
+   `_library_id`, qui ne pointe JAMAIS vers `designs` (l'historique canvas
+   Fabric du studio). Le **format n'a pas besoin d'être stocké sur la
+   commande** : Alan a fait remarquer qu'il n'a qu'une seule taille par
+   produit (le réglage posé le 2026-10-03) — le format se retrouve via
+   produit → mockup → `defaultFormat` au moment de la génération.
+3. **Référence de prix** → aucun mécanisme à coder. Alan confirme que le prix
+   Shopify du produit (vêtement + impression) suffit tel quel, conforme à la
+   décision n°2 du chantier. L'option « prix du produit + mécanisme de
+   calcul » est abandonnée.
+
+**Demande d'Alan en plus, traitée dans ce lot :** que le visuel choisi
+s'affiche dans le panier. Bonne surprise en relisant `tl-modal.js` : ce
+mécanisme existe déjà, en production, pour le studio — une surcouche d'image
+générique et théma-agnostique (`_preview_img` en propriété de ligne cachée,
+injectée en overlay sur l'image native du panier, avec resynchronisation
+permanente). Il suffisait de poser la même propriété depuis le nouveau
+bouton : **zéro nouveau code d'affichage panier**.
+
+**Fait :**
+- `db/database.js` — colonne `orders.library_id` (nullable), séparée de
+  `design_id`.
+- `routes/product-designs.js` — deux exports nouveaux, aucune route
+  existante modifiée : `resoudreFormatProduit()` (mockup → vue → format,
+  même lecture que `GET /designs`, dupliquée volontairement plutôt que d'aller
+  toucher la route déjà vérifiée en production) et `octetsDuVisuel()` (déjà
+  interne, juste exportée — lit un visuel local ou CDN).
+- `routes/shopify.js` — le webhook `orders/paid` lit `_library_id` sur la
+  ligne de commande, l'enregistre à part de `design_id`, puis (async, non
+  attendu, même logique que l'envoi d'email juste en dessous — Shopify veut
+  un 200 rapide) génère le fichier d'impression avec le moteur du
+  2026-10-03 et l'écrit dans `orders.render_url` — un champ déjà existant,
+  déjà éditable à la main depuis l'admin, jamais auto-rempli jusqu'ici. Pas
+  de nouvelle colonne pour cette seule idée. `orders.format` est corrigé
+  avec la vraie valeur retenue une fois connue.
+- `public/tl-designs.js` — bouton « Ajouter au panier », visible seulement
+  quand un design est choisi. Au clic : `postMessage({type:'tl-add-to-cart',
+  …})`, le même canal que le studio envoie depuis son iframe — tl-designs.js
+  et tl-modal.js tournent dans la même page (pas une iframe), donc le message
+  reste local à l'onglet. Propriétés posées : `Visuel` (visible, nom du
+  design), `_library_id` (caché, lu par le webhook), `_preview_img` (caché,
+  déclenche l'overlay panier déjà en place). Bouton désactivé pendant l'appel,
+  réactivé sur l'évènement `cart:update` (avec un filet de sécurité à 3,5 s si
+  l'évènement n'arrive pas).
+
+**Vérifié :**
+- `npm test` : 107 tests, 105 passent, 2 ignorés (cause d'environnement
+  connue, non liée). 3 tests ajoutés sur `resoudreFormatProduit` (pas de
+  mockup lié, lecture du format, repli sur A4).
+- Navigateur, en conditions réelles de script (pas de lecture de code) :
+  fausse fiche produit servie par un petit serveur Node local (le navigateur
+  intégré refuse les fichiers locaux hors du dossier projet, d'où un serveur
+  plutôt qu'un fichier ouvert directement), `tl-modal.js` et `tl-designs.js`
+  chargés tels quels, `fetch` bouchonné pour les appels réseau. Vérifié en
+  thème clair, sombre, et largeur mobile (375 px) : le bouton n'apparaît
+  qu'après sélection d'un design, et le clic produit exactement
+  `POST /cart/add.json` avec le variant_id lu dans le formulaire natif et les
+  trois propriétés attendues. Bouton réactivé après coup, aucune erreur
+  console.
+
+**Pas vérifié : le trajet complet sur une vraie commande.** Je n'ai simulé ni
+le webhook Shopify réel ni un vrai achat — par prudence (je ne déclenche pas
+de commande, même de test, sans qu'Alan soit aux commandes), et parce que
+better-sqlite3 ne tourne pas sur cette machine pour une vérification de bout
+en bout en local. **À faire par Alan sur la boutique de test** : passer une
+commande avec un visuel choisi directement sur la fiche produit (sans
+studio), puis vérifier dans la base que `orders.library_id` et
+`orders.render_url` sont bien remplis, et ouvrir le fichier généré.
+
+**Hors scope, noté pour plus tard si besoin :** l'email de confirmation de
+commande ne montre pas encore le visuel pour un achat direct de bibliothèque
+(`design` reste `null`, donc aucune vignette ne s'affiche dans
+`buildOrderConfirmationHTML`). Alan n'a demandé que l'affichage panier ; je
+n'ai pas élargi au mail sans qu'il le demande.
 
 ## Contraintes permanentes d'Alan
 

@@ -151,6 +151,13 @@ function initDB() {
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_library_shop_slug ON library(shop_id, slug)"); } catch {}
   backfillLibraryMetadata(db);
 
+  // Lot E — achat direct d'un visuel de bibliothèque, sans passer par le
+  // studio. Référence séparée de `design_id` (qui pointe vers `designs`, un
+  // historique de canvas Fabric) : une commande directe n'a jamais ce
+  // format-là, donc jamais ce champ-là. `design_id` et `library_id` sont
+  // mutuellement exclusifs sur une même commande.
+  try { db.exec("ALTER TABLE orders ADD COLUMN library_id INTEGER DEFAULT NULL"); } catch {}
+
   // ── Table: categories (catégories de bibliothèque sans placeholder SVG) ────
   db.exec(`
     CREATE TABLE IF NOT EXISTS categories (
