@@ -54,8 +54,11 @@
   // Peu de règles, toutes préfixées, et on hérite de la police du thème : ce
   // bloc doit se fondre dans des habillages qu'on ne maîtrise pas.
   var CSS = ''
-    + '.tsle{position:relative;margin:16px 0}'
-    + '.tsle-bar{display:flex;gap:6px;overflow-x:auto;padding:4px 0;width:0;min-width:100%;scrollbar-width:none}'
+    // `width:100%` et `flex-basis:100%` : posé dans un groupe de blocs que le
+    // thème dispose en rangée, le conteneur était écrasé à zéro de large et
+    // la barre devenait invisible — présente dans le DOM, mais sans surface.
+    + '.tsle{position:relative;margin:16px 0;width:100%;flex:1 1 100%;min-width:0;box-sizing:border-box}'
+    + '.tsle-bar{display:flex;gap:6px;overflow-x:auto;padding:4px 0;min-width:0;scrollbar-width:none}'
     + '.tsle-bar::-webkit-scrollbar{display:none}'
     + '.tsle-tool{flex:0 0 auto;display:inline-flex;align-items:center;gap:7px;padding:9px 14px;border-radius:999px;'
     +   'border:1px solid rgba(128,128,128,.35);background:transparent;color:inherit;font:inherit;font-size:.85rem;'
@@ -218,10 +221,42 @@
     this.barreMobile();
     this.brancherPrix();
 
+    this.verifierPlacement();
+
     var parDefaut = this.racine.getAttribute('data-tsl-default-tool');
     if (parDefaut && OUTILS[parDefaut] && this.outils.indexOf(parDefaut) >= 0) {
       this.ouvrir(parDefaut, true);
     }
+  };
+
+  /**
+   * Signale un placement qui ne peut pas fonctionner.
+   *
+   * Le tiroir s'ouvre vers le haut : posé tout en haut de la colonne d'infos,
+   * il n'a rien à recouvrir et s'affiche dans le vide. Posé dans un groupe
+   * disposé en rangée, le bloc n'a pas de largeur du tout. Dans les deux cas
+   * l'intégrateur ne voit rien et ne sait pas pourquoi — d'où cet
+   * avertissement en console plutôt qu'un échec muet.
+   */
+  Editeur.prototype.verifierPlacement = function () {
+    var self = this;
+    setTimeout(function () {
+      var r = self.racine.getBoundingClientRect();
+      if (r.width < 80) {
+        console.warn('[TSL] Le bloc éditeur n\'a presque pas de largeur (' + Math.round(r.width)
+          + 'px). Il est probablement posé dans un groupe de blocs disposé en rangée : '
+          + 'déplacez-le au niveau de la colonne produit.');
+      }
+      var conteneur = self.racine.parentElement;
+      if (conteneur) {
+        var dispo = r.top - conteneur.getBoundingClientRect().top;
+        if (dispo < 120) {
+          console.warn('[TSL] Le bloc éditeur est tout en haut de la colonne : le tiroir '
+            + 's\'ouvre vers le haut et n\'aura presque rien à recouvrir. Placez-le juste '
+            + 'avant le sélecteur de couleurs.');
+        }
+      }
+    }, 300);
   };
 
   // ── Ouverture, fermeture, changement d'outil ──────────────────────────────
