@@ -1,0 +1,114 @@
+{% comment %}
+  Textile Studio Lab — Éditeur sur la page produit
+
+  Barre d'outils + tiroir de personnalisation, directement sur la fiche
+  produit : le client compose sans ouvrir le configurateur plein écran.
+
+  PLACEMENT : ce bloc doit être posé JUSTE AVANT le sélecteur de couleurs.
+  Ce n'est pas une préférence esthétique — c'est ce placement qui définit la
+  zone que le tiroir recouvre. Le tiroir s'ouvre vers le HAUT depuis le bloc
+  et s'arrête au sommet de la colonne d'infos ; tout ce qui est en dessous
+  du bloc (couleurs, quantité, bouton panier) reste visible et cliquable.
+
+  Les variantes sont sérialisées en JSON ici plutôt que lues dans le DOM :
+  le balisage d'un sélecteur de variantes change d'un thème à l'autre, alors
+  que `product.variants` est stable.
+{% endcomment %}
+
+{%- if product -%}
+  {%- assign tsle_id = 'tsle-' | append: product.id -%}
+
+  <div
+    id="{{ tsle_id }}"
+    class="tsle"
+    data-tsl-editor="{{ product.id }}"
+    data-tsl-accent="{{ block.settings.accent }}"
+    data-tsl-tools="{% if block.settings.tool_text %}text,{% endif %}{% if block.settings.tool_image %}image,{% endif %}{% if block.settings.tool_ai %}ai,{% endif %}{% if block.settings.tool_qr %}qr,{% endif %}{% if block.settings.tool_layers %}layers,{% endif %}"
+    data-tsl-default-tool="{{ block.settings.default_tool }}"
+    data-tsl-cart-label="{{ block.settings.cart_label | escape }}"
+    {{ block.shopify_attributes }}
+  >
+    <noscript>
+      <p>La personnalisation nécessite JavaScript.</p>
+    </noscript>
+  </div>
+
+  <script type="application/json" data-tsl-editor-data="{{ product.id }}">
+    {
+      "productId": {{ product.id | json }},
+      "handle": {{ product.handle | json }},
+      "moneyFormat": {{ shop.money_format | json }},
+      "optionNames": {{ product.options | json }},
+      "selected": {{ product.selected_or_first_available_variant.id | json }},
+      "variants": [
+        {%- for v in product.variants -%}
+          {
+            "id": {{ v.id | json }},
+            "title": {{ v.title | json }},
+            "options": {{ v.options | json }},
+            "price": {{ v.price | json }},
+            "available": {{ v.available | json }}
+          }{%- unless forloop.last -%},{%- endunless -%}
+        {%- endfor -%}
+      ]
+    }
+  </script>
+
+  {% # theme-check-disable RemoteAsset %}
+  <script src="/apps/textilelab/tl-editor.js" defer></script>
+  {% # theme-check-enable RemoteAsset %}
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Éditeur sur la page produit",
+  "target": "section",
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "À placer juste avant le sélecteur de couleurs : c'est ce placement qui définit la zone recouverte par le tiroir."
+    },
+    {
+      "type": "text",
+      "id": "cart_label",
+      "label": "Texte du bouton panier",
+      "default": "Ajouter au panier",
+      "info": "Le prix est ajouté automatiquement après un tiret."
+    },
+    {
+      "type": "select",
+      "id": "accent",
+      "label": "Couleur d'accent",
+      "options": [
+        { "value": "dark",  "label": "Noir" },
+        { "value": "light", "label": "Blanc" },
+        { "value": "theme", "label": "Couleur du thème" }
+      ],
+      "default": "dark"
+    },
+    {
+      "type": "header",
+      "content": "Outils proposés"
+    },
+    { "type": "checkbox", "id": "tool_text",   "label": "Textes",   "default": true },
+    { "type": "checkbox", "id": "tool_image",  "label": "Images",   "default": true },
+    { "type": "checkbox", "id": "tool_ai",     "label": "IA",       "default": true },
+    { "type": "checkbox", "id": "tool_qr",     "label": "QR code",  "default": true },
+    { "type": "checkbox", "id": "tool_layers", "label": "Calques",  "default": true },
+    {
+      "type": "select",
+      "id": "default_tool",
+      "label": "Outil ouvert au chargement",
+      "options": [
+        { "value": "",       "label": "Aucun — barre seule" },
+        { "value": "text",   "label": "Textes" },
+        { "value": "image",  "label": "Images" },
+        { "value": "ai",     "label": "IA" },
+        { "value": "qr",     "label": "QR code" },
+        { "value": "layers", "label": "Calques" }
+      ],
+      "default": ""
+    }
+  ]
+}
+{% endschema %}
