@@ -108,6 +108,14 @@
     +   'box-shadow:0 0 0 9999px rgba(255,255,255,.08)}'
     + '.tsle-scene:not(.actif) .tsle-cadre{display:none}'
 
+    // Beaucoup de thèmes agrandissent la photo au SURVOL. Sur un canevas
+    // d'édition c'est intenable : l'image bouge sous le curseur pendant
+    // qu'on place un texte. On neutralise le survol, pas le clic — le zoom
+    // en plein écran reste accessible.
+    + '.tsle-sanszoom img:hover,.tsle-sanszoom:hover img,.tsle-sanszoom *:hover > img{'
+    +   'transform:none!important;scale:none!important}'
+    + '.tsle-sanszoom [style*="background-image"]:hover{transform:none!important}'
+
     // Panneau Textes
     + '.tsle-champ{display:block;margin-bottom:12px}'
     + '.tsle-champ > span{display:block;font-size:.76rem;opacity:.65;margin-bottom:5px}'
@@ -244,9 +252,24 @@
       if (e.target.closest && e.target.closest('.tsle-close')) self.fermer();
     });
 
+    // La croix est aussi branchée DIRECTEMENT. La délégation sur la racine
+    // suffit en théorie, mais elle suppose que l'évènement remonte : un thème
+    // qui intercepte les clics en amont la rend inopérante, et le tiroir ne
+    // se ferme plus. Un écouteur sur le bouton lui-même ne dépend de rien.
+    var croix = this.drawer.querySelector('.tsle-close');
+    if (croix) croix.addEventListener('click', function (e) {
+      e.preventDefault(); e.stopPropagation();
+      self.fermer();
+    });
+
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape' && self.outil) self.fermer();
     });
+
+    // En positionnement fixe, le tiroir ne suit pas la page tout seul.
+    var suivre = function () { if (self.outil) self.elargir(); };
+    window.addEventListener('scroll', suivre, { passive: true });
+    window.addEventListener('resize', suivre);
 
     // Hauteur réelle de la barre : le tiroir s'arrête juste au-dessus d'elle.
     var mesurerBarre = function () {
@@ -351,6 +374,11 @@
     // tactiles et le client ne peut plus faire défiler la fiche produit.
     if (this.scene) this.scene.classList.remove('actif');
     if (this.moteur) this.moteur.canvas.discardActiveObject().requestRenderAll();
+    // Rendre le tiroir à son ancrage CSS : laissé en fixe, il resterait
+    // affiché par-dessus la page pendant l'animation de fermeture.
+    var d = this.drawer;
+    ['position', 'left', 'right', 'top', 'bottom', 'width', 'maxHeight', 'overflowY']
+      .forEach(function (p) { d.style[p] = ''; });
     this.drawer.classList.remove('open');
     this.barre.querySelectorAll('.tsle-tool').forEach(function (b) { b.setAttribute('aria-expanded', 'false'); });
     this.racine.style.paddingTop = '';
@@ -363,20 +391,69 @@
    * l'espace disponible au-dessus, c'est le bloc qui grandit : les couleurs
    * et le bouton panier descendent doucement au lieu d'être masqués.
    */
+  /**
+   * Section produit : le plus proche ancêtre qui contient AUSSI la photo.
+   * C'est elle qui donne les marges de la page, donc le cadre dans lequel le
+   * tiroir doit s'inscrire.
+   */
+  Editeur.prototype.sectionProduit = function () {
+    var img = imageProduit();
+    var n = this.racine.parentElement;
+    while (n && n !== document.body) {
+      if (!img || n.contains(img)) return n;
+      n = n.parentElement;
+    }
+    return this.racine.parentElement;
+  };
+
+  /**
+   * Étale le tiroir jusqu'au bord gauche de la section, avec la même marge
+   * qu'en haut. Posé dans la seule colonne d'infos, il était trop étroit
+   * pour loger les réglages d'un outil.
+   */
+  var MARGE = 16;
+
+  Editeur.prototype.elargir = function () {
+    var d = this.drawer;
+    if (window.innerWidth < 768) {
+      // Mobile : feuille pleine largeur pilotée par la CSS.
+      d.style.position = ''; d.style.left = ''; d.style.right = '';
+      d.style.top = ''; d.style.width = ''; d.style.bottom = '';
+      return;
+    }
+    var section = this.sectionProduit();
+    if (!section) return;
+    var rs = section.getBoundingClientRect();
+    var rb = this.barre.getBoundingClientRect();
+
+    // Positionnement FIXE et explicite plutôt qu'un décalage négatif depuis
+    // le bloc : le tiroir déborde volontairement de la colonne d'infos, et
+    // un ancêtre en overflow:hidden le rognerait sans prévenir. En fixe, il
+    // ne dépend d'aucun conteneur.
+    var gauche = Math.round(rs.left + MARGE);
+    var droite = Math.round(rb.right);
+    d.style.position = 'fixed';
+    d.style.left = gauche + 'px';
+    d.style.width = Math.max(280, droite - gauche) + 'px';
+    d.style.right = 'auto';
+    // Le bas reste collé à la barre d'outils, le haut s'arrête à la marge.
+    d.style.bottom = Math.round(window.innerHeight - rb.top + 8) + 'px';
+    d.style.top = 'auto';
+    d.style.maxHeight = Math.max(160, Math.round(rb.top - 8 - Math.max(rs.top, MARGE))) + 'px';
+    d.style.overflowY = 'auto';
+  };
+
+  /**
+   * Place le tiroir. Le nom reste `ajuster` parce qu'il est appelé de
+   * plusieurs endroits ; le travail, lui, est entièrement dans elargir().
+   *
+   * La version précédente poussait le bloc vers le bas pour faire de la
+   * place au-dessus. Devenu inutile : le tiroir est maintenant positionné en
+   * fixe et borné en hauteur, il ne déplace plus rien dans la page.
+   */
   Editeur.prototype.ajuster = function () {
-    if (window.innerWidth < 768) { this.racine.style.paddingTop = ''; return; }
-    var conteneur = this.racine.parentElement;
-    if (!conteneur) return;
-    // Espace libre entre le haut de la colonne et le haut de la barre d'outils.
-    var hautDispo = this.barre.getBoundingClientRect().top - conteneur.getBoundingClientRect().top - 8;
-    var hPanneau = this.drawer.scrollHeight;
-    var manque = Math.max(0, Math.ceil(hPanneau - hautDispo));
-    // On pousse le bloc vers le BAS plutôt que de l'étirer : la barre, les
-    // couleurs et le bouton descendent ensemble, et la place ainsi libérée
-    // au-dessus accueille le tiroir. L'étirer par le bas n'aurait rien donné,
-    // le tiroir étant ancré sur la barre.
-    this.racine.style.transition = SOBRE ? 'none' : 'padding-top ' + DUREE + 'ms ' + COURBE;
-    this.racine.style.paddingTop = manque ? manque + 'px' : '';
+    this.racine.style.paddingTop = '';
+    this.elargir();
   };
 
   /**
@@ -446,6 +523,23 @@
       +       '<button type="button" class="tsle-mini" data-r="al" data-v="right" aria-pressed="false">⯈</button>'
       +     '</span></label>'
       + '</div>'
+      + '<div class="tsle-rangee">'
+      +   '<label class="tsle-champ"><span>Espacement</span>'
+      +     '<input class="tsle-input" data-r="espacement" type="range" min="-50" max="600" value="0"></label>'
+      +   '<label class="tsle-champ"><span>Opacité</span>'
+      +     '<input class="tsle-input" data-r="opacite" type="range" min="10" max="100" value="100"></label>'
+      + '</div>'
+      + '<div class="tsle-rangee">'
+      +   '<label class="tsle-champ" style="flex:0 0 auto"><span>Contour</span>'
+      +     '<span class="tsle-groupe">'
+      +       '<input class="tsle-couleur" data-r="contourCouleur" type="color" value="#ffffff">'
+      +       '<button type="button" class="tsle-mini" data-r="contour" aria-pressed="false">Aa</button>'
+      +     '</span></label>'
+      +   '<label class="tsle-champ"><span>Épaisseur du contour</span>'
+      +     '<input class="tsle-input" data-r="contourEpaisseur" type="range" min="1" max="12" value="3"></label>'
+      +   '<label class="tsle-champ" style="flex:0 0 auto"><span>Ombre</span>'
+      +     '<button type="button" class="tsle-mini" data-r="ombre" aria-pressed="false">◗</button></label>'
+      + '</div>'
       + '<button type="button" class="tsle-ajouter" data-r="ajouter">Ajouter ce texte</button>';
 
     var q = function (r) { return hote.querySelector('[data-r="' + r + '"]'); };
@@ -461,8 +555,10 @@
       self._t.compteur.textContent = this.value.length + '/' + MAX_CARACTERES;
       self.majTexteActif();
     });
-    ['police', 'taille', 'couleur'].forEach(function (r) {
-      q(r).addEventListener('input', function () { self.majTexteActif(); });
+    ['police', 'taille', 'couleur', 'espacement', 'opacite',
+     'contourCouleur', 'contourEpaisseur'].forEach(function (r) {
+      var el = q(r);
+      if (el) el.addEventListener('input', function () { self.majTexteActif(); });
     });
     hote.addEventListener('click', function (e) {
       var b = e.target.closest ? e.target.closest('.tsle-mini') : null;
@@ -485,6 +581,11 @@
   Editeur.prototype._reglagesTexte = function () {
     var h = this.drawer;
     var al = h.querySelector('[data-r="al"][aria-pressed="true"]');
+    var v = function (r, d) { var e = h.querySelector('[data-r="' + r + '"]'); return e ? e.value : d; };
+    var p = function (r) {
+      var e = h.querySelector('[data-r="' + r + '"]');
+      return !!e && e.getAttribute('aria-pressed') === 'true';
+    };
     return {
       texte:   this._t.texte.value || '',
       police:  this._t.police.value,
@@ -493,6 +594,12 @@
       gras:    this._t.gras.getAttribute('aria-pressed') === 'true',
       italique: this._t.italique.getAttribute('aria-pressed') === 'true',
       align:   al ? al.getAttribute('data-v') : 'center',
+      espacement: Number(v('espacement', 0)) || 0,
+      opacite: (Number(v('opacite', 100)) || 100) / 100,
+      contour: p('contour'),
+      contourCouleur: v('contourCouleur', '#ffffff'),
+      contourEpaisseur: Number(v('contourEpaisseur', 3)) || 3,
+      ombre: p('ombre'),
     };
   };
 
@@ -507,12 +614,38 @@
         fontFamily: r.police, fill: r.couleur,
         fontSize: Math.max(8, Math.round(self.moteur.zone.h * (r.taille / 100))),
       });
-      obj.set({ fontWeight: r.gras ? 'bold' : 'normal',
-                fontStyle: r.italique ? 'italic' : 'normal',
-                textAlign: r.align });
+        self._appliquerStyle(obj, r);
       self.moteur._centrer(obj);
       self.moteur.canvas.requestRenderAll();
       self.chargerPolice(r.police);
+    });
+  };
+
+  /**
+   * Applique tous les réglages de style à un objet texte.
+   *
+   * Factorisé parce que l'ajout et la modification doivent produire
+   * EXACTEMENT le même résultat : deux chemins séparés finiraient par
+   * diverger, et le client verrait son texte changer en le retouchant.
+   */
+  Editeur.prototype._appliquerStyle = function (o, r) {
+    o.set({
+      fontFamily: r.police,
+      fill: r.couleur,
+      fontWeight: r.gras ? 'bold' : 'normal',
+      fontStyle: r.italique ? 'italic' : 'normal',
+      textAlign: r.align,
+      charSpacing: r.espacement,
+      opacity: r.opacite,
+      stroke: r.contour ? r.contourCouleur : null,
+      strokeWidth: r.contour ? r.contourEpaisseur : 0,
+      // Le contour se dessine SOUS le remplissage : dessiné par-dessus, il
+      // ronge l'intérieur des lettres et les rend illisibles en petit corps.
+      paintFirst: 'stroke',
+      shadow: r.ombre ? new window.fabric.Shadow({
+        color: 'rgba(0,0,0,.45)', blur: Math.max(2, r.taille / 6),
+        offsetX: Math.max(1, r.taille / 14), offsetY: Math.max(1, r.taille / 14),
+      }) : null,
     });
   };
 
@@ -522,14 +655,8 @@
     var o = this.moteur.canvas.getActiveObject();
     if (!o || o.__tslType !== 'text') return;
     var r = this._reglagesTexte();
-    o.set({
-      text: r.texte || o.text,
-      fontFamily: r.police,
-      fill: r.couleur,
-      fontWeight: r.gras ? 'bold' : 'normal',
-      fontStyle: r.italique ? 'italic' : 'normal',
-      textAlign: r.align,
-    });
+    o.set({ text: r.texte || o.text });
+    this._appliquerStyle(o, r);
     var cible = Math.max(8, Math.round(this.moteur.zone.h * (r.taille / 100)));
     o.set({ scaleX: 1, scaleY: 1, fontSize: cible });
     this.moteur.canvas.requestRenderAll();
@@ -634,6 +761,7 @@
     this.scene = scene;
     this.cadre = cadre;
     this.imageProduit = img;
+    hote.classList.add('tsle-sanszoom');
 
     var dims = this._dimensions();
     cnv.width = dims.largeur; cnv.height = dims.hauteur;
