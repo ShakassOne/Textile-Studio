@@ -208,6 +208,17 @@
     + '.tsle-qr-reglages{flex:1 1 250px;min-width:0}'
 
     // Panneau Calques
+    + '.tsle-entete{display:flex;flex-direction:column;gap:2px;padding:10px 13px;border-radius:11px;'
+    +   'background:rgba(128,128,128,.12)}'
+    + '.tsle-entete b{font-size:.88rem}'
+    + '.tsle-entete span{font-size:.76rem;opacity:.6}'
+    + '.tsle-aide{font-size:.76rem;opacity:.6;line-height:1.5;margin-top:7px}'
+    + '.tsle-conseils{display:flex;flex-direction:column;gap:5px;font-size:.78rem;opacity:.65}'
+    + '.tsle-conseils span::before{content:"\\2713";margin-right:7px;opacity:.8}'
+    // Habillage retenu : le contour seul ne se voit pas sur une vignette
+    // claire, d'où le fond plein.
+    + '.tsle-vignette[aria-pressed="true"]{border-color:var(--tsle-accent,#111114);'
+    +   'box-shadow:inset 0 0 0 2px var(--tsle-accent,#111114)}'
     + '.tsle-calques{display:flex;flex-direction:column;gap:8px}'
     + '.tsle-calque{display:flex;align-items:center;gap:10px;padding:8px 10px;'
     +   'border:1px solid rgba(128,128,128,.28);border-radius:11px}'
@@ -216,6 +227,10 @@
     +   'display:flex;align-items:center;justify-content:center;overflow:hidden;font-size:.72rem}'
     + '.tsle-calque-vue img{width:100%;height:100%;object-fit:contain}'
     + '.tsle-calque-nom{flex:1;min-width:0;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
+    + '.tsle-calque-nom{cursor:pointer}'
+    + '.tsle-calque-actions{flex:0 0 auto;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:2px}'
+    + '.tsle-calque.choisi{border-color:var(--tsle-accent,#111114);'
+    +   'box-shadow:inset 0 0 0 1px var(--tsle-accent,#111114)}'
     + '.tsle-ico{flex:0 0 auto;width:32px;height:32px;border:0;border-radius:8px;background:transparent;'
     +   'color:inherit;cursor:pointer;opacity:.65;display:inline-flex;align-items:center;justify-content:center}'
     + '.tsle-ico:hover:not([disabled]){opacity:1;background:rgba(128,128,128,.14)}'
@@ -1079,9 +1094,34 @@
       +   '<span>PNG, JPG, SVG ou WEBP — 10 Mo maximum</span>'
       + '</div>'
       + '<input type="file" accept="image/*" data-r="fichier" style="display:none">'
+      + '<div class="tsle-chips" style="margin-top:10px">'
+      +   '<button type="button" class="tsle-chip" data-r="parcourir" style="flex:1">Parcourir</button>'
+      +   '<button type="button" class="tsle-chip" data-r="detourer" style="flex:1">Détourer le fond</button>'
+      + '</div>'
+
+      // Réglage du détourage : affiché seulement pendant l'opération. La
+      // tolérance se juge à l'œil, d'où le curseur plutôt qu'un seuil figé.
+      + '<div class="tsle-sousbloc" data-r="blocFond" style="margin-top:12px">'
+      +   '<div class="tsle-f" style="grid-column:1/-1">'
+      +     '<span class="tsle-lab">Tolérance du détourage</span>'
+      +     '<div class="tsle-duo">'
+      +       '<input class="tsle-rg" data-r="fondTol" type="range" min="0" max="100" value="25">'
+      +       '<input class="tsle-val" data-r="fondTolVal" type="number" min="0" max="100" value="25">'
+      +       '<button type="button" class="tsle-chip" data-r="fondReset">Restaurer</button>'
+      +     '</div>'
+      +   '</div>'
+      + '</div>'
+
       + '<div class="tsle-sep">ou choisissez un design</div>'
+      + '<div class="tsle-chips" data-r="categories" style="margin-bottom:12px;display:none"></div>'
       + '<div class="tsle-biblio" data-r="biblio">'
-      +   '<div class="tsle-chargement">Chargement de la bibliothèque…</div></div>';
+      +   '<div class="tsle-chargement">Chargement de la bibliothèque…</div></div>'
+      + '<div class="tsle-sep">conseils</div>'
+      + '<div class="tsle-conseils">'
+      +   '<span>PNG à fond transparent recommandé</span>'
+      +   '<span>300 dpi minimum pour une impression nette</span>'
+      +   '<span>Format carré pour le meilleur rendu</span>'
+      + '</div>';
 
     var depot = hote.querySelector('[data-r="depot"]');
     var input = hote.querySelector('[data-r="fichier"]');
@@ -1106,7 +1146,23 @@
       input.value = '';
     });
 
-    this.chargerBibliotheque(hote.querySelector('[data-r="biblio"]'));
+    hote.querySelector('[data-r="parcourir"]').addEventListener('click', function () { input.click(); });
+    hote.querySelector('[data-r="detourer"]').addEventListener('click', function () { self.ouvrirDetourage(hote); });
+    hote.querySelector('[data-r="fondReset"]').addEventListener('click', function () { self.restaurerFond(hote); });
+
+    var tol = hote.querySelector('[data-r="fondTol"]');
+    var tolVal = hote.querySelector('[data-r="fondTolVal"]');
+    var appliquer = function (v) {
+      clearTimeout(self._minuteurFond);
+      self._minuteurFond = setTimeout(function () { self.detourer(Number(v)); }, 150);
+    };
+    tol.addEventListener('input', function () { tolVal.value = tol.value; appliquer(tol.value); });
+    tolVal.addEventListener('input', function () {
+      var n = Math.min(100, Math.max(0, Number(tolVal.value) || 0));
+      tol.value = n; appliquer(n);
+    });
+
+    this.chargerBibliotheque(hote);
   };
 
   Editeur.prototype.recevoirFichier = function (f) {
@@ -1122,8 +1178,119 @@
     fr.readAsDataURL(f);
   };
 
+  // ── Détourage du fond ─────────────────────────────────────────────────────
+  //
+  // Même algorithme que le studio, volontairement : un visuel détouré dans
+  // l'éditeur de la fiche produit et le même visuel détouré dans le studio
+  // doivent donner exactement la même découpe.
+
+  /** Remplissage par diffusion depuis les bords, sur la couleur des coins. */
+  function detourerPixels(imageData, tolerance) {
+    var data = imageData.data, width = imageData.width, height = imageData.height;
+    var idx = function (x, y) { return (y * width + x) * 4; };
+    var vus = new Uint8Array(width * height);
+
+    // Couleur du fond échantillonnée sur les quatre coins : c'est la seule
+    // hypothèse raisonnable sans demander au client de la désigner.
+    var coins = [[0, 0], [width - 1, 0], [0, height - 1], [width - 1, height - 1]];
+    var r = 0, g = 0, b = 0, n = 0;
+    coins.forEach(function (c) {
+      var i = idx(c[0], c[1]);
+      if (data[i + 3] > 10) { r += data[i]; g += data[i + 1]; b += data[i + 2]; n++; }
+    });
+    if (!n) return;
+    var fr = r / n, fg = g / n, fb = b / n;
+
+    var proche = function (x, y) {
+      var i = idx(x, y);
+      if (data[i + 3] < 10) return true;
+      return (Math.abs(data[i] - fr) + Math.abs(data[i + 1] - fg) + Math.abs(data[i + 2] - fb)) / 3 <= tolerance;
+    };
+
+    var depart = [
+      [0, 0], [width - 1, 0], [0, height - 1], [width - 1, height - 1],
+      [Math.floor(width / 2), 0], [Math.floor(width / 2), height - 1],
+      [0, Math.floor(height / 2)], [width - 1, Math.floor(height / 2)],
+    ];
+    depart.forEach(function (d) {
+      if (!proche(d[0], d[1])) return;
+      var file = [d];
+      while (file.length) {
+        var p = file.pop(), x = p[0], y = p[1];
+        if (x < 0 || x >= width || y < 0 || y >= height) continue;
+        var vi = y * width + x;
+        if (vus[vi] || !proche(x, y)) continue;
+        vus[vi] = 1;
+        data[idx(x, y) + 3] = 0;
+        file.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+      }
+    });
+  }
+
+  Editeur.prototype.imageActive = function () {
+    if (!this.moteur) return null;
+    var o = this.moteur.canvas.getActiveObject();
+    return (o && o.__tslType === 'image') ? o : null;
+  };
+
+  Editeur.prototype.ouvrirDetourage = function (hote) {
+    var o = this.imageActive();
+    if (!o) return this._message('Sélectionnez d\'abord une image sur le produit.', true);
+    // L'original est conservé : chaque réglage repart de lui, sinon on
+    // détourerait un visuel déjà détouré et le résultat se dégraderait.
+    if (!o.__tslFondOrigine) {
+      var el = o.getElement();
+      var c = document.createElement('canvas');
+      c.width = el.naturalWidth || el.width || o.width;
+      c.height = el.naturalHeight || el.height || o.height;
+      c.getContext('2d').drawImage(el, 0, 0);
+      try { o.__tslFondOrigine = c.toDataURL('image/png'); }
+      catch (e) { return this._message('Ce visuel vient d\'un autre domaine : le détourage est impossible.', true); }
+    }
+    hote.querySelector('[data-r="blocFond"]').classList.add('on');
+    this.ajuster();
+    this.detourer(Number(hote.querySelector('[data-r="fondTol"]').value) || 25);
+  };
+
+  Editeur.prototype.detourer = function (valeur) {
+    var self = this;
+    var o = this.imageActive();
+    if (!o || !o.__tslFondOrigine) return;
+    // Progression quadratique : le curseur reste utile sur toute sa course,
+    // là où une échelle linéaire ne sert vraiment que dans ses dix premiers
+    // pour cent.
+    var tolerance = Math.round((valeur / 100) * (valeur / 100) * 55);
+    var im = new Image();
+    im.onload = function () {
+      var c = document.createElement('canvas');
+      c.width = im.width; c.height = im.height;
+      var ctx = c.getContext('2d');
+      ctx.drawImage(im, 0, 0);
+      if (tolerance > 0) {
+        var d = ctx.getImageData(0, 0, c.width, c.height);
+        detourerPixels(d, tolerance);
+        ctx.putImageData(d, 0, 0);
+      }
+      var neuf = new Image();
+      neuf.onload = function () { o.setElement(neuf); self.moteur.canvas.requestRenderAll(); };
+      neuf.src = c.toDataURL('image/png');
+    };
+    im.src = o.__tslFondOrigine;
+  };
+
+  Editeur.prototype.restaurerFond = function (hote) {
+    var self = this;
+    var o = this.imageActive();
+    if (!o || !o.__tslFondOrigine) return;
+    var neuf = new Image();
+    neuf.onload = function () { o.setElement(neuf); self.moteur.canvas.requestRenderAll(); };
+    neuf.src = o.__tslFondOrigine;
+    hote.querySelector('[data-r="fondTol"]').value = 0;
+    hote.querySelector('[data-r="fondTolVal"]').value = 0;
+  };
+
   /**
-   * Bibliothèque du produit.
+   * Bibliothèque du produit, filtrée par catégorie.
    *
    * On passe par /products/:id/designs et non par le catalogue complet :
    * cette route a déjà écarté les visuels exclus pour ce support et ceux
@@ -1131,56 +1298,167 @@
    */
   Editeur.prototype.chargerBibliotheque = function (hote) {
     var self = this;
+    var grille = hote.querySelector('[data-r="biblio"]');
+    var cats = hote.querySelector('[data-r="categories"]');
+
     fetch(BACKEND + '/api/products/' + this.produit + '/designs?shop='
           + encodeURIComponent(boutique()), { credentials: 'omit', mode: 'cors' })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
         var liste = (d && d.designs) || [];
         if (!liste.length) {
-          hote.innerHTML = '<div class="tsle-vide">Aucun design disponible pour ce produit.</div>';
+          grille.innerHTML = '<div class="tsle-vide">Aucun design disponible pour ce produit.</div>';
           return;
         }
-        hote.innerHTML = liste.map(function (v) {
+        self._visuels = liste;
+
+        var categories = (d.categories || []).filter(Boolean);
+        if (categories.length > 1) {
+          cats.innerHTML = '<button type="button" class="tsle-chip" data-cat="" aria-pressed="true">'
+                         + 'Tout</button>'
+            + categories.map(function (c) {
+                return '<button type="button" class="tsle-chip" data-cat="' + esc(c) + '" '
+                     +   'aria-pressed="false">' + esc(c) + '</button>';
+              }).join('');
+          cats.style.display = '';
+          cats.addEventListener('click', function (e) {
+            var b = e.target.closest ? e.target.closest('.tsle-chip') : null;
+            if (!b) return;
+            cats.querySelectorAll('.tsle-chip').forEach(function (x) {
+              x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+            });
+            self.afficherVisuels(grille, b.getAttribute('data-cat'));
+          });
+        }
+
+        self.afficherVisuels(grille, '');
+        grille.addEventListener('click', function (e) {
+          var b = e.target.closest ? e.target.closest('.tsle-vignette') : null;
+          if (b) self.poserImage(b.getAttribute('data-url'), b.getAttribute('data-nom'));
+        });
+      })
+      .catch(function () {
+        grille.innerHTML = '<div class="tsle-vide">Bibliothèque indisponible.</div>';
+      });
+  };
+
+  Editeur.prototype.afficherVisuels = function (grille, categorie) {
+    var liste = (this._visuels || []).filter(function (v) {
+      return !categorie || v.categorie === categorie;
+    });
+    grille.innerHTML = liste.length
+      ? liste.map(function (v) {
           return '<button type="button" class="tsle-vignette" data-url="' + esc(v.url) + '" '
                +   'data-nom="' + esc(v.nom || '') + '" title="' + esc(v.nom || '') + '">'
                +   '<img src="' + esc(v.thumb || v.url) + '" alt="' + esc(v.nom || '') + '" loading="lazy">'
                +   (v.nom ? '<b>' + esc(v.nom) + '</b>' : '')
                + '</button>';
-        }).join('');
-        hote.addEventListener('click', function (e) {
-          var b = e.target.closest ? e.target.closest('.tsle-vignette') : null;
-          if (b) self.poserImage(b.getAttribute('data-url'), b.getAttribute('data-nom'));
-        });
-        self.ajuster();
-      })
-      .catch(function () {
-        hote.innerHTML = '<div class="tsle-vide">Bibliothèque indisponible.</div>';
-      });
+        }).join('')
+      : '<div class="tsle-vide">Aucun design dans cette catégorie.</div>';
+    this.ajuster();
   };
 
   // ── Panneau IA ────────────────────────────────────────────────────────────
 
+  var TAILLES_IA = [
+    { v: '1024x1024', t: 'Carré' },
+    { v: '1792x1024', t: 'Paysage' },
+    { v: '1024x1792', t: 'Portrait' },
+  ];
+
   Editeur.prototype.panneauIA = function (hote) {
     var self = this;
+    this._tailleIA = '1024x1024';
+
     hote.innerHTML =
-        '<span class="tsle-lab">Décrivez votre visuel</span>'
-      + '<textarea class="tsle-zone" data-r="prompt" rows="3" maxlength="400" '
-      +   'placeholder="Un crâne mexicain coloré, fleurs et papillons"></textarea>'
+        '<div class="tsle-entete">'
+      +   '<b>GPT Image</b><span>Génération d\'images par intelligence artificielle</span>'
+      + '</div>'
+
+      // Photo de départ : avec elle on passe par /transform, qui retravaille
+      // l'image fournie ; sans elle par /dalle, qui crée de zéro. C'est la
+      // même bascule que dans le studio.
+      + '<span class="tsle-lab" style="margin-top:14px">Photo de départ'
+      +   '<i style="font-style:normal;opacity:.6"> — facultatif</i></span>'
+      + '<div class="tsle-depot" data-r="photoZone" tabindex="0" role="button">'
+      +   '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/>'
+      +     '<circle cx="8.5" cy="9.5" r="1.5"/><path d="M21 15l-5-5L5 20"/></svg>'
+      +   '<b>Ajouter une photo à transformer</b>'
+      +   '<span>Sans photo, l\'IA crée le design de zéro</span>'
+      + '</div>'
+      + '<div data-r="photoVue" style="display:none;margin-top:10px">'
+      +   '<img data-r="photoApercu" alt="" style="width:100%;max-height:150px;object-fit:contain;'
+      +     'border-radius:10px;display:block">'
+      +   '<div class="tsle-chips" style="margin-top:8px">'
+      +     '<button type="button" class="tsle-chip" data-r="photoChanger" style="flex:1">Changer</button>'
+      +     '<button type="button" class="tsle-chip" data-r="photoRetirer" style="flex:1">Retirer</button>'
+      +   '</div>'
+      + '</div>'
+      + '<input type="file" accept="image/*" data-r="photoFichier" style="display:none">'
+
+      + '<div data-r="blocTaille">'
+      +   '<span class="tsle-lab" style="margin-top:14px">Format de l\'image</span>'
+      +   '<div class="tsle-chips" data-r="tailles">'
+      +     TAILLES_IA.map(function (t) {
+            return '<button type="button" class="tsle-chip" data-taille="' + t.v + '" style="flex:1" '
+                 +   'aria-pressed="' + (t.v === '1024x1024' ? 'true' : 'false') + '">' + t.t + '</button>';
+          }).join('')
+      +   '</div>'
+      + '</div>'
+
       + '<div data-r="blocStyles" style="display:none">'
       +   '<span class="tsle-lab" style="margin-top:14px">Style</span>'
       +   '<div class="tsle-chips" data-r="styles"></div>'
       + '</div>'
+
+      + '<span class="tsle-lab" style="margin-top:14px">Description</span>'
+      + '<textarea class="tsle-zone" data-r="prompt" rows="3" maxlength="400" '
+      +   'placeholder="Ex : dragon stylisé avec flammes, en aquarelle, fond blanc…"></textarea>'
+      + '<div class="tsle-aide">Décrivez librement ce que vous voulez. Précisez le style si vous '
+      +   'en avez un en tête (cartoon, vintage, minimaliste, manga…).</div>'
+
+      + '<button type="button" class="tsle-ajouter" data-r="generer" style="margin-top:12px">'
+      +   'Générer le design</button>'
       + '<div class="tsle-note" data-r="quota" style="display:none"></div>'
-      + '<button type="button" class="tsle-ajouter" data-r="generer" style="margin-top:14px">Générer</button>'
       + '<div class="tsle-sep" data-r="sepRes" style="display:none">vos générations</div>'
       + '<div class="tsle-biblio" data-r="resultats"></div>';
 
-    var styles = hote.querySelector('[data-r="styles"]');
+    var photoInput = hote.querySelector('[data-r="photoFichier"]');
+    var zone = hote.querySelector('[data-r="photoZone"]');
+    zone.addEventListener('click', function () { photoInput.click(); });
+    zone.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); photoInput.click(); }
+    });
+    ['dragenter', 'dragover'].forEach(function (t) {
+      zone.addEventListener(t, function (e) { e.preventDefault(); zone.classList.add('survol'); });
+    });
+    ['dragleave', 'drop'].forEach(function (t) {
+      zone.addEventListener(t, function (e) { e.preventDefault(); zone.classList.remove('survol'); });
+    });
+    zone.addEventListener('drop', function (e) {
+      if (e.dataTransfer && e.dataTransfer.files) self.recevoirPhotoIA(hote, e.dataTransfer.files[0]);
+    });
+    photoInput.addEventListener('change', function () {
+      self.recevoirPhotoIA(hote, photoInput.files[0]);
+      photoInput.value = '';
+    });
+    hote.querySelector('[data-r="photoChanger"]').addEventListener('click', function () { photoInput.click(); });
+    hote.querySelector('[data-r="photoRetirer"]').addEventListener('click', function () {
+      self.retirerPhotoIA(hote);
+    });
+
+    hote.querySelector('[data-r="tailles"]').addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('.tsle-chip') : null;
+      if (!b) return;
+      hote.querySelectorAll('[data-r="tailles"] .tsle-chip').forEach(function (x) {
+        x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+      });
+      self._tailleIA = b.getAttribute('data-taille');
+    });
+
     hote.querySelector('[data-r="generer"]').addEventListener('click', function () { self.genererIA(hote); });
 
-    // Styles proposés par le back-office. Facultatifs : l'IA se débrouille
-    // très bien sans, et la liste peut être vide chez un marchand qui n'en
-    // a configuré aucun.
+    var styles = hote.querySelector('[data-r="styles"]');
     jetonClient().then(function (jeton) {
       return fetch(BACKEND + '/api/ai/styles/public?shop=' + encodeURIComponent(boutique()),
                    { headers: enTetesIA(jeton), credentials: 'omit', mode: 'cors' });
@@ -1205,6 +1483,36 @@
       }).catch(function () {});
 
     this.majQuotaIA(hote);
+  };
+
+  Editeur.prototype.recevoirPhotoIA = function (hote, f) {
+    var self = this;
+    if (!f) return;
+    if (!/^image\//.test(f.type)) return this._message('Ce fichier n\'est pas une image.', true);
+    var fr = new FileReader();
+    fr.onload = function () {
+      // Même réduction qu'à l'import : une photo de téléphone brute part
+      // sinon en base64 dans le corps de la requête.
+      reduire(fr.result, 1024).then(function (src) {
+        self._photoIA = src;
+        hote.querySelector('[data-r="photoApercu"]').src = src;
+        hote.querySelector('[data-r="photoVue"]').style.display = '';
+        hote.querySelector('[data-r="photoZone"]').style.display = 'none';
+        // Le format ne s'applique qu'à une création de zéro : avec une photo
+        // de départ, c'est elle qui donne les proportions.
+        hote.querySelector('[data-r="blocTaille"]').style.display = 'none';
+        self.ajuster();
+      });
+    };
+    fr.readAsDataURL(f);
+  };
+
+  Editeur.prototype.retirerPhotoIA = function (hote) {
+    this._photoIA = null;
+    hote.querySelector('[data-r="photoVue"]').style.display = 'none';
+    hote.querySelector('[data-r="photoZone"]').style.display = '';
+    hote.querySelector('[data-r="blocTaille"]').style.display = '';
+    this.ajuster();
   };
 
   Editeur.prototype.majQuotaIA = function (hote, etat) {
@@ -1237,21 +1545,32 @@
     if (btn.disabled) return;
     btn.disabled = true;
     btn.textContent = 'Génération en cours…';
+    var fini = function () { btn.disabled = false; btn.textContent = 'Générer le design'; self.ajuster(); };
 
     var choisi = hote.querySelector('[data-r="styles"] .tsle-chip[aria-pressed="true"]');
     var style = choisi ? choisi.getAttribute('data-style') : '';
-    // Même enrobage que le studio : la même description doit donner le même
-    // visuel, d'où qu'elle parte.
-    var prompt = 'T-shirt print design' + (style ? ', ' + style + ' style' : '') + ': ' + demande
-               + '. White background, transparent-ready, bold graphic, print-ready, '
-               + 'no text unless explicitly requested.';
+    var photo = this._photoIA;
 
-    var fini = function () { btn.disabled = false; btn.textContent = 'Générer'; self.ajuster(); };
+    var chemin, corps;
+    if (photo) {
+      chemin = '/api/ai/transform';
+      corps = { imageBase64: photo, prompt: demande, style: 'cartoon' };
+    } else {
+      chemin = '/api/ai/dalle';
+      // Même enrobage que le studio : la même description doit donner le
+      // même visuel, d'où qu'elle parte.
+      corps = {
+        prompt: 'T-shirt print design' + (style ? ', ' + style + ' style' : '') + ': ' + demande
+              + '. White background, transparent-ready, bold graphic, print-ready, '
+              + 'no text unless explicitly requested.',
+        size: this._tailleIA || '1024x1024',
+      };
+    }
 
     jetonClient().then(function (jeton) {
-      return fetch(BACKEND + '/api/ai/dalle?shop=' + encodeURIComponent(boutique()), {
+      return fetch(BACKEND + chemin + '?shop=' + encodeURIComponent(boutique()), {
         method: 'POST', headers: enTetesIA(jeton), credentials: 'omit', mode: 'cors',
-        body: JSON.stringify({ prompt: prompt, size: '1024x1024' }),
+        body: JSON.stringify(corps),
       });
     }).then(function (r) {
       return r.json().then(function (d) { return { ok: r.ok, d: d }; });
@@ -1264,6 +1583,14 @@
       if (!src) { self._message('Aucune image retournée.', true); return fini(); }
       self.ajouterResultatIA(hote, src, demande);
       self.poserImage(src, 'Visuel IA');
+      // Le pool « Vos créations IA » du back-office : même soumission que
+      // depuis le studio, sinon les générations faites ici n'y remontent pas.
+      jetonClient().then(function (jeton) {
+        fetch(BACKEND + '/api/ai/creations?shop=' + encodeURIComponent(boutique()), {
+          method: 'POST', headers: enTetesIA(jeton), credentials: 'omit', mode: 'cors',
+          body: JSON.stringify({ image_base64: src, prompt: demande + (style ? ' — ' + style : '') }),
+        }).catch(function () {});
+      });
       if (res.d.quota) self.majQuotaIA(hote, res.d.quota);
       else self.majQuotaIA(hote);
       fini();
@@ -1294,33 +1621,71 @@
   var QR_PX = 600;          // définition du QR posé sur le vêtement
   var QR_DANS_CADRE = 0.55; // part du cadre occupée par le code, comme au studio
 
+  var RACCOURCIS_QR = [
+    { t: 'Site web',  v: 'https://' },
+    { t: 'WhatsApp',  v: 'https://wa.me/' },
+    { t: 'Instagram', v: 'https://instagram.com/' },
+    { t: 'vCard',     v: 'BEGIN:VCARD\nVERSION:3.0\nFN:' },
+    { t: 'E-mail',    v: 'mailto:' },
+  ];
+
+  var SENS_DEGRADE = [
+    { v: '0',      t: 'Horizontal' },
+    { v: '1.5708', t: 'Vertical' },
+    { v: '0.7854', t: 'Diagonale' },
+    { v: '2.3562', t: 'Diagonale inverse' },
+  ];
+
   Editeur.prototype.panneauQR = function (hote) {
     var self = this;
     hote.innerHTML =
-        '<div class="tsle-qr">'
-      +   '<div class="tsle-qr-apercu" data-r="apercu"></div>'
-      +   '<div class="tsle-qr-reglages">'
-      +     '<span class="tsle-lab">Lien, texte ou contact</span>'
-      +     '<input class="tsle-input" data-r="contenu" value="https://" '
-      +       'placeholder="https://winshirt.fr">'
-      +     '<div class="tsle-grid" style="margin-top:14px">'
-      +       champ('Couleur', '<input class="tsle-pastille" data-r="qrCouleur" type="color" value="#111114">')
-      +       champ('Fond', '<div class="tsle-chips">'
-      +         '<button type="button" class="tsle-chip" data-r="qrTransparent" aria-pressed="true">'
-      +         'Transparent</button></div>')
-      +     '</div>'
+        '<span class="tsle-lab">Contenu du QR code</span>'
+      + '<input class="tsle-input" data-r="contenu" value="https://" placeholder="https://winshirt.fr">'
+      + '<div class="tsle-chips" data-r="raccourcis" style="margin-top:10px">'
+      +   RACCOURCIS_QR.map(function (r) {
+          return '<button type="button" class="tsle-chip" data-prefixe="' + esc(r.v) + '">'
+               + esc(r.t) + '</button>';
+        }).join('')
+      + '</div>'
+
+      + '<div class="tsle-sep">personnalisation</div>'
+      + '<div class="tsle-grid">'
+      +   champ('Couleur du code', '<input class="tsle-pastille" data-r="qrCouleur" type="color" value="#111114">')
+      +   '<div class="tsle-f" data-r="blocCouleur2" style="display:none">'
+      +     '<span class="tsle-lab">Seconde couleur</span>'
+      +     '<input class="tsle-pastille" data-r="qrCouleur2" type="color" value="#777788">'
+      +   '</div>'
+      +   champ('Fond', '<input class="tsle-pastille" data-r="qrFond" type="color" value="#ffffff">')
+      +   champ('Options', '<div class="tsle-chips">'
+      +     '<button type="button" class="tsle-chip" data-r="qrTransparent" aria-pressed="true">'
+      +       'Fond transparent</button>'
+      +     '<button type="button" class="tsle-chip" data-r="qrDegrade" aria-pressed="false">'
+      +       'Dégradé</button></div>')
+      +   '<div class="tsle-f" data-r="blocSens" style="display:none">'
+      +     '<span class="tsle-lab">Sens du dégradé</span>'
+      +     '<select class="tsle-select" data-r="qrSens">'
+      +       SENS_DEGRADE.map(function (s) {
+              return '<option value="' + s.v + '">' + esc(s.t) + '</option>';
+            }).join('')
+      +     '</select>'
       +   '</div>'
       + '</div>'
+
       + '<div data-r="blocCadres" style="display:none">'
       +   '<div class="tsle-sep">habillage</div>'
+      +   '<div class="tsle-chips" style="margin-bottom:10px">'
+      +     '<button type="button" class="tsle-chip" data-r="qrLie" aria-pressed="true">'
+      +       'Lier le code et son habillage</button>'
+      +   '</div>'
       +   '<div class="tsle-biblio" data-r="cadres"></div>'
       + '</div>'
+
+      + '<div class="tsle-sep">aperçu</div>'
+      + '<div class="tsle-qr-apercu" data-r="apercu"><span class="tsle-chargement">…</span></div>'
       + '<button type="button" class="tsle-ajouter" data-r="qrAjouter" style="margin-top:14px">'
-      +   'Ajouter le QR code</button>';
+      +   'Ajouter ce QR code</button>';
 
     var apercu = hote.querySelector('[data-r="apercu"]');
-    apercu.innerHTML = '<span class="tsle-chargement">…</span>';
-
     charger(QRLIB).then(function () {
       apercu.innerHTML = '';
       self._qr = new window.QRCodeStyling(self.optionsQR(hote));
@@ -1330,43 +1695,83 @@
       apercu.innerHTML = '<span class="tsle-vide">Aperçu indisponible</span>';
     });
 
-    hote.querySelector('[data-r="contenu"]').addEventListener('input', function () { self.majQR(hote); });
-    hote.querySelector('[data-r="qrCouleur"]').addEventListener('input', function () { self.majQR(hote); });
+    ['contenu', 'qrCouleur', 'qrCouleur2', 'qrFond', 'qrSens'].forEach(function (r) {
+      var el = hote.querySelector('[data-r="' + r + '"]');
+      if (el) el.addEventListener('input', function () { self.majQR(hote); });
+      if (el && el.tagName === 'SELECT') el.addEventListener('change', function () { self.majQR(hote); });
+    });
+
     hote.addEventListener('click', function (e) {
-      var t = e.target.closest ? e.target.closest('[data-r="qrTransparent"]') : null;
-      if (t) {
-        t.setAttribute('aria-pressed', t.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+      var cible = e.target.closest ? e.target : null;
+      if (!cible) return;
+
+      var raccourci = cible.closest('[data-prefixe]');
+      if (raccourci) {
+        var champTexte = hote.querySelector('[data-r="contenu"]');
+        champTexte.value = raccourci.getAttribute('data-prefixe');
+        champTexte.focus();
+        try { champTexte.setSelectionRange(champTexte.value.length, champTexte.value.length); } catch (x) {}
         self.majQR(hote);
         return;
       }
-      var c = e.target.closest ? e.target.closest('.tsle-vignette[data-cadre]') : null;
-      if (c) {
-        var actif = c.getAttribute('aria-pressed') === 'true';
-        hote.querySelectorAll('.tsle-vignette[data-cadre]').forEach(function (x) {
-          x.setAttribute('aria-pressed', 'false');
-          x.style.borderColor = '';
-        });
-        c.setAttribute('aria-pressed', actif ? 'false' : 'true');
-        self._cadreQR = actif ? null : c.getAttribute('data-cadre');
-        if (!actif) c.style.borderColor = 'currentColor';
+
+      var bascule = cible.closest('[data-r="qrTransparent"],[data-r="qrDegrade"],[data-r="qrLie"]');
+      if (bascule) {
+        var on = bascule.getAttribute('aria-pressed') !== 'true';
+        bascule.setAttribute('aria-pressed', on ? 'true' : 'false');
+        if (bascule.getAttribute('data-r') === 'qrDegrade') {
+          hote.querySelector('[data-r="blocCouleur2"]').style.display = on ? '' : 'none';
+          hote.querySelector('[data-r="blocSens"]').style.display = on ? '' : 'none';
+          self.ajuster();
+        }
+        self.majQR(hote);
         return;
       }
-      if (e.target.closest && e.target.closest('[data-r="qrAjouter"]')) self.poserQR(hote);
+
+      var cadre = cible.closest('.tsle-vignette[data-cadre]');
+      if (cadre) {
+        var actif = cadre.getAttribute('aria-pressed') === 'true';
+        hote.querySelectorAll('.tsle-vignette[data-cadre]').forEach(function (x) {
+          x.setAttribute('aria-pressed', 'false');
+        });
+        cadre.setAttribute('aria-pressed', actif ? 'false' : 'true');
+        self._cadreQR = actif ? null : cadre.getAttribute('data-cadre');
+        return;
+      }
+
+      if (cible.closest('[data-r="qrAjouter"]')) self.poserQR(hote);
     });
 
     this.chargerCadresQR(hote);
   };
 
   Editeur.prototype.optionsQR = function (hote, taille) {
-    var contenu = (hote.querySelector('[data-r="contenu"]').value || '').trim() || 'https://winshirt.fr';
-    var couleur = hote.querySelector('[data-r="qrCouleur"]').value || '#111114';
-    var transparent = hote.querySelector('[data-r="qrTransparent"]').getAttribute('aria-pressed') === 'true';
+    var lire = function (r) { var e = hote.querySelector('[data-r="' + r + '"]'); return e ? e.value : ''; };
+    var actif = function (r) {
+      var e = hote.querySelector('[data-r="' + r + '"]');
+      return !!e && e.getAttribute('aria-pressed') === 'true';
+    };
+    var contenu = (lire('contenu') || '').trim() || 'https://winshirt.fr';
+    var couleur = lire('qrCouleur') || '#111114';
+    // `gradient: undefined` n'est pas équivalent à l'absence de clé pour
+    // qr-code-styling : on ne pose que celle qui s'applique.
+    var points = { type: 'rounded' };
+    if (actif('qrDegrade')) {
+      points.gradient = {
+        type: 'linear', rotation: Number(lire('qrSens')) || 0,
+        colorStops: [{ offset: 0, color: couleur },
+                     { offset: 1, color: lire('qrCouleur2') || '#777788' }],
+      };
+    } else {
+      points.color = couleur;
+    }
+
     return {
       width: taille || 240, height: taille || 240, type: 'canvas', data: contenu,
-      dotsOptions:          { color: couleur, type: 'rounded' },
+      dotsOptions:          points,
       cornersSquareOptions: { color: couleur, type: 'extra-rounded' },
       cornersDotOptions:    { color: couleur, type: 'dot' },
-      backgroundOptions:    { color: transparent ? 'rgba(0,0,0,0)' : '#ffffff' },
+      backgroundOptions:    { color: actif('qrTransparent') ? 'rgba(0,0,0,0)' : (lire('qrFond') || '#ffffff') },
       // Correction « M » : un code imprimé sur du tissu souple se lit mal,
       // il faut de la redondance sans pour autant densifier les modules.
       qrOptions:            { errorCorrectionLevel: 'M' },
@@ -1397,22 +1802,25 @@
   };
 
   /**
-   * Pose le QR code — fusionné avec son habillage en UNE seule image.
+   * Pose le QR code, seul ou avec son habillage.
    *
-   * Le studio en fait un groupe Fabric de deux objets. Ici c'est impossible :
-   * la composition n'enregistre que des textes et des images, et le fichier
-   * d'impression est reconstruit côté serveur à partir d'elle. Un groupe s'y
-   * perdrait. Fusionner garantit que ce qui part à l'impression est
-   * exactement ce que le client a vu.
+   * « Lié » fusionne les deux en UNE image, là où le studio en fait un
+   * groupe Fabric. C'est volontaire : la composition n'enregistre que des
+   * textes et des images, et c'est elle qui sert à reconstruire le fichier
+   * d'impression — un groupe s'y perdrait. Délié, ce sont deux calques
+   * séparés, déplaçables indépendamment, exactement comme au studio.
    */
   Editeur.prototype.poserQR = function (hote) {
     var self = this;
     if (!this._qr) return;
-    var contenu = (hote.querySelector('[data-r="contenu"]').value || '').trim();
-    if (!contenu || contenu === 'https://') {
-      hote.querySelector('[data-r="contenu"]').focus();
+    var champTexte = hote.querySelector('[data-r="contenu"]');
+    var contenu = (champTexte.value || '').trim();
+    if (!contenu || contenu === 'https://' || contenu === 'mailto:') {
+      champTexte.focus();
       return this._message('Indiquez le lien ou le texte à encoder.', true);
     }
+    var lie = hote.querySelector('[data-r="qrLie"]');
+    var lier = !lie || lie.getAttribute('aria-pressed') === 'true';
 
     // Le QR est regénéré à la définition d'impression : l'aperçu de 240 px
     // posé sur un A3 donnerait un code baveux.
@@ -1424,10 +1832,14 @@
         fr.readAsDataURL(blob);
       });
     }).then(function (qrSrc) {
-      if (!self._cadreQR) return qrSrc;
-      return fusionnerCadre(self._cadreQR, qrSrc).catch(function () { return qrSrc; });
-    }).then(function (src) {
-      self.poserImage(src, 'QR code');
+      if (!self._cadreQR) return self.poserImage(qrSrc, 'QR code');
+      if (lier) {
+        return fusionnerCadre(self._cadreQR, qrSrc)
+          .catch(function () { return qrSrc; })
+          .then(function (src) { return self.poserImage(src, 'QR code'); });
+      }
+      return self.poserImage(self._cadreQR, 'Habillage')
+        .then(function () { return self.poserImage(qrSrc, 'QR code'); });
     }).catch(function () {
       self._message('Génération du QR code impossible.', true);
     });
@@ -1468,6 +1880,8 @@
            + '<path d="M6.3 7.7A16.6 16.6 0 0 0 2 12s3.6 6 10 6a9.9 9.9 0 0 0 3.5-.6"/>',
     libre:   '<rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/>',
     verrou:  '<rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+    copier:  '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
+    nommer:  '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
     jeter:   '<path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13"/>',
   };
 
@@ -1476,15 +1890,19 @@
     hote.innerHTML = '<div class="tsle-calques" data-r="calques"></div>';
 
     hote.addEventListener('click', function (e) {
-      var b = e.target.closest ? e.target.closest('.tsle-ico') : null;
-      if (!b || b.disabled) return;
-      var ligne = b.closest('.tsle-calque');
-      var id = ligne && ligne.getAttribute('data-id');
-      if (!id || !self.moteur) return;
+      var ligne = e.target.closest ? e.target.closest('.tsle-calque') : null;
+      if (!ligne || !self.moteur) return;
+      var id = ligne.getAttribute('data-id');
+      var b = e.target.closest('.tsle-ico');
+
+      if (!b) { self.selectionnerCalque(id); return; }
+      if (b.disabled) return;
       var action = b.getAttribute('data-act');
       if (action === 'jeter') self.moteur.supprimer(id);
       else if (action === 'visible') self.moteur.basculerVisibilite(id);
       else if (action === 'verrou') self.moteur.basculerVerrou(id);
+      else if (action === 'copier') self.dupliquerCalque(id);
+      else if (action === 'nommer') self.renommerCalque(id);
       else self.deplacerCalque(id, action === 'monter' ? 1 : -1);
       self.majCalques(hote);
     });
@@ -1494,7 +1912,8 @@
     if (this.moteur && !this._ecouteCalques) {
       this._ecouteCalques = true;
       var maj = function () { self.majCalques(hote); };
-      ['object:added', 'object:removed', 'object:modified'].forEach(function (ev) {
+      ['object:added', 'object:removed', 'object:modified',
+       'selection:created', 'selection:updated', 'selection:cleared'].forEach(function (ev) {
         self.moteur.canvas.on(ev, maj);
       });
     }
@@ -1503,9 +1922,46 @@
     this.majCalques(hote);
   };
 
+  Editeur.prototype.objetParId = function (id) {
+    var trouve = null;
+    this.moteur.objets().forEach(function (o) { if (o.__tslId === id) trouve = o; });
+    return trouve;
+  };
+
+  Editeur.prototype.selectionnerCalque = function (id) {
+    var o = this.objetParId(id);
+    if (!o || o.selectable === false) return;
+    this.moteur.canvas.setActiveObject(o).requestRenderAll();
+  };
+
+  Editeur.prototype.dupliquerCalque = function (id) {
+    var self = this;
+    var o = this.objetParId(id);
+    if (!o) return;
+    o.clone(function (copie) {
+      copie.set({ left: (o.left || 0) + 12, top: (o.top || 0) + 12 });
+      copie.__tslType = o.__tslType;
+      copie.__customName = o.__customName;
+      // Un identifiant neuf : deux calques qui partagent le même id
+      // deviennent impossibles à supprimer ou réordonner séparément.
+      copie.__tslId = 'c' + Math.random().toString(36).slice(2, 9);
+      self.moteur.canvas.add(copie).setActiveObject(copie);
+      self.moteur.canvas.requestRenderAll();
+    }, ['__tslId', '__tslType', '__customName']);
+  };
+
+  Editeur.prototype.renommerCalque = function (id) {
+    var o = this.objetParId(id);
+    if (!o) return;
+    var nom = window.prompt('Nom du calque :', o.__customName || '');
+    if (nom === null) return;
+    o.__customName = nom.trim();
+  };
+
   Editeur.prototype.majCalques = function (hote) {
     var liste = hote.querySelector('[data-r="calques"]');
     if (!liste || !this.moteur) return;
+    var actif = this.moteur.canvas.getActiveObject();
     // lireCalques() rend l'ordre du canevas, de l'arrière vers l'avant. La
     // liste se lit dans l'autre sens : le premier plan en haut, comme dans
     // tous les logiciels de dessin.
@@ -1528,17 +1984,23 @@
       var vue = c.type === 'text'
         ? '<span>T</span>'
         : (fab.src ? '<img src="' + esc(fab.src) + '" alt="">' : '<span>?</span>');
-      var nom = c.type === 'text' ? (fab.text || 'Texte') : 'Image';
-      return '<div class="tsle-calque' + (c.visible ? '' : ' masque') + '" data-id="' + esc(c.id) + '">'
+      var nom = fab.__customName || (c.type === 'text' ? (fab.text || 'Texte') : 'Image');
+      var choisi = actif && actif.__tslId === c.id;
+      return '<div class="tsle-calque' + (c.visible ? '' : ' masque') + (choisi ? ' choisi' : '') + '" '
+           +   'data-id="' + esc(c.id) + '">'
            +   '<span class="tsle-calque-vue">' + vue + '</span>'
            +   '<span class="tsle-calque-nom">' + esc(nom) + '</span>'
-           +   ico('monter', ICONES.monter, 'Vers l\'avant', i === 0)
-           +   ico('baisser', ICONES.baisser, 'Vers l\'arrière', i === calques.length - 1)
-           +   ico('visible', c.visible ? ICONES.visible : ICONES.masque,
-                   c.visible ? 'Masquer' : 'Afficher')
-           +   ico('verrou', c.locked ? ICONES.verrou : ICONES.libre,
-                   c.locked ? 'Déverrouiller' : 'Verrouiller')
-           +   ico('jeter', ICONES.jeter, 'Supprimer')
+           +   '<span class="tsle-calque-actions">'
+           +     ico('monter', ICONES.monter, 'Vers l\'avant', i === 0)
+           +     ico('baisser', ICONES.baisser, 'Vers l\'arrière', i === calques.length - 1)
+           +     ico('visible', c.visible ? ICONES.visible : ICONES.masque,
+                     c.visible ? 'Masquer' : 'Afficher')
+           +     ico('verrou', c.locked ? ICONES.verrou : ICONES.libre,
+                     c.locked ? 'Déverrouiller' : 'Verrouiller')
+           +     ico('copier', ICONES.copier, 'Dupliquer')
+           +     ico('nommer', ICONES.nommer, 'Renommer')
+           +     ico('jeter', ICONES.jeter, 'Supprimer')
+           +   '</span>'
            + '</div>';
     }).join('');
     this.ajuster();

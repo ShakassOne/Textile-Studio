@@ -127,7 +127,7 @@
         opacity: typeof o.opacity === 'number' ? o.opacity : 1,
         visible: o.visible !== false,
         locked:  o.selectable === false,
-        fabric:  o.toObject(['__tslId', '__tslType']),
+        fabric:  o.toObject(['__tslId', '__tslType', '__customName']),
       };
     });
   };
@@ -167,6 +167,7 @@
       });
       obj.__tslId = c.id || ('c' + Math.random().toString(36).slice(2, 9));
       obj.__tslType = c.type;
+      if (f.__customName) obj.__customName = f.__customName;
       self.canvas.add(obj);
       fini();
     };
