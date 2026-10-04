@@ -175,6 +175,53 @@
     +   'background:transparent;color:inherit;font:inherit;font-size:.85rem;cursor:pointer;line-height:1.2}'
     + '.tsle-chip[aria-pressed="true"]{background:var(--tsle-accent,#111114);color:var(--tsle-on-accent,#fff);'
     +   'border-color:var(--tsle-accent,#111114)}'
+
+    // Panneau Images
+    + '.tsle-depot{display:flex;flex-direction:column;align-items:center;gap:6px;padding:22px 16px;text-align:center;'
+    +   'border:2px dashed rgba(128,128,128,.4);border-radius:14px;cursor:pointer;'
+    +   'transition:border-color .18s,background .18s}'
+    + '.tsle-depot:hover,.tsle-depot.survol{border-color:var(--tsle-accent,#111114);background:rgba(128,128,128,.08)}'
+    + '.tsle-depot svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:1.6;'
+    +   'stroke-linecap:round;stroke-linejoin:round;opacity:.7}'
+    + '.tsle-depot b{font-size:.9rem}'
+    + '.tsle-depot span{font-size:.76rem;opacity:.55}'
+    + '.tsle-sep{display:flex;align-items:center;gap:12px;margin:16px 0 12px;font-size:.78rem;opacity:.55}'
+    + '.tsle-sep::before,.tsle-sep::after{content:"";flex:1;height:1px;background:rgba(128,128,128,.3)}'
+    + '.tsle-biblio{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:10px}'
+    + '.tsle-vignette{position:relative;aspect-ratio:1;border:1px solid rgba(128,128,128,.28);border-radius:11px;'
+    +   'background:rgba(128,128,128,.07);padding:6px;cursor:pointer;overflow:hidden}'
+    + '.tsle-vignette img{width:100%;height:100%;object-fit:contain;display:block}'
+    + '.tsle-vignette:hover{border-color:var(--tsle-accent,#111114)}'
+    + '.tsle-vignette b{position:absolute;left:0;right:0;bottom:0;padding:3px 5px;font-size:.66rem;font-weight:500;'
+    +   'background:rgba(0,0,0,.55);color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
+
+    // Panneaux IA et QR
+    + '.tsle-zone{width:100%;box-sizing:border-box;min-height:74px;resize:vertical;padding:11px 13px;font:inherit;'
+    +   'font-size:.9rem;border:1px solid rgba(128,128,128,.4);border-radius:11px;background:transparent;color:inherit}'
+    + '.tsle-note{font-size:.8rem;margin:12px 0;padding:10px 12px;border-radius:10px;background:rgba(128,128,128,.13)}'
+    + '.tsle-note.err{background:rgba(220,38,38,.15)}'
+    + '.tsle-ajouter[disabled]{opacity:.5;cursor:progress}'
+    + '.tsle-qr{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}'
+    + '.tsle-qr-apercu{flex:0 0 150px;width:150px;height:150px;display:flex;align-items:center;'
+    +   'justify-content:center;border:1px solid rgba(128,128,128,.28);border-radius:12px;background:#fff;padding:8px}'
+    + '.tsle-qr-apercu canvas,.tsle-qr-apercu img{max-width:100%;max-height:100%}'
+    + '.tsle-qr-reglages{flex:1 1 250px;min-width:0}'
+
+    // Panneau Calques
+    + '.tsle-calques{display:flex;flex-direction:column;gap:8px}'
+    + '.tsle-calque{display:flex;align-items:center;gap:10px;padding:8px 10px;'
+    +   'border:1px solid rgba(128,128,128,.28);border-radius:11px}'
+    + '.tsle-calque.masque{opacity:.45}'
+    + '.tsle-calque-vue{flex:0 0 36px;width:36px;height:36px;border-radius:8px;background:rgba(128,128,128,.12);'
+    +   'display:flex;align-items:center;justify-content:center;overflow:hidden;font-size:.72rem}'
+    + '.tsle-calque-vue img{width:100%;height:100%;object-fit:contain}'
+    + '.tsle-calque-nom{flex:1;min-width:0;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
+    + '.tsle-ico{flex:0 0 auto;width:32px;height:32px;border:0;border-radius:8px;background:transparent;'
+    +   'color:inherit;cursor:pointer;opacity:.65;display:inline-flex;align-items:center;justify-content:center}'
+    + '.tsle-ico:hover:not([disabled]){opacity:1;background:rgba(128,128,128,.14)}'
+    + '.tsle-ico[disabled]{opacity:.2;cursor:default}'
+    + '.tsle-ico svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.7;'
+    +   'stroke-linecap:round;stroke-linejoin:round}'
     + '.tsle-sousbloc{display:none;grid-column:1/-1}'
     + '.tsle-sousbloc.on{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:15px 18px;align-items:end}'
 
@@ -602,6 +649,9 @@
    * fixe et borné en hauteur, il ne déplace plus rien dans la page.
    */
   Editeur.prototype.ajuster = function () {
+    // Rien à placer tant que le tiroir est fermé : le panneau Calques se
+    // reconstruit au gré du canevas, y compris quand il n'est pas affiché.
+    if (!this.outil) return;
     this.racine.style.paddingTop = '';
     this.elargir();
   };
@@ -612,31 +662,44 @@
    * Le contenu n'est construit qu'une fois : le reconstruire à chaque
    * ouverture perdrait la saisie en cours et ferait clignoter le tiroir.
    */
+  var BATISSEURS = {
+    text:   'panneauTexte',
+    image:  'panneauImages',
+    ai:     'panneauIA',
+    qr:     'panneauQR',
+    layers: 'panneauCalques',
+  };
+
   Editeur.prototype.remplirPanneau = function (cle) {
     var self = this;
     var hote = this.drawer.querySelector('.tsle-panel[data-panneau="' + cle + '"]');
-    if (!hote) return;
-
-    if (cle === 'text') {
-      if (!hote.__rempli) {
-        hote.__rempli = true;
-        hote.innerHTML = '<div class="tsle-chargement">Préparation de l\'éditeur…</div>';
-        this.prepareScene().then(function () {
-          self.panneauTexte(hote);
-          self.ajuster();
-          if (self.outil === 'text' && self.scene) self.scene.classList.add('actif');
-        }).catch(function () {
-          hote.innerHTML = '<div class="tsle-vide">Éditeur indisponible — rechargez la page.</div>';
-        });
-      } else if (this.scene) {
-        this.scene.classList.add('actif');
-      }
+    var batisseur = BATISSEURS[cle];
+    if (!hote || !batisseur) {
+      if (this.scene) this.scene.classList.remove('actif');
       return;
     }
 
-    // Les autres outils restent à construire ; la scène se met en retrait
-    // pour ne pas bloquer le défilement.
-    if (this.scene) this.scene.classList.remove('actif');
+    if (hote.__rempli) {
+      if (this.scene) this.scene.classList.add('actif');
+      // Certains panneaux reflètent l'état du canevas (les calques) : ils se
+      // remettent à jour à chaque ouverture, sans être reconstruits — ça
+      // perdrait la saisie en cours dans les autres.
+      if (hote.__maj) hote.__maj();
+      return;
+    }
+
+    hote.__rempli = true;
+    hote.innerHTML = '<div class="tsle-chargement">Préparation de l\'éditeur…</div>';
+    this.prepareScene().then(function () {
+      self[batisseur](hote);
+      self.ajuster();
+      if (self.outil === cle && self.scene) self.scene.classList.add('actif');
+    }).catch(function () {
+      // Rouvrir doit pouvoir réessayer : une coupure réseau passagère ne
+      // doit pas condamner l'outil pour le reste de la visite.
+      hote.__rempli = false;
+      hote.innerHTML = '<div class="tsle-vide">Éditeur indisponible — rechargez la page.</div>';
+    });
   };
 
   // ── Panneau Textes ────────────────────────────────────────────────────────
@@ -891,6 +954,606 @@
         if (self.moteur) self.moteur.canvas.requestRenderAll();
       }).catch(function () {});
     }
+  };
+
+  // ── Outils communs aux panneaux ───────────────────────────────────────────
+
+  /** Message éphémère dans le tiroir, sous l'en-tête. */
+  Editeur.prototype._message = function (txt, erreur) {
+    var corps = this.drawer.querySelector('.tsle-body');
+    var n = corps.querySelector('.tsle-note.volatile');
+    if (!n) {
+      n = document.createElement('div');
+      n.className = 'tsle-note volatile';
+      corps.insertBefore(n, corps.firstChild);
+    }
+    n.classList.toggle('err', !!erreur);
+    n.textContent = txt;
+    clearTimeout(this._minuteurNote);
+    var self = this;
+    this._minuteurNote = setTimeout(function () {
+      if (n.parentNode) n.parentNode.removeChild(n);
+      self.ajuster();
+    }, erreur ? 6000 : 3000);
+    this.ajuster();
+  };
+
+  /**
+   * Identifiant de navigateur, partagé avec le studio.
+   *
+   * Même clé de stockage : le quota IA d'un visiteur non connecté doit être
+   * le même qu'il génère depuis la fiche produit ou depuis le studio, sinon
+   * il lui suffit de changer d'écran pour le remettre à zéro.
+   */
+  function visiteur() {
+    try {
+      var v = localStorage.getItem('tl_visitor_id');
+      if (!v) {
+        v = (window.crypto && crypto.randomUUID ? crypto.randomUUID()
+             : String(Date.now()) + Math.random().toString(36).slice(2))
+              .replace(/[^a-z0-9-]/gi, '').toLowerCase().slice(0, 40);
+        localStorage.setItem('tl_visitor_id', v);
+      }
+      return v;
+    } catch (e) { return 'anonyme-sans-stockage'; }
+  }
+
+  /**
+   * Jeton d'identité signé du client connecté.
+   *
+   * L'éditeur tourne sur le domaine de la boutique : l'App Proxy est donc
+   * joignable en relatif, et c'est Shopify qui signe la requête. C'est ce
+   * jeton qui débloque le quota IA réservé aux clients.
+   */
+  var _jeton = null;
+  function jetonClient() {
+    if (_jeton !== null) return Promise.resolve(_jeton);
+    return fetch('/apps/textilelab/whoami', { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { _jeton = (d && d.loggedIn && d.token) ? d.token : ''; return _jeton; })
+      .catch(function () { _jeton = ''; return _jeton; });
+  }
+
+  /** En-têtes des appels IA : boutique, identité, navigateur. */
+  function enTetesIA(jeton) {
+    var h = { 'Content-Type': 'application/json', 'X-Shop-Domain': boutique() };
+    if (jeton) h['X-TL-Customer'] = jeton;
+    h['X-TL-Visitor'] = visiteur();
+    return h;
+  }
+
+  /**
+   * Réduit une image trop grande avant de la poser sur le canevas.
+   *
+   * Une photo de téléphone fait 4000 px de large : conservée telle quelle
+   * elle est recopiée en base64 dans la composition, qui part en base de
+   * données. 2000 px suffisent largement pour une impression A3 à 150 dpi.
+   */
+  function reduire(src, max) {
+    return new Promise(function (ok) {
+      // Le SVG n'a pas de résolution propre : le pixelliser serait une perte.
+      if (/^data:image\/svg/i.test(src)) return ok(src);
+      var im = new Image();
+      im.onload = function () {
+        var e = Math.min(1, max / Math.max(im.width || 1, im.height || 1));
+        if (e >= 1) return ok(src);
+        var c = document.createElement('canvas');
+        c.width = Math.round(im.width * e);
+        c.height = Math.round(im.height * e);
+        c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+        ok(c.toDataURL('image/png'));
+      };
+      im.onerror = function () { ok(src); };
+      im.src = src;
+    });
+  }
+
+  /** Pose une image sur le canevas, quel que soit le panneau d'origine. */
+  Editeur.prototype.poserImage = function (src, nom) {
+    var self = this;
+    return this.prepareScene().then(function () {
+      if (!self.moteur) return null;
+      self.scene.classList.add('actif');
+      return new Promise(function (ok) {
+        self.moteur.ajouterImage(src, function (img) {
+          if (!img) self._message('Image illisible.', true);
+          else self._message('Ajouté au visuel : ' + (nom || 'image') + '.');
+          ok(img);
+        });
+      });
+    });
+  };
+
+  // ── Panneau Images ────────────────────────────────────────────────────────
+
+  var MAX_FICHIER = 10 * 1024 * 1024;
+
+  Editeur.prototype.panneauImages = function (hote) {
+    var self = this;
+    hote.innerHTML =
+        '<div class="tsle-depot" data-r="depot" tabindex="0" role="button">'
+      +   '<svg viewBox="0 0 24 24" aria-hidden="true">'
+      +     '<path d="M12 16V4m0 0 4 4m-4-4L8 8"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>'
+      +   '</svg>'
+      +   '<b>Cliquez ou glissez une image</b>'
+      +   '<span>PNG, JPG, SVG ou WEBP — 10 Mo maximum</span>'
+      + '</div>'
+      + '<input type="file" accept="image/*" data-r="fichier" style="display:none">'
+      + '<div class="tsle-sep">ou choisissez un design</div>'
+      + '<div class="tsle-biblio" data-r="biblio">'
+      +   '<div class="tsle-chargement">Chargement de la bibliothèque…</div></div>';
+
+    var depot = hote.querySelector('[data-r="depot"]');
+    var input = hote.querySelector('[data-r="fichier"]');
+
+    depot.addEventListener('click', function () { input.click(); });
+    depot.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); }
+    });
+    ['dragenter', 'dragover'].forEach(function (t) {
+      depot.addEventListener(t, function (e) { e.preventDefault(); depot.classList.add('survol'); });
+    });
+    ['dragleave', 'drop'].forEach(function (t) {
+      depot.addEventListener(t, function (e) { e.preventDefault(); depot.classList.remove('survol'); });
+    });
+    depot.addEventListener('drop', function (e) {
+      if (e.dataTransfer && e.dataTransfer.files) self.recevoirFichier(e.dataTransfer.files[0]);
+    });
+    input.addEventListener('change', function () {
+      self.recevoirFichier(input.files[0]);
+      // Réinitialiser : sans ça, reprendre le MÊME fichier (le même logo au
+      // recto puis au verso) ne déclenche pas l'évènement.
+      input.value = '';
+    });
+
+    this.chargerBibliotheque(hote.querySelector('[data-r="biblio"]'));
+  };
+
+  Editeur.prototype.recevoirFichier = function (f) {
+    var self = this;
+    if (!f) return;
+    if (!/^image\//.test(f.type)) return this._message('Ce fichier n\'est pas une image.', true);
+    if (f.size > MAX_FICHIER) return this._message('Image trop lourde — 10 Mo maximum.', true);
+    var fr = new FileReader();
+    fr.onload = function () {
+      reduire(fr.result, 2000).then(function (src) { self.poserImage(src, f.name); });
+    };
+    fr.onerror = function () { self._message('Lecture du fichier impossible.', true); };
+    fr.readAsDataURL(f);
+  };
+
+  /**
+   * Bibliothèque du produit.
+   *
+   * On passe par /products/:id/designs et non par le catalogue complet :
+   * cette route a déjà écarté les visuels exclus pour ce support et ceux
+   * dont la définition est insuffisante pour la zone d'impression.
+   */
+  Editeur.prototype.chargerBibliotheque = function (hote) {
+    var self = this;
+    fetch(BACKEND + '/api/products/' + this.produit + '/designs?shop='
+          + encodeURIComponent(boutique()), { credentials: 'omit', mode: 'cors' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        var liste = (d && d.designs) || [];
+        if (!liste.length) {
+          hote.innerHTML = '<div class="tsle-vide">Aucun design disponible pour ce produit.</div>';
+          return;
+        }
+        hote.innerHTML = liste.map(function (v) {
+          return '<button type="button" class="tsle-vignette" data-url="' + esc(v.url) + '" '
+               +   'data-nom="' + esc(v.nom || '') + '" title="' + esc(v.nom || '') + '">'
+               +   '<img src="' + esc(v.thumb || v.url) + '" alt="' + esc(v.nom || '') + '" loading="lazy">'
+               +   (v.nom ? '<b>' + esc(v.nom) + '</b>' : '')
+               + '</button>';
+        }).join('');
+        hote.addEventListener('click', function (e) {
+          var b = e.target.closest ? e.target.closest('.tsle-vignette') : null;
+          if (b) self.poserImage(b.getAttribute('data-url'), b.getAttribute('data-nom'));
+        });
+        self.ajuster();
+      })
+      .catch(function () {
+        hote.innerHTML = '<div class="tsle-vide">Bibliothèque indisponible.</div>';
+      });
+  };
+
+  // ── Panneau IA ────────────────────────────────────────────────────────────
+
+  Editeur.prototype.panneauIA = function (hote) {
+    var self = this;
+    hote.innerHTML =
+        '<span class="tsle-lab">Décrivez votre visuel</span>'
+      + '<textarea class="tsle-zone" data-r="prompt" rows="3" maxlength="400" '
+      +   'placeholder="Un crâne mexicain coloré, fleurs et papillons"></textarea>'
+      + '<div data-r="blocStyles" style="display:none">'
+      +   '<span class="tsle-lab" style="margin-top:14px">Style</span>'
+      +   '<div class="tsle-chips" data-r="styles"></div>'
+      + '</div>'
+      + '<div class="tsle-note" data-r="quota" style="display:none"></div>'
+      + '<button type="button" class="tsle-ajouter" data-r="generer" style="margin-top:14px">Générer</button>'
+      + '<div class="tsle-sep" data-r="sepRes" style="display:none">vos générations</div>'
+      + '<div class="tsle-biblio" data-r="resultats"></div>';
+
+    var styles = hote.querySelector('[data-r="styles"]');
+    hote.querySelector('[data-r="generer"]').addEventListener('click', function () { self.genererIA(hote); });
+
+    // Styles proposés par le back-office. Facultatifs : l'IA se débrouille
+    // très bien sans, et la liste peut être vide chez un marchand qui n'en
+    // a configuré aucun.
+    jetonClient().then(function (jeton) {
+      return fetch(BACKEND + '/api/ai/styles/public?shop=' + encodeURIComponent(boutique()),
+                   { headers: enTetesIA(jeton), credentials: 'omit', mode: 'cors' });
+    }).then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (rows) {
+        if (!rows || !rows.length) return;
+        styles.innerHTML = rows.slice(0, 12).map(function (s) {
+          return '<button type="button" class="tsle-chip" data-style="' + esc(s.label) + '" '
+               +   'aria-pressed="false">' + esc(s.label) + '</button>';
+        }).join('');
+        hote.querySelector('[data-r="blocStyles"]').style.display = '';
+        styles.addEventListener('click', function (e) {
+          var b = e.target.closest ? e.target.closest('.tsle-chip') : null;
+          if (!b) return;
+          var actif = b.getAttribute('aria-pressed') === 'true';
+          styles.querySelectorAll('.tsle-chip').forEach(function (x) {
+            x.setAttribute('aria-pressed', 'false');
+          });
+          b.setAttribute('aria-pressed', actif ? 'false' : 'true');
+        });
+        self.ajuster();
+      }).catch(function () {});
+
+    this.majQuotaIA(hote);
+  };
+
+  Editeur.prototype.majQuotaIA = function (hote, etat) {
+    var n = hote.querySelector('[data-r="quota"]');
+    var montrer = function (q) {
+      if (!q || typeof q.limit !== 'number' || !q.limit) return;
+      var reste = typeof q.remaining === 'number' ? q.remaining : Math.max(0, q.limit - (q.used || 0));
+      n.style.display = '';
+      n.textContent = reste > 0
+        ? reste + ' génération' + (reste > 1 ? 's' : '') + ' restante' + (reste > 1 ? 's' : '')
+          + ' sur ' + q.limit + '.'
+        : 'Vous avez utilisé vos ' + q.limit + ' générations.'
+          + (q.needsLogin ? ' Connectez-vous à votre compte pour en obtenir davantage.' : '');
+    };
+    if (etat) return montrer(etat);
+    jetonClient().then(function (jeton) {
+      return fetch(BACKEND + '/api/ai/quota?shop=' + encodeURIComponent(boutique()),
+                   { headers: enTetesIA(jeton), credentials: 'omit', mode: 'cors' });
+    }).then(function (r) { return r.ok ? r.json() : null; })
+      .then(montrer).catch(function () {});
+  };
+
+  Editeur.prototype.genererIA = function (hote) {
+    var self = this;
+    var champTexte = hote.querySelector('[data-r="prompt"]');
+    var demande = (champTexte.value || '').trim();
+    if (!demande) { champTexte.focus(); return; }
+
+    var btn = hote.querySelector('[data-r="generer"]');
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.textContent = 'Génération en cours…';
+
+    var choisi = hote.querySelector('[data-r="styles"] .tsle-chip[aria-pressed="true"]');
+    var style = choisi ? choisi.getAttribute('data-style') : '';
+    // Même enrobage que le studio : la même description doit donner le même
+    // visuel, d'où qu'elle parte.
+    var prompt = 'T-shirt print design' + (style ? ', ' + style + ' style' : '') + ': ' + demande
+               + '. White background, transparent-ready, bold graphic, print-ready, '
+               + 'no text unless explicitly requested.';
+
+    var fini = function () { btn.disabled = false; btn.textContent = 'Générer'; self.ajuster(); };
+
+    jetonClient().then(function (jeton) {
+      return fetch(BACKEND + '/api/ai/dalle?shop=' + encodeURIComponent(boutique()), {
+        method: 'POST', headers: enTetesIA(jeton), credentials: 'omit', mode: 'cors',
+        body: JSON.stringify({ prompt: prompt, size: '1024x1024' }),
+      });
+    }).then(function (r) {
+      return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+    }).then(function (res) {
+      if (!res.ok || !res.d || res.d.error) {
+        self._message((res.d && res.d.error) || 'La génération a échoué.', true);
+        return fini();
+      }
+      var src = res.d.base64 || res.d.url;
+      if (!src) { self._message('Aucune image retournée.', true); return fini(); }
+      self.ajouterResultatIA(hote, src, demande);
+      self.poserImage(src, 'Visuel IA');
+      if (res.d.quota) self.majQuotaIA(hote, res.d.quota);
+      else self.majQuotaIA(hote);
+      fini();
+    }).catch(function () {
+      self._message('Service indisponible — réessayez dans un instant.', true);
+      fini();
+    });
+  };
+
+  /** Garde les générations de la session sous la main : elles sont payantes. */
+  Editeur.prototype.ajouterResultatIA = function (hote, src, titre) {
+    var self = this;
+    var grille = hote.querySelector('[data-r="resultats"]');
+    hote.querySelector('[data-r="sepRes"]').style.display = '';
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tsle-vignette';
+    b.title = titre || '';
+    b.innerHTML = '<img src="' + esc(src) + '" alt="' + esc(titre || '') + '">';
+    b.addEventListener('click', function () { self.poserImage(src, 'Visuel IA'); });
+    grille.insertBefore(b, grille.firstChild);
+    this.ajuster();
+  };
+
+  // ── Panneau QR code ───────────────────────────────────────────────────────
+
+  var QRLIB = 'https://cdn.jsdelivr.net/npm/qr-code-styling@1.5.0/lib/qr-code-styling.js';
+  var QR_PX = 600;          // définition du QR posé sur le vêtement
+  var QR_DANS_CADRE = 0.55; // part du cadre occupée par le code, comme au studio
+
+  Editeur.prototype.panneauQR = function (hote) {
+    var self = this;
+    hote.innerHTML =
+        '<div class="tsle-qr">'
+      +   '<div class="tsle-qr-apercu" data-r="apercu"></div>'
+      +   '<div class="tsle-qr-reglages">'
+      +     '<span class="tsle-lab">Lien, texte ou contact</span>'
+      +     '<input class="tsle-input" data-r="contenu" value="https://" '
+      +       'placeholder="https://winshirt.fr">'
+      +     '<div class="tsle-grid" style="margin-top:14px">'
+      +       champ('Couleur', '<input class="tsle-pastille" data-r="qrCouleur" type="color" value="#111114">')
+      +       champ('Fond', '<div class="tsle-chips">'
+      +         '<button type="button" class="tsle-chip" data-r="qrTransparent" aria-pressed="true">'
+      +         'Transparent</button></div>')
+      +     '</div>'
+      +   '</div>'
+      + '</div>'
+      + '<div data-r="blocCadres" style="display:none">'
+      +   '<div class="tsle-sep">habillage</div>'
+      +   '<div class="tsle-biblio" data-r="cadres"></div>'
+      + '</div>'
+      + '<button type="button" class="tsle-ajouter" data-r="qrAjouter" style="margin-top:14px">'
+      +   'Ajouter le QR code</button>';
+
+    var apercu = hote.querySelector('[data-r="apercu"]');
+    apercu.innerHTML = '<span class="tsle-chargement">…</span>';
+
+    charger(QRLIB).then(function () {
+      apercu.innerHTML = '';
+      self._qr = new window.QRCodeStyling(self.optionsQR(hote));
+      self._qr.append(apercu);
+      self.majQR(hote);
+    }).catch(function () {
+      apercu.innerHTML = '<span class="tsle-vide">Aperçu indisponible</span>';
+    });
+
+    hote.querySelector('[data-r="contenu"]').addEventListener('input', function () { self.majQR(hote); });
+    hote.querySelector('[data-r="qrCouleur"]').addEventListener('input', function () { self.majQR(hote); });
+    hote.addEventListener('click', function (e) {
+      var t = e.target.closest ? e.target.closest('[data-r="qrTransparent"]') : null;
+      if (t) {
+        t.setAttribute('aria-pressed', t.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+        self.majQR(hote);
+        return;
+      }
+      var c = e.target.closest ? e.target.closest('.tsle-vignette[data-cadre]') : null;
+      if (c) {
+        var actif = c.getAttribute('aria-pressed') === 'true';
+        hote.querySelectorAll('.tsle-vignette[data-cadre]').forEach(function (x) {
+          x.setAttribute('aria-pressed', 'false');
+          x.style.borderColor = '';
+        });
+        c.setAttribute('aria-pressed', actif ? 'false' : 'true');
+        self._cadreQR = actif ? null : c.getAttribute('data-cadre');
+        if (!actif) c.style.borderColor = 'currentColor';
+        return;
+      }
+      if (e.target.closest && e.target.closest('[data-r="qrAjouter"]')) self.poserQR(hote);
+    });
+
+    this.chargerCadresQR(hote);
+  };
+
+  Editeur.prototype.optionsQR = function (hote, taille) {
+    var contenu = (hote.querySelector('[data-r="contenu"]').value || '').trim() || 'https://winshirt.fr';
+    var couleur = hote.querySelector('[data-r="qrCouleur"]').value || '#111114';
+    var transparent = hote.querySelector('[data-r="qrTransparent"]').getAttribute('aria-pressed') === 'true';
+    return {
+      width: taille || 240, height: taille || 240, type: 'canvas', data: contenu,
+      dotsOptions:          { color: couleur, type: 'rounded' },
+      cornersSquareOptions: { color: couleur, type: 'extra-rounded' },
+      cornersDotOptions:    { color: couleur, type: 'dot' },
+      backgroundOptions:    { color: transparent ? 'rgba(0,0,0,0)' : '#ffffff' },
+      // Correction « M » : un code imprimé sur du tissu souple se lit mal,
+      // il faut de la redondance sans pour autant densifier les modules.
+      qrOptions:            { errorCorrectionLevel: 'M' },
+    };
+  };
+
+  Editeur.prototype.majQR = function (hote) {
+    if (this._qr) this._qr.update(this.optionsQR(hote));
+  };
+
+  Editeur.prototype.chargerCadresQR = function (hote) {
+    var self = this;
+    fetch(BACKEND + '/api/qr-frames/public?shop=' + encodeURIComponent(boutique()),
+          { credentials: 'omit', mode: 'cors' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        var liste = (d && d.frames) || [];
+        if (!liste.length) return;
+        hote.querySelector('[data-r="cadres"]').innerHTML = liste.map(function (c) {
+          var u = /^https?:/.test(c.image_url) ? c.image_url : BACKEND + c.image_url;
+          return '<button type="button" class="tsle-vignette" data-cadre="' + esc(u) + '" '
+               +   'aria-pressed="false" title="' + esc(c.name || '') + '">'
+               +   '<img src="' + esc(u) + '" alt="' + esc(c.name || '') + '" loading="lazy"></button>';
+        }).join('');
+        hote.querySelector('[data-r="blocCadres"]').style.display = '';
+        self.ajuster();
+      }).catch(function () {});
+  };
+
+  /**
+   * Pose le QR code — fusionné avec son habillage en UNE seule image.
+   *
+   * Le studio en fait un groupe Fabric de deux objets. Ici c'est impossible :
+   * la composition n'enregistre que des textes et des images, et le fichier
+   * d'impression est reconstruit côté serveur à partir d'elle. Un groupe s'y
+   * perdrait. Fusionner garantit que ce qui part à l'impression est
+   * exactement ce que le client a vu.
+   */
+  Editeur.prototype.poserQR = function (hote) {
+    var self = this;
+    if (!this._qr) return;
+    var contenu = (hote.querySelector('[data-r="contenu"]').value || '').trim();
+    if (!contenu || contenu === 'https://') {
+      hote.querySelector('[data-r="contenu"]').focus();
+      return this._message('Indiquez le lien ou le texte à encoder.', true);
+    }
+
+    // Le QR est regénéré à la définition d'impression : l'aperçu de 240 px
+    // posé sur un A3 donnerait un code baveux.
+    var hd = new window.QRCodeStyling(this.optionsQR(hote, QR_PX));
+    hd.getRawData('png').then(function (blob) {
+      return new Promise(function (ok) {
+        var fr = new FileReader();
+        fr.onload = function () { ok(fr.result); };
+        fr.readAsDataURL(blob);
+      });
+    }).then(function (qrSrc) {
+      if (!self._cadreQR) return qrSrc;
+      return fusionnerCadre(self._cadreQR, qrSrc).catch(function () { return qrSrc; });
+    }).then(function (src) {
+      self.poserImage(src, 'QR code');
+    }).catch(function () {
+      self._message('Génération du QR code impossible.', true);
+    });
+  };
+
+  /** Dessine le QR au centre de son habillage et renvoie une image unique. */
+  function fusionnerCadre(cadreUrl, qrSrc) {
+    return new Promise(function (ok, ko) {
+      var cadre = new Image();
+      cadre.crossOrigin = 'anonymous';
+      cadre.onerror = function () { ko(new Error('habillage illisible')); };
+      cadre.onload = function () {
+        var qr = new Image();
+        qr.onerror = function () { ko(new Error('QR illisible')); };
+        qr.onload = function () {
+          var c = document.createElement('canvas');
+          c.width = cadre.naturalWidth || 800;
+          c.height = cadre.naturalHeight || 800;
+          var ctx = c.getContext('2d');
+          ctx.drawImage(cadre, 0, 0, c.width, c.height);
+          var t = Math.round(Math.min(c.width, c.height) * QR_DANS_CADRE);
+          ctx.drawImage(qr, Math.round((c.width - t) / 2), Math.round((c.height - t) / 2), t, t);
+          ok(c.toDataURL('image/png'));
+        };
+        qr.src = qrSrc;
+      };
+      cadre.src = cadreUrl;
+    });
+  }
+
+  // ── Panneau Calques ───────────────────────────────────────────────────────
+
+  var ICONES = {
+    monter:  '<path d="M12 19V5m0 0-6 6m6-6 6 6"/>',
+    baisser: '<path d="M12 5v14m0 0 6-6m-6 6-6-6"/>',
+    visible: '<path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6z"/><circle cx="12" cy="12" r="2.5"/>',
+    masque:  '<path d="M3 3l18 18"/><path d="M10.6 6.2A9.6 9.6 0 0 1 12 6c6.4 0 10 6 10 6a17 17 0 0 1-3.3 3.8"/>'
+           + '<path d="M6.3 7.7A16.6 16.6 0 0 0 2 12s3.6 6 10 6a9.9 9.9 0 0 0 3.5-.6"/>',
+    libre:   '<rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/>',
+    verrou:  '<rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+    jeter:   '<path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13"/>',
+  };
+
+  Editeur.prototype.panneauCalques = function (hote) {
+    var self = this;
+    hote.innerHTML = '<div class="tsle-calques" data-r="calques"></div>';
+
+    hote.addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('.tsle-ico') : null;
+      if (!b || b.disabled) return;
+      var ligne = b.closest('.tsle-calque');
+      var id = ligne && ligne.getAttribute('data-id');
+      if (!id || !self.moteur) return;
+      var action = b.getAttribute('data-act');
+      if (action === 'jeter') self.moteur.supprimer(id);
+      else if (action === 'visible') self.moteur.basculerVisibilite(id);
+      else if (action === 'verrou') self.moteur.basculerVerrou(id);
+      else self.deplacerCalque(id, action === 'monter' ? 1 : -1);
+      self.majCalques(hote);
+    });
+
+    // Reconstruire la liste dès que le canevas change : un texte ajouté
+    // depuis le panneau Textes doit apparaître ici sans rouvrir l'outil.
+    if (this.moteur && !this._ecouteCalques) {
+      this._ecouteCalques = true;
+      var maj = function () { self.majCalques(hote); };
+      ['object:added', 'object:removed', 'object:modified'].forEach(function (ev) {
+        self.moteur.canvas.on(ev, maj);
+      });
+    }
+
+    hote.__maj = function () { self.majCalques(hote); };
+    this.majCalques(hote);
+  };
+
+  Editeur.prototype.majCalques = function (hote) {
+    var liste = hote.querySelector('[data-r="calques"]');
+    if (!liste || !this.moteur) return;
+    // lireCalques() rend l'ordre du canevas, de l'arrière vers l'avant. La
+    // liste se lit dans l'autre sens : le premier plan en haut, comme dans
+    // tous les logiciels de dessin.
+    var calques = this.moteur.lireCalques().slice().reverse();
+
+    if (!calques.length) {
+      liste.innerHTML = '<div class="tsle-vide">Aucun élément pour l\'instant — '
+                      + 'ajoutez un texte ou une image.</div>';
+      return this.ajuster();
+    }
+
+    var ico = function (act, forme, titre, off) {
+      return '<button type="button" class="tsle-ico" data-act="' + act + '" title="' + esc(titre) + '" '
+           +   'aria-label="' + esc(titre) + '"' + (off ? ' disabled' : '') + '>'
+           +   '<svg viewBox="0 0 24 24" aria-hidden="true">' + forme + '</svg></button>';
+    };
+
+    liste.innerHTML = calques.map(function (c, i) {
+      var fab = c.fabric || {};
+      var vue = c.type === 'text'
+        ? '<span>T</span>'
+        : (fab.src ? '<img src="' + esc(fab.src) + '" alt="">' : '<span>?</span>');
+      var nom = c.type === 'text' ? (fab.text || 'Texte') : 'Image';
+      return '<div class="tsle-calque' + (c.visible ? '' : ' masque') + '" data-id="' + esc(c.id) + '">'
+           +   '<span class="tsle-calque-vue">' + vue + '</span>'
+           +   '<span class="tsle-calque-nom">' + esc(nom) + '</span>'
+           +   ico('monter', ICONES.monter, 'Vers l\'avant', i === 0)
+           +   ico('baisser', ICONES.baisser, 'Vers l\'arrière', i === calques.length - 1)
+           +   ico('visible', c.visible ? ICONES.visible : ICONES.masque,
+                   c.visible ? 'Masquer' : 'Afficher')
+           +   ico('verrou', c.locked ? ICONES.verrou : ICONES.libre,
+                   c.locked ? 'Déverrouiller' : 'Verrouiller')
+           +   ico('jeter', ICONES.jeter, 'Supprimer')
+           + '</div>';
+    }).join('');
+    this.ajuster();
+  };
+
+  /** Décale un calque d'un cran. `sens` : +1 vers l'avant, -1 vers l'arrière. */
+  Editeur.prototype.deplacerCalque = function (id, sens) {
+    var ids = this.moteur.lireCalques().map(function (c) { return c.id; });
+    var i = ids.indexOf(id);
+    var j = i + sens;
+    if (i < 0 || j < 0 || j >= ids.length) return;
+    ids[i] = ids[j]; ids[j] = id;
+    // reordonner() remonte chaque identifiant au premier plan dans l'ordre
+    // reçu : lui passer la liste de l'arrière vers l'avant la reconstitue.
+    this.moteur.reordonner(ids);
   };
 
   // ── Scène d'édition ───────────────────────────────────────────────────────
