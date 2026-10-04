@@ -766,6 +766,34 @@ commande ne montre pas encore le visuel pour un achat direct de bibliothèque
 `buildOrderConfirmationHTML`). Alan n'a demandé que l'affichage panier ; je
 n'ai pas élargi au mail sans qu'il le demande.
 
+### 2026-10-04 — Deux retours d'Alan après test réel sur le dev store
+
+Premier essai réel confirmé par Alan (sac Kimood, visuel « WinshirtGraph ») :
+le bouton fonctionne, la propriété `Visuel` apparaît bien dans le panier.
+Deux défauts relevés sur sa capture d'écran.
+
+**1. Deux boutons « Ajouter au panier » côte à côte** (le nôtre + celui du
+thème) prêtaient à confusion — on peut recliquer le mauvais. Le bouton natif
+du thème (`form[action*="/cart/add"] [name="add"]`, convention Shopify quasi
+universelle) est désormais masqué tant qu'un design est choisi, et restitué à
+la désélection : un seul bouton visible à la fois. Effet de bord mineur et
+accepté : un sélecteur de quantité resterait affiché sans bouton à côté sur
+les thèmes qui en posent un — non signalé par Alan, pas traité.
+
+**2. Le panier affichait le visuel seul, pas le produit avec le visuel.**
+`_preview_img` pointait vers la vignette brute de la bibliothèque. Corrigé :
+on réutilise désormais le rendu déjà composé sur la photo principale (lot H,
+`img.__tsldRendu`) — exactement ce que le client vient de voir sur la fiche.
+Repli sur la vignette nue si ce rendu n'existe pas encore (produit non
+calibré, ou composition pas finie de charger) : dégradation cohérente avec le
+reste de `tl-designs.js`.
+
+Vérifié en navigateur (même fixture locale) : sélection d'un design → bouton
+natif disparaît, bouton TSL seul visible ; désélection → bouton natif
+revient ; `__tsldRendu` simulé → `_preview_img` le reprend tel quel dans le
+corps de `POST /cart/add.json`. `npm test` : 116 tests, 114 passent, 2
+ignorés (inchangé).
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.

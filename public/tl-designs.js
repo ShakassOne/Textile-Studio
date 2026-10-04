@@ -146,6 +146,14 @@
     var barrePanier = conteneur.querySelector('.tsld-cart');
     if (barrePanier) barrePanier.classList.toggle('tsld-show', !!design);
 
+    // Un seul bouton « Ajouter au panier » visible à la fois : le nôtre sait
+    // transporter le visuel choisi, celui du thème ne le peut pas (il ignore
+    // tout de la bibliothèque). Les deux côte à côte prêtent à confusion —
+    // Alan l'a signalé après coup. On masque donc le bouton natif tant qu'un
+    // design est choisi, et on le restitue à la désélection.
+    var btnNatif = _tsldBoutonNatif();
+    if (btnNatif) btnNatif.style.display = design ? 'none' : '';
+
     try {
       document.dispatchEvent(new CustomEvent('tsl:design', {
         detail: { design: design, productId: conteneur.__tsldProduct },
@@ -175,13 +183,26 @@
     return /^\d+$/.test(value) ? value : '';
   }
 
-  function ajouterAuPanier(design, bouton) {
+  // Bouton natif « Ajouter au panier » du thème — convention Shopify quasi
+  // universelle (name="add" sur le submit du formulaire panier). Masqué tant
+  // qu'un design est choisi, pour qu'un seul bouton d'ajout soit visible.
+  function _tsldBoutonNatif() {
+    return document.querySelector('form[action*="/cart/add"] [name="add"]')
+        || document.querySelector('form[action*="/cart/add"] button[type="submit"]');
+  }
+
+  function ajouterAuPanier(conteneur, design, bouton) {
     var variantId = _tsldVariantId();
     if (!variantId) {
       alert('Choisissez d’abord une taille avant d’ajouter au panier.');
       return;
     }
-    var previewUrl = absolu(design.thumb);
+    // Le rendu composé (produit + visuel, lot H) est préférable au visuel nu :
+    // c'est exactement ce que le client vient de voir sur la photo principale.
+    // S'il n'existe pas encore (produit non calibré, ou rendu pas fini de
+    // charger), on retombe sur la vignette du visuel seul — mieux que rien.
+    var imgPrincipale = imagePrincipale();
+    var previewUrl = (imgPrincipale && imgPrincipale.__tsldRendu) || absolu(design.thumb);
     var props = {
       'Visuel':       design.nom,
       '_library_id':  String(design.id),
@@ -381,7 +402,7 @@
         for (var p = 0; p < data.designs.length; p++) {
           if (data.designs[p].slug === slugChoisi) designChoisi = data.designs[p];
         }
-        if (designChoisi) ajouterAuPanier(designChoisi, btnPanier);
+        if (designChoisi) ajouterAuPanier(conteneur, designChoisi, btnPanier);
         return;
       }
       var cat = e.target.closest ? e.target.closest('.tsld-cat') : null;
