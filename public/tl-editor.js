@@ -397,6 +397,7 @@
 
     this.barreMobile();
     this.brancherPrix();
+    this.brancherPanier();
 
     this.verifierPlacement();
 
@@ -2325,6 +2326,7 @@
   };
 
   Editeur.prototype.majPrix = function () {
+    this.brancherPanier();
     var v = this.variantCourant();
     if (!v) return;
     var qte = 1;
@@ -2402,11 +2404,202 @@
       }
       return;
     }
-    // Étape 1 : on délègue au formulaire du thème. Le circuit de commande
-    // complet (composition, PNG HD, propriétés de ligne) viendra avec l'outil
-    // Textes, qui est le premier à produire une composition.
+    if (!this.compositionNonVide()) return this.soumettreFormulaire();
+    this.envoyerAuPanier();
+  };
+
+  Editeur.prototype.soumettreFormulaire = function () {
     var form = document.querySelector('form[action*="/cart/add"]');
-    if (form) form.requestSubmit ? form.requestSubmit() : form.submit();
+    if (!form) return;
+    this._laisserPasser = true;
+    if (form.requestSubmit) form.requestSubmit(); else form.submit();
+    this._laisserPasser = false;
+  };
+
+  /** Y a-t-il quelque chose à imprimer ? */
+  Editeur.prototype.compositionNonVide = function () {
+    if (!this.moteur) return false;
+    var c = this.moteur.exporterComposition();
+    var faces = c.faces || {};
+    for (var k in faces) {
+      if (faces[k] && faces[k].layers && faces[k].layers.length) return true;
+    }
+    return false;
+  };
+
+  /**
+   * Détourne le bouton panier du thème.
+   *
+   * Sans ça, le client dessine puis clique « Ajouter au panier » — celui du
+   * thème, pas le nôtre — et le formulaire part seul : la ligne de panier
+   * ne porte aucune trace de la composition, et c'est le produit vierge qui
+   * arrive dans le tiroir. On n'intercepte que s'il y a réellement quelque
+   * chose à imprimer ; un achat sans personnalisation suit son chemin
+   * habituel.
+   */
+  Editeur.prototype.brancherPanier = function () {
+    var self = this;
+    var intercepter = function (e) {
+      if (self._laisserPasser || !self.compositionNonVide()) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+      self.ajouterAuPanier();
+    };
+    var form = document.querySelector('form[action*="/cart/add"]');
+    // Le bouton est relu à chaque passage : beaucoup de thèmes reconstruisent
+    // le formulaire au changement de variante, et celui qu'on avait branché
+    // n'est alors plus dans la page.
+    this.boutonTheme = document.querySelector('form[action*="/cart/add"] [name="add"]')
+                    || document.querySelector('form[action*="/cart/add"] button[type="submit"]')
+                    || this.boutonTheme;
+    // En phase de CAPTURE : beaucoup de thèmes posent leur propre gestionnaire
+    // et partent en AJAX. Les laisser passer en premier, c'est perdre la
+    // composition.
+    if (form && !form.__tsleBranche) {
+      form.__tsleBranche = true;
+      form.addEventListener('submit', intercepter, true);
+    }
+    if (this.boutonTheme && !this.boutonTheme.__tsleBranche) {
+      this.boutonTheme.__tsleBranche = true;
+      this.boutonTheme.addEventListener('click', intercepter, true);
+    }
+  };
+
+  /**
+   * Circuit de commande : la composition part au serveur, qui reconstruit
+   * les fichiers d'impression et rend les propriétés de ligne.
+   *
+   * Le PNG n'est jamais envoyé par le navigateur : il est REFABRIQUÉ côté
+   * serveur depuis ce qui est enregistré. Un fichier fourni par le client
+   * ne prouve rien — là, on imprime la commande et pas autre chose.
+   */
+  Editeur.prototype.envoyerAuPanier = function () {
+    var self = this;
+    if (this._envoiEnCours) return;
+    this._envoiEnCours = true;
+    this.occuperBoutons(true);
+
+    var shop = encodeURIComponent(boutique());
+    var comp = this.moteur.exporterComposition();
+    var vignette = '';
+    try { vignette = this.moteur.exporterImpression(500); } catch (e) { /* canevas teinté */ }
+
+    var v = this.variantCourant() || {};
+    var couleur = (this.iCouleur >= 0 && v.options) ? v.options[this.iCouleur] : '';
+
+    fetch(BACKEND + '/api/designs?shop=' + shop, {
+      method: 'POST', credentials: 'omit', mode: 'cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: (this.donnees.handle || 'personnalisation') + ' — ' + (v.title || ''),
+        product: String(this.produit),
+        color: couleur || '#FFFFFF',
+        thumbnail: vignette,
+        composition: comp,
+      }),
+    }).then(function (r) {
+      if (!r.ok) throw new Error('design ' + r.status);
+      return r.json();
+    }).then(function (design) {
+      if (!design || !design.id) throw new Error('design sans identifiant');
+      self._design = design;
+      return fetch(BACKEND + '/api/render/from-composition/' + design.id + '?shop=' + shop, {
+        method: 'POST', credentials: 'omit', mode: 'cors',
+        headers: { 'Content-Type': 'application/json', 'X-Design-Token': design.edit_token || '' },
+        body: JSON.stringify({ design_token: design.edit_token || '' }),
+      }).then(function (r) {
+        return r.json().catch(function () { return null; }).then(function (d) {
+          if (!r.ok || !d || !d.properties) throw new Error((d && d.error) || 'rendu ' + r.status);
+          return d;
+        });
+      });
+    }).then(function (rendu) {
+      var props = rendu.properties;
+      // Vignette du panier : le fichier d'impression du recto. C'est le
+      // visuel du client, pas le vêtement vierge.
+      var apercu = (rendu.faces && rendu.faces.front && rendu.faces.front.url)
+                || (rendu.faces && rendu.faces.back && rendu.faces.back.url) || '';
+      self.poserDansLePanier(props, apercu);
+    }).catch(function (err) {
+      self._envoiEnCours = false;
+      self.occuperBoutons(false);
+      self._message('Impossible d\'enregistrer votre personnalisation ('
+        + (err && err.message ? err.message : 'erreur') + '). Réessayez.', true);
+      // Le client a pu cliquer le bouton du thème sans ouvrir le tiroir : le
+      // message ci-dessus serait alors invisible. L'échec doit se voir là où
+      // il a cliqué, sinon il croit son panier rempli.
+      self.signalerEchecPanier();
+    });
+  };
+
+  Editeur.prototype.poserDansLePanier = function (props, apercu) {
+    var self = this;
+    var v = this.variantCourant();
+    var qte = 1;
+    var champ = document.querySelector('form[action*="/cart/add"] [name="quantity"]');
+    if (champ && Number(champ.value) > 0) qte = Number(champ.value);
+
+    // tl-modal.js sait déjà ajouter au panier, ouvrir le tiroir, masquer les
+    // propriétés internes et poser la vignette du design par-dessus l'image
+    // du produit. On lui passe la main plutôt que de réécrire ce circuit —
+    // et surtout pour que le panier se comporte pareil qu'avec le studio.
+    if (window.__TLModalInitialized) {
+      window.postMessage({
+        type: 'tl-add-to-cart',
+        variantId: v && v.id, quantity: qte,
+        properties: props, previewUrl: apercu,
+      }, '*');
+      setTimeout(function () {
+        self._envoiEnCours = false;
+        self.occuperBoutons(false);
+        self.fermer();
+      }, 600);
+      return;
+    }
+
+    // Sans tl-modal sur la page : ajout direct, puis le panier.
+    if (apercu) props._preview_img = apercu;
+    fetch('/cart/add.js', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: v && v.id, quantity: qte, properties: props }),
+    }).then(function (r) {
+      if (!r.ok) throw new Error('panier ' + r.status);
+      window.location.href = '/cart';
+    }).catch(function () {
+      self._envoiEnCours = false;
+      self.occuperBoutons(false);
+      self._message('L\'ajout au panier a échoué. Réessayez.', true);
+    });
+  };
+
+  Editeur.prototype.signalerEchecPanier = function () {
+    var self = this;
+    var dire = function (el, txt) {
+      if (!el) return;
+      var cible = el.querySelector('span') || el;
+      cible.textContent = txt;
+      el.classList.add('tsle-alerte');
+      setTimeout(function () { el.classList.remove('tsle-alerte'); self.majPrix(); }, 4000);
+    };
+    dire(this.boutonTheme, 'Échec — réessayez');
+    if (this.mbar) dire(this.mbar.querySelector('.tsle-mcart'), 'Échec');
+  };
+
+  /** Pendant l'envoi, tous les boutons panier disent la même chose. */
+  Editeur.prototype.occuperBoutons = function (occupe) {
+    var libelle = occupe ? 'Préparation de votre fichier…' : null;
+    if (this.boutonTheme) {
+      var el = this.boutonTheme.querySelector('span') || this.boutonTheme;
+      if (occupe) { this.boutonTheme.__tsleAvant = el.textContent; el.textContent = libelle; }
+      else if (this.boutonTheme.__tsleAvant) { el.textContent = this.boutonTheme.__tsleAvant; }
+      this.boutonTheme.disabled = !!occupe;
+    }
+    if (this.mbar) {
+      var mc = this.mbar.querySelector('.tsle-mcart');
+      if (mc) { mc.disabled = !!occupe; if (occupe) mc.textContent = '…'; }
+    }
+    if (!occupe) this.majPrix();
   };
 
   // ── Démarrage ─────────────────────────────────────────────────────────────
