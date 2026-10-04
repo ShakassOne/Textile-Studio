@@ -66,8 +66,17 @@
     // marchand n'a plus rien à montrer, et son emplacement n'importe plus.
     + '.tsle-efface{display:none!important}'
     // La barre vit sous la photo, centrée.
-    + '.tsle-bar{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;'
-    +   'padding:14px 0 2px;width:100%;box-sizing:border-box}'
+    // `position:relative` + `z-index` : la barre est posée dans la colonne
+    // média du thème, dont on ne maîtrise ni l'empilement ni les calques.
+    // `pointer-events` forcé : certains thèmes neutralisent les clics sur
+    // tout ce qui n'est pas la diapositive active de leur galerie.
+    + '.tsle-bar{position:relative;z-index:6;display:flex;flex-wrap:wrap;justify-content:center;'
+    +   'gap:6px;padding:14px 0 2px;width:100%;box-sizing:border-box;pointer-events:auto}'
+    + '.tsle-bar .tsle-tool{pointer-events:auto}'
+    // Repli : la barre flotte au bas de la photo quand sa place dans le
+    // flux s'avère inutilisable.
+    + '.tsle-bar.tsle-flottante{position:absolute;z-index:2147483000;width:auto;padding:0;'
+    +   'justify-content:center}'
     + '.tsle-tool{flex:0 0 auto;display:inline-flex;align-items:center;gap:7px;padding:9px 14px;border-radius:999px;'
     +   'border:1px solid rgba(128,128,128,.35);background:transparent;color:inherit;font:inherit;font-size:.85rem;'
     +   'cursor:pointer;line-height:1;white-space:nowrap;transition:background .18s,color .18s,border-color .18s}'
@@ -77,11 +86,17 @@
     // Le panneau occupe EXACTEMENT la colonne d'informations : il ne se
     // superpose plus, il la remplace. Plus d'ombre ni de bordure — ce n'est
     // pas un objet posé sur la page, c'est la colonne elle-même.
-    + '.tsle-vue{position:absolute;inset:0;z-index:4;display:flex;flex-direction:column;'
+    // L'état fermé passe par une CLASSE À NOUS, et pas par l'attribut
+    // `hidden`. La règle du navigateur `[hidden]{display:none}` a une
+    // spécificité nulle : n'importe quelle règle du thème qui pose un
+    // `display` sur les enfants de la colonne la bat, et le panneau reste
+    // affiché en permanence, vide, par-dessus le titre et le prix.
+    + '.tsle-vue{display:none!important}'
+    + '.tsle-vue.ouvert{position:absolute;inset:0;z-index:4;display:flex!important;flex-direction:column;'
     +   'overflow:hidden;will-change:transform,opacity}'
     // Repli sur un thème dont on ne sait pas lire la grille : le panneau
     // reste dans le flux, encadré, sans animation.
-    + '.tsle-vue.tsle-plat{position:static;border:1px solid rgba(128,128,128,.25);'
+    + '.tsle-vue.ouvert.tsle-plat{position:static;border:1px solid rgba(128,128,128,.25);'
     +   'border-radius:16px;margin-top:10px;max-height:70vh}'
     + '.tsle-head{display:flex;align-items:center;gap:12px;padding:16px 18px 10px}'
     + '.tsle-head-icon{flex:0 0 auto;width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;'
@@ -103,7 +118,10 @@
     // Calque d'édition posé SUR la photo produit. `pointer-events:none` tant
     // qu'aucun outil n'est ouvert : sans ça, Fabric capte les gestes tactiles
     // et bloque le défilement de la page — on ne peut plus lire la fiche.
-    + '.tsle-scene{position:absolute;inset:0;z-index:5;pointer-events:none}'
+    // Le calque d'édition se cale sur la PHOTO, pas sur son conteneur.
+    // En `inset:0` il couvrait tout le parent — barre d'outils comprise,
+    // qui devenait incliquable dès qu'un outil était ouvert.
+    + '.tsle-scene{position:absolute;z-index:5;pointer-events:none}'
     + '.tsle-scene.actif{pointer-events:auto}'
     + '.tsle-scene canvas{position:absolute;top:0;left:0}'
     + '.tsle-cadre{position:absolute;border:1px dashed rgba(0,0,0,.45);pointer-events:none;'
@@ -210,10 +228,10 @@
 
     // Panneau Calques
     + '.tsle-deux > div{min-width:0}'
-    + '.tsle-vue.large .tsle-deux{display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;align-items:start}'
-    + '.tsle-vue.large .tsle-deux > div + div:not(.tsle-pleine){padding-left:24px;'
+    + '.tsle-vue.ouvert.large .tsle-deux{display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;align-items:start}'
+    + '.tsle-vue.ouvert.large .tsle-deux > div + div:not(.tsle-pleine){padding-left:24px;'
     +   'border-left:1px solid rgba(128,128,128,.22)}'
-    + '.tsle-vue.large .tsle-pleine{grid-column:1/-1}'
+    + '.tsle-vue.ouvert.large .tsle-pleine{grid-column:1/-1}'
     + '.tsle-entete{display:flex;flex-direction:column;gap:2px;padding:10px 13px;border-radius:11px;'
     +   'background:rgba(128,128,128,.12)}'
     + '.tsle-entete b{font-size:.88rem}'
@@ -346,7 +364,6 @@
     this.vue.className = 'tsle-vue';
     this.vue.setAttribute('role', 'dialog');
     this.vue.setAttribute('aria-label', 'Personnalisation');
-    this.vue.hidden = true;
     this.vue.innerHTML =
         '<div class="tsle-head">'
       +   '<span class="tsle-head-icon"><svg viewBox="0 0 24 24" aria-hidden="true"></svg></span>'
@@ -503,7 +520,60 @@
     if (getComputedStyle(colonne).position === 'static') colonne.style.position = 'relative';
     this.vue.style.background = fondOpaque(colonne);
     this.vue.classList.toggle('large', colonne.offsetWidth >= 640);
+    this.verifierBarre();
     return true;
+  };
+
+  /**
+   * La barre est-elle réellement cliquable là où on l'a posée ?
+   *
+   * Elle atterrit dans la colonne média du thème, dont on ne maîtrise rien :
+   * galerie à diapositives qui neutralise les clics hors de la vue active,
+   * calque de zoom par-dessus, conteneur sans hauteur… Le symptôme est
+   * toujours le même et toujours muet — des boutons visibles qui ne
+   * répondent pas. On vérifie donc, et on se replie.
+   */
+  Editeur.prototype.verifierBarre = function () {
+    var self = this;
+    clearTimeout(this._verifBarre);
+    this._verifBarre = setTimeout(function () {
+      var b = self.barre.querySelector('.tsle-tool');
+      if (!b || self.barre.classList.contains('tsle-flottante')) return;
+      var r = b.getBoundingClientRect();
+      if (!r.width || !r.height) return self.barreFlottante('sans surface');
+      var dessus = document.elementFromPoint(
+        Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2));
+      // Hors écran : on ne peut rien conclure, on réessaiera au défilement.
+      if (r.bottom < 0 || r.top > window.innerHeight) return;
+      if (!dessus || !self.barre.contains(dessus)) self.barreFlottante('recouverte');
+    }, 900);
+  };
+
+  /**
+   * Repli : la barre quitte le flux et vient flotter au bas de la photo.
+   * Posée sur le corps du document, plus aucun habillage de thème ne peut
+   * la rogner, la masquer ni lui prendre ses clics.
+   */
+  Editeur.prototype.barreFlottante = function (raison) {
+    var self = this;
+    console.warn('[TSL] Barre d\'outils ' + raison + ' à sa place dans la page : '
+      + 'elle passe en flottant au bas de la photo.');
+    this.barre.classList.add('tsle-flottante');
+    document.body.appendChild(this.barre);
+
+    var suivre = function () {
+      var img = imageProduit();
+      if (!img) return;
+      var r = img.getBoundingClientRect();
+      var l = r.left + window.scrollX + r.width / 2;
+      self.barre.style.left = Math.round(l) + 'px';
+      self.barre.style.top = Math.round(r.bottom + window.scrollY - 56) + 'px';
+      self.barre.style.transform = 'translateX(-50%)';
+    };
+    suivre();
+    window.addEventListener('scroll', suivre, { passive: true });
+    window.addEventListener('resize', suivre);
+    this._suivreBarre = suivre;
   };
 
   // ── Ouverture, fermeture, changement d'outil ──────────────────────────────
@@ -583,7 +653,7 @@
 
     if (!col) {
       // Repli sans colonne : le panneau se montre et se cache, sans décor.
-      this.vue.hidden = !ouvert;
+      this.vue.classList.toggle('ouvert', !!ouvert);
       return;
     }
 
@@ -623,7 +693,7 @@
 
     this.vue.style.transition = transition;
     if (ouvert) {
-      this.vue.hidden = false;
+      this.vue.classList.add('ouvert');
       this.vue.style.transform = 'translateX(-' + dx + 'px)';
       this.vue.style.opacity = '0';
       // Laisser le navigateur enregistrer la position de départ avant
@@ -638,7 +708,7 @@
 
     this._finGlissement = setTimeout(function () {
       if (!ouvert) {
-        self.vue.hidden = true;
+        self.vue.classList.remove('ouvert');
         col.style.overflow = '';
         col.style.minHeight = '';
         enfants.forEach(function (e) { e.style.transition = ''; });
@@ -2077,6 +2147,7 @@
     this.imageProduit = img;
     hote.classList.add('tsle-sanszoom');
 
+    this._placerScene();
     var dims = this._dimensions();
     cnv.width = dims.largeur; cnv.height = dims.hauteur;
     this.moteur = new window.TSLEngine.Moteur(cnv, { zone: dims.zone });
@@ -2086,6 +2157,7 @@
     // le canevas et la zone doivent suivre, sinon le design dérive.
     var self = this;
     var suivre = function () {
+      self._placerScene();
       var d = self._dimensions();
       self.moteur.canvas.setDimensions({ width: d.largeur, height: d.hauteur });
       self.moteur.definirZone(d.zone);
@@ -2094,6 +2166,18 @@
     window.addEventListener('resize', suivre);
     if (window.ResizeObserver) new ResizeObserver(suivre).observe(img);
     return this.moteur;
+  };
+
+  /** Cale le calque d'édition sur la photo, à l'intérieur de son conteneur. */
+  Editeur.prototype._placerScene = function () {
+    var hote = this.scene && this.scene.parentElement;
+    if (!hote || !this.imageProduit) return;
+    var ri = this.imageProduit.getBoundingClientRect();
+    var rh = hote.getBoundingClientRect();
+    this.scene.style.left = Math.round(ri.left - rh.left) + 'px';
+    this.scene.style.top = Math.round(ri.top - rh.top) + 'px';
+    this.scene.style.width = Math.round(ri.width) + 'px';
+    this.scene.style.height = Math.round(ri.height) + 'px';
   };
 
   /** Taille du canevas et zone d'édition, en pixels de la photo affichée. */
@@ -2520,5 +2604,40 @@
   else demarrer();
   document.addEventListener('shopify:section:load', demarrer);
 
-  window.TSL_EDITOR = { refresh: demarrer };
+  // Diagnostic : la boutique de développement est protégée par mot de
+  // passe, on ne peut pas l'inspecter de l'extérieur. Une ligne à coller
+  // dans la console vaut mieux qu'un aller-retour de captures d'écran.
+  window.TSL_EDITOR = {
+    refresh: demarrer,
+    diag: function () {
+      var bar = document.querySelector('.tsle-bar');
+      var vue = document.querySelector('.tsle-vue');
+      var out = {
+        script: window.__TSL_EDITOR_LOADED === true,
+        bloc: !!document.querySelector('[data-tsl-editor]'),
+        barre: !!bar, panneau: !!vue,
+        barreDans: bar && bar.parentElement ? (bar.parentElement.tagName + '.' + bar.parentElement.className).slice(0, 70) : null,
+        panneauDans: vue && vue.parentElement ? (vue.parentElement.tagName + '.' + vue.parentElement.className).slice(0, 70) : null,
+        panneauOuvert: vue ? vue.classList.contains('ouvert') : null,
+        panneauAffiche: vue ? getComputedStyle(vue).display : null,
+        flottante: bar ? bar.classList.contains('tsle-flottante') : null,
+      };
+      if (bar) {
+        var b = bar.querySelector('.tsle-tool');
+        if (b) {
+          var r = b.getBoundingClientRect();
+          out.bouton = { l: Math.round(r.width), h: Math.round(r.height) };
+          var d = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2));
+          out.sousLeCurseur = d ? (d.tagName + '.' + String(d.className)).slice(0, 70) : null;
+          out.cliquable = !!(d && bar.contains(d));
+        }
+      }
+      if (vue) {
+        var rv = vue.getBoundingClientRect();
+        out.panneauRect = { l: Math.round(rv.width), h: Math.round(rv.height) };
+      }
+      console.table(out);
+      return out;
+    },
+  };
 })();
