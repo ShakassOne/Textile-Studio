@@ -13,12 +13,12 @@ body.light-mode {
   --bg3:    #ebebf2;
   --bg4:    #dcdce8;
   --border: rgba(0,0,0,0.14);
-  --border2:rgba(245,158,11,0.5);
+  --border2:rgba(var(--amber-rgb),0.5);
   --text:   #111827;
   --text1:  #111827;
   --text2:  #4b5563;
   --text3:  #6b7280;
-  --amber-dim: rgba(245,158,11,0.16);
+  --amber-dim: rgba(var(--amber-rgb),0.16);
 }
 
 /* Rendu net — NE PAS utiliser antialiased (rend flou sur macOS) */
@@ -51,12 +51,12 @@ body.light-mode .btn-toggle {
   border-color: var(--border);
 }
 body.light-mode .btn-toggle button { font-size: 11.5px; padding: 6px 14px; }
-body.light-mode .btn-toggle button.active { background: var(--amber); color: #000; font-weight: 800; }
+body.light-mode .btn-toggle button.active { background: var(--amber); color: var(--on-amber); font-weight: 800; }
 
 body.light-mode .btn-cart {
   padding: 7px 16px;
   font-size: 13px;
-  box-shadow: 0 2px 6px rgba(245,158,11,0.30);
+  box-shadow: 0 2px 6px rgba(var(--amber-rgb),0.30);
 }
 
 body.light-mode .topbar-action-btn {
@@ -134,9 +134,9 @@ body.light-mode .format-btn:hover { border-color: var(--amber); color: var(--amb
 body.light-mode .format-btn.active {
   background: var(--amber);
   border-color: var(--amber);
-  color: #000;
+  color: var(--on-amber);
   font-weight: 800;
-  box-shadow: 0 1px 6px rgba(245,158,11,0.35);
+  box-shadow: 0 1px 6px rgba(var(--amber-rgb),0.35);
 }
 
 body.light-mode .tool-btn-sm {
@@ -208,7 +208,7 @@ body.light-mode .input-field {
 }
 body.light-mode .input-field:focus {
   border-color: var(--amber);
-  box-shadow: 0 0 0 3px rgba(245,158,11,0.14);
+  box-shadow: 0 0 0 3px rgba(var(--amber-rgb),0.14);
   outline: none;
 }
 
@@ -222,7 +222,7 @@ body.light-mode .select-field {
 }
 body.light-mode .select-field:focus {
   border-color: var(--amber);
-  box-shadow: 0 0 0 3px rgba(245,158,11,0.14);
+  box-shadow: 0 0 0 3px rgba(var(--amber-rgb),0.14);
   outline: none;
 }
 
@@ -235,7 +235,7 @@ body.light-mode .hex-input {
 }
 body.light-mode .hex-input:focus {
   border-color: var(--amber);
-  box-shadow: 0 0 0 3px rgba(245,158,11,0.14);
+  box-shadow: 0 0 0 3px rgba(var(--amber-rgb),0.14);
   outline: none;
 }
 
@@ -266,10 +266,10 @@ input[type=range] { accent-color: var(--amber); cursor: pointer; }
   border-radius: 11px !important;
   font-size: 14px !important;
   font-weight: 800 !important;
-  box-shadow: 0 2px 8px rgba(245,158,11,0.30) !important;
+  box-shadow: 0 2px 8px rgba(var(--amber-rgb),0.30) !important;
 }
 .btn-primary:hover {
-  box-shadow: 0 4px 14px rgba(245,158,11,0.42) !important;
+  box-shadow: 0 4px 14px rgba(var(--amber-rgb),0.42) !important;
   transform: translateY(-1px) !important;
 }
 
@@ -317,7 +317,7 @@ body.light-mode .lib-cat-btn:hover { border-color: var(--amber); }
 body.light-mode .lib-cat-btn.active {
   background: var(--amber);
   border-color: var(--amber);
-  color: #000;
+  color: var(--on-amber);
   font-weight: 800;
 }
 
@@ -351,7 +351,7 @@ body.light-mode .tool-tab {
 body.light-mode .tool-tab.active {
   background: var(--amber);
   border-color: var(--amber);
-  color: #000;
+  color: var(--on-amber);
   font-weight: 800;
 }
 
@@ -360,7 +360,7 @@ body.light-mode .tool-tab.active {
   border-radius: 13px !important;
   font-size: 15px !important;
   font-weight: 800 !important;
-  box-shadow: 0 3px 12px rgba(245,158,11,0.32) !important;
+  box-shadow: 0 3px 12px rgba(var(--amber-rgb),0.32) !important;
 }
 
 
@@ -410,7 +410,7 @@ body.light-mode .lib-thumb {
 }
 body.light-mode .lib-thumb:hover {
   border-color: var(--amber);
-  box-shadow: 0 0 0 3px rgba(245,158,11,0.18);
+  box-shadow: 0 0 0 3px rgba(var(--amber-rgb),0.18);
 }
 
 
@@ -509,7 +509,7 @@ body.light-mode .qr-shape-btn.active { border-color: var(--amber); background: v
 body.light-mode ::-webkit-scrollbar-thumb {
   background: rgba(0,0,0,0.14);
 }
-body.light-mode ::-webkit-scrollbar-thumb:hover { background: rgba(245,158,11,0.55); }
+body.light-mode ::-webkit-scrollbar-thumb:hover { background: rgba(var(--amber-rgb),0.55); }
 
 
 /* ============================================================

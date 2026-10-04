@@ -8,7 +8,10 @@
 <style>
   :root {
     --bg: #0a0a0c; --bg2: #111116; --bg3: #18181f;
-    --amber: #F59E0B; --amber2: #FCD34D; --amber-dim: rgba(245,158,11,0.12);
+    /* Accent neutre, aligné sur la charte winshirt.fr. La page de connexion
+       est toujours sombre : pas de variante claire à prévoir ici. */
+    --amber: #ffffff; --amber2: #e8e8ee; --amber-rgb: 255,255,255; --on-amber: #0a0a0c;
+    --amber-dim: rgba(var(--amber-rgb),0.12);
     --border: rgba(255,255,255,0.08); --text: #f0f0f5; --text2: #9090a8; --text3: #5a5a72;
     --danger: #EF4444;
   }
@@ -24,8 +27,8 @@
     content: '';
     position: fixed; inset: 0; z-index: 0;
     background-image:
-      linear-gradient(rgba(245,158,11,.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(245,158,11,.03) 1px, transparent 1px);
+      linear-gradient(rgba(var(--amber-rgb),.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(var(--amber-rgb),.03) 1px, transparent 1px);
     background-size: 40px 40px;
   }
 
@@ -33,7 +36,7 @@
   .glow {
     position: fixed;
     width: 600px; height: 600px;
-    background: radial-gradient(circle, rgba(245,158,11,.06) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(var(--amber-rgb),.06) 0%, transparent 70%);
     top: 50%; left: 50%; transform: translate(-50%, -60%);
     pointer-events: none; z-index: 0;
   }
@@ -106,7 +109,7 @@
     background: var(--amber);
     border: none;
     border-radius: 12px;
-    color: #000;
+    color: var(--on-amber);
     font-family: 'Syne', sans-serif;
     font-weight: 800;
     font-size: 14px;
@@ -118,7 +121,7 @@
     justify-content: center;
     gap: 8px;
   }
-  .btn-login:hover { background: var(--amber2); transform: translateY(-1px); box-shadow: 0 8px 20px rgba(245,158,11,.25); }
+  .btn-login:hover { background: var(--amber2); transform: translateY(-1px); box-shadow: 0 8px 20px rgba(var(--amber-rgb),.25); }
   .btn-login:active { transform: none; }
   .btn-login:disabled { opacity: .5; cursor: not-allowed; transform: none; }
 

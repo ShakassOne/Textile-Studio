@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <link rel="manifest" href="/manifest.json">
-<meta name="theme-color" content="#F59E0B">
+<meta name="theme-color" content="var(--amber)">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="TextileLab">
@@ -13,19 +13,27 @@
 <style>
 :root {
   --bg:#0a0a0c; --bg2:#111116; --bg3:#18181f; --bg4:#1e1e28;
-  --amber:#F59E0B; --amber2:#FCD34D; --amber-dim:rgba(245,158,11,0.12); --amber-glow:rgba(245,158,11,0.06);
-  --border:rgba(255,255,255,0.08); --border2:rgba(245,158,11,0.3);
+  /* Accent neutre, aligné sur la charte winshirt.fr : blanc sur fond sombre,
+     noir sur fond clair. Les noms --amber* sont conservés parce qu'ils sont
+     utilisés à des centaines d'endroits ; les renommer n'apporterait rien et
+     multiplierait les risques de coquille.
+     --amber-rgb sert aux rgba() ; --on-amber est la couleur du TEXTE posé sur
+     un fond d'accent, qui doit s'inverser avec lui sous peine de disparaître. */
+  --amber:#ffffff; --amber2:#e8e8ee; --amber-rgb:255,255,255; --on-amber:#0a0a0c;
+  --amber-dim:rgba(255,255,255,0.10); --amber-glow:rgba(255,255,255,0.05);
+  --border:rgba(255,255,255,0.08); --border2:rgba(255,255,255,0.28);
   --glass:rgba(255,255,255,0.04); --glass2:rgba(255,255,255,0.07);
   --text:#f0f0f5; --text2:#9090a8; --text3:#5a5a72;
-  --success:#10B981; --danger:#EF4444; --info:#3B82F6; --warning:#F59E0B;
+  --success:#10B981; --danger:#EF4444; --info:#3B82F6; --warning:var(--amber);
 }
 /* ── LIGHT MODE ADMIN ── */
 body.light-mode {
   --bg:#f5f5f7; --bg2:#ffffff; --bg3:#eaeaef; --bg4:#dddde5;
-  --border:rgba(0,0,0,0.1); --border2:rgba(245,158,11,0.4);
+  --border:rgba(0,0,0,0.1); --border2:rgba(0,0,0,0.3);
   --glass:rgba(0,0,0,0.03); --glass2:rgba(0,0,0,0.06);
   --text:#1a1a2e; --text2:#555570; --text3:#9090a8;
-  --amber-dim:rgba(245,158,11,0.1); --amber-glow:rgba(245,158,11,0.05);
+  --amber:#111114; --amber2:#33333c; --amber-rgb:17,17,20; --on-amber:#ffffff;
+  --amber-dim:rgba(0,0,0,0.07); --amber-glow:rgba(0,0,0,0.04);
 }
 
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -72,7 +80,7 @@ body.light-mode .nav-logo .logo-img{filter:none}
 .stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
 @media(max-width:900px){.stats-row{grid-template-columns:repeat(2,1fr)}}
 .stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:18px 20px;transition:border-color .2s}
-.stat-card:hover{border-color:rgba(245,158,11,.2)}
+.stat-card:hover{border-color:rgba(var(--amber-rgb),.2)}
 .stat-label{font-size:11px;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
 .stat-value{font-family:'Syne',sans-serif;font-weight:700;font-size:26px;color:var(--text)}
 .stat-value span{font-size:14px;color:var(--text2);font-weight:400;font-family:'DM Sans',sans-serif}
@@ -91,7 +99,7 @@ tr:last-child td{border-bottom:none}
 tr:hover td{background:var(--glass)}
 .status-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-family:'DM Mono',monospace;font-weight:500}
 .status-badge::before{content:'';width:5px;height:5px;border-radius:50%;flex-shrink:0}
-.status-pending{background:rgba(245,158,11,.12);color:var(--amber)}.status-pending::before{background:var(--amber)}
+.status-pending{background:rgba(var(--amber-rgb),.12);color:var(--amber)}.status-pending::before{background:var(--amber)}
 .status-confirmed{background:rgba(59,130,246,.12);color:var(--info)}.status-confirmed::before{background:var(--info)}
 .status-printing{background:rgba(139,92,246,.12);color:#8B5CF6}.status-printing::before{background:#8B5CF6}
 .status-shipped{background:rgba(16,185,129,.2);color:var(--success)}.status-shipped::before{background:var(--success)}
@@ -100,7 +108,7 @@ tr:hover td{background:var(--glass)}
 /* ── BUTTONS ── */
 .btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:10px;border:1px solid var(--border);background:var(--glass);color:var(--text2);font-size:12px;cursor:pointer;transition:all .15s;font-family:'DM Sans',sans-serif;white-space:nowrap}
 .btn:hover{border-color:rgba(255,255,255,.15);color:var(--text)}
-.btn-primary{background:var(--amber);border-color:var(--amber);color:#000;font-weight:700}
+.btn-primary{background:var(--amber);border-color:var(--amber);color:var(--on-amber);font-weight:700}
 .btn-primary:hover{background:var(--amber2);border-color:var(--amber2);transform:translateY(-1px)}
 .btn-danger{border-color:rgba(239,68,68,.3);color:var(--danger)}
 .btn-danger:hover{background:rgba(239,68,68,.1)}
@@ -138,7 +146,7 @@ tr:hover td{background:var(--glass)}
 .lib-item.dragging{opacity:.35}
 .lib-item.drop-before{border-left:3px solid var(--amber)}
 .lib-item.drop-after{border-right:3px solid var(--amber)}
-.lib-sel-toolbar{display:none;align-items:center;gap:10px;padding:10px 14px;background:var(--amber-dim);border:1px solid rgba(245,158,11,.4);border-radius:12px;margin-bottom:12px}
+.lib-sel-toolbar{display:none;align-items:center;gap:10px;padding:10px 14px;background:var(--amber-dim);border:1px solid rgba(var(--amber-rgb),.4);border-radius:12px;margin-bottom:12px}
 .lib-sel-toolbar.visible{display:flex}
 .upload-zone{border:2px dashed var(--border);border-radius:14px;padding:30px;text-align:center;cursor:pointer;transition:all .2s}
 .upload-zone:hover,.upload-zone.drag{border-color:var(--amber);background:var(--amber-dim)}
@@ -150,7 +158,7 @@ tr:hover td{background:var(--glass)}
 .sf-tile.sel{border-color:var(--amber);box-shadow:0 0 0 2px var(--amber-dim)}
 .sf-tile img{width:100%;height:100%;object-fit:contain;background:
   repeating-conic-gradient(rgba(128,128,128,.14) 0% 25%,transparent 0% 50%) 50%/14px 14px}
-.sf-tile .sf-check{position:absolute;top:5px;right:5px;width:19px;height:19px;border-radius:50%;background:var(--amber);color:#111;font-size:12px;font-weight:700;display:none;align-items:center;justify-content:center}
+.sf-tile .sf-check{position:absolute;top:5px;right:5px;width:19px;height:19px;border-radius:50%;background:var(--amber);color:var(--on-amber);font-size:12px;font-weight:700;display:none;align-items:center;justify-content:center}
 .sf-tile.sel .sf-check{display:flex}
 .sf-tile .sf-name{position:absolute;left:0;right:0;bottom:0;padding:3px 5px;font-size:9px;line-height:1.25;background:rgba(0,0,0,.66);color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sf-empty{grid-column:1/-1;text-align:center;padding:26px 10px;color:var(--text3);font-size:12px}
@@ -187,7 +195,7 @@ tr:hover td{background:var(--glass)}
 .ptab:hover{border-color:var(--amber);color:var(--text)}
 .ptab.active{background:var(--amber-dim);border-color:var(--border2);color:var(--amber)}
 .ptab-count{font-family:'DM Mono',monospace;font-size:10px;background:var(--bg3);padding:2px 6px;border-radius:10px}
-.ptab.active .ptab-count{background:rgba(245,158,11,.2)}
+.ptab.active .ptab-count{background:rgba(var(--amber-rgb),.2)}
 .mockup-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-bottom:24px}
 .mockup-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;transition:border-color .15s}
 .mockup-card:hover{border-color:rgba(255,255,255,.15)}
@@ -195,7 +203,7 @@ tr:hover td{background:var(--glass)}
 .mockup-card-thumb img{max-width:100%;max-height:100%;object-fit:contain}
 .mockup-card-thumb .no-img{color:var(--text3);font-size:11px;text-align:center}
 .mockup-card-thumb .no-img span{font-size:32px;display:block;margin-bottom:6px}
-.zone-overlay{position:absolute;border:2px solid var(--amber);background:rgba(245,158,11,.1);pointer-events:none;border-radius:2px}
+.zone-overlay{position:absolute;border:2px solid var(--amber);background:rgba(var(--amber-rgb),.1);pointer-events:none;border-radius:2px}
 .zone-overlay::after{content:attr(data-label);position:absolute;top:-18px;left:0;font-size:9px;font-family:'DM Mono',monospace;color:var(--amber);background:var(--bg);padding:1px 5px;border-radius:3px;white-space:nowrap}
 .mockup-card-body{padding:12px 14px}
 .mockup-card-name{font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:3px}
@@ -234,7 +242,7 @@ tr:hover td{background:var(--glass)}
 .view-row.active-view{background:var(--amber-dim)}
 .view-thumb{width:44px;height:44px;background:var(--bg3);border-radius:6px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;cursor:pointer;position:relative}
 .view-thumb img{width:100%;height:100%;object-fit:contain}
-.view-thumb .upload-hint{position:absolute;inset:0;background:rgba(245,158,11,.85);display:flex;align-items:center;justify-content:center;opacity:0;font-size:16px;border-radius:5px;transition:opacity .15s}
+.view-thumb .upload-hint{position:absolute;inset:0;background:rgba(var(--amber-rgb),.85);display:flex;align-items:center;justify-content:center;opacity:0;font-size:16px;border-radius:5px;transition:opacity .15s}
 .view-thumb:hover .upload-hint{opacity:1}
 .view-name-input{flex:1;background:transparent;border:none;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;outline:none;padding:4px 0}
 .view-status{font-size:10px;padding:2px 7px;border-radius:8px;font-family:'DM Mono',monospace;flex-shrink:0}
@@ -244,7 +252,7 @@ tr:hover td{background:var(--glass)}
 .zone-editor-canvas-wrap canvas{display:block}
 .dz-handle{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;
   background:var(--amber);border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.45);cursor:grab;z-index:3;
-  display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#000;touch-action:none}
+  display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:var(--on-amber);touch-action:none}
 .dz-handle:active{cursor:grabbing;transform:scale(1.15)}
 .dz-thumb{flex:0 0 auto;width:72px;height:72px;border-radius:8px;border:2px solid var(--border);overflow:hidden;
   cursor:pointer;background:var(--bg3);padding:2px}
@@ -255,7 +263,7 @@ tr:hover td{background:var(--glass)}
   text-shadow:0 0 3px rgba(0,0,0,.9);pointer-events:none}
 .zone-editor-canvas-wrap .no-img-msg{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--text3);pointer-events:none;transition:background .15s;border-radius:10px}
 .mockup-modal.open .zone-editor-canvas-wrap .no-img-msg{pointer-events:all}
-.zone-editor-canvas-wrap .no-img-msg:hover{background:rgba(245,158,11,.05)}
+.zone-editor-canvas-wrap .no-img-msg:hover{background:rgba(var(--amber-rgb),.05)}
 .zone-info-bar{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap}
 .zone-coord{display:flex;align-items:center;gap:5px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:4px 10px;font-family:'DM Mono',monospace;font-size:11px}
 .zone-coord label{color:var(--text3)}
@@ -297,7 +305,7 @@ tr:hover td{background:var(--glass)}
 .pl-linked{color:var(--success);font-size:11px;font-family:'DM Mono',monospace}
 .pl-unlinked{color:var(--text3);font-size:11px}
 .pl-badge-ok{background:rgba(16,185,129,.15);color:var(--success);border:1px solid rgba(16,185,129,.3)}
-.pl-badge-warn{background:rgba(245,158,11,.15);color:var(--amber);border:1px solid rgba(245,158,11,.3)}
+.pl-badge-warn{background:rgba(var(--amber-rgb),.15);color:var(--amber);border:1px solid rgba(var(--amber-rgb),.3)}
 .pl-badge-err{background:rgba(239,68,68,.15);color:var(--danger);border:1px solid rgba(239,68,68,.3)}
 .pl-empty{text-align:center;padding:32px 16px;color:var(--text3);font-size:13px}
 .pl-save-indicator{font-size:11px;color:var(--success);opacity:0;transition:opacity .3s;margin-left:8px}
@@ -396,7 +404,7 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
       <!-- Ouvre le studio en mode admin, DANS l'iframe Shopify : App Bridge n'est
            injecté (server.js) que si ?admin=1&shop&host sont présents, et le
            Resource Picker ne fonctionne que dans cette iframe. Masqué hors embed. -->
-      <button id="btn-create-template" onclick="openStudioTemplateMode()" style="display:none;width:100%;align-items:center;gap:8px;justify-content:center;background:var(--amber);border:none;color:#111;border-radius:8px;padding:8px 12px;cursor:pointer;font-size:12px;font-weight:700;margin-bottom:8px;font-family:'DM Sans',sans-serif">
+      <button id="btn-create-template" onclick="openStudioTemplateMode()" style="display:none;width:100%;align-items:center;gap:8px;justify-content:center;background:var(--amber);border:none;color:var(--on-amber);border-radius:8px;padding:8px 12px;cursor:pointer;font-size:12px;font-weight:700;margin-bottom:8px;font-family:'DM Sans',sans-serif">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="14" height="14"><path d="M12 5v14M5 12h14"/></svg>
         Créer un template
       </button>
@@ -678,7 +686,7 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
                  l'étirement non uniforme du viewBox. -->
             <svg id="dz-poly" viewBox="0 0 100 100" preserveAspectRatio="none"
                  style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible">
-              <polygon id="dz-zone" points="" fill="rgba(245,158,11,.18)" stroke="var(--amber)" stroke-width="2"
+              <polygon id="dz-zone" points="" fill="rgba(var(--amber-rgb),.18)" stroke="var(--amber)" stroke-width="2"
                        stroke-dasharray="3 2" vector-effect="non-scaling-stroke"
                        style="pointer-events:auto;cursor:move;touch-action:none"></polygon>
             </svg>
@@ -910,7 +918,7 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
           .tl-switch input{opacity:0;width:0;height:0}
           .tl-switch .tl-switch-slider{position:absolute;inset:0;background:var(--border);border-radius:26px;transition:.2s;cursor:pointer}
           .tl-switch .tl-switch-slider::before{content:"";position:absolute;height:20px;width:20px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
-          .tl-switch input:checked + .tl-switch-slider{background:var(--amber,#F59E0B)}
+          .tl-switch input:checked + .tl-switch-slider{background:var(--amber,var(--amber))}
           .tl-switch input:checked + .tl-switch-slider::before{transform:translateX(20px)}
         </style>
         <div class="table-card" style="padding:20px">
@@ -1756,7 +1764,7 @@ async function loadDesigns() {
   grid.innerHTML = designs.map(d => {
     const thumbUrl = pickThumb(d);
     return `
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(245,158,11,.3)'" onmouseout="this.style.borderColor='var(--border)'">
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(var(--amber-rgb),.3)'" onmouseout="this.style.borderColor='var(--border)'">
       <div style="aspect-ratio:1;background:var(--bg3);display:flex;align-items:center;justify-content:center;overflow:hidden">
         ${thumbUrl?`<img src="${thumbUrl}" style="width:100%;height:100%;object-fit:contain;background:#0e0e12">`:'<div style="font-size:32px">🎨</div>'}
       </div>
@@ -3286,22 +3294,22 @@ function drawZone(){
     zCtx.drawImage(zImg,(CANVAS_W-dw)/2,(CANVAS_H-dh)/2,dw,dh);
   }
   const dash=(performance.now()/50)%12;
-  zCtx.save();zCtx.strokeStyle='rgba(245,158,11,0.9)';zCtx.lineWidth=1.5;zCtx.setLineDash([6,3]);zCtx.lineDashOffset=-dash;
+  zCtx.save();zCtx.strokeStyle='rgba(var(--amber-rgb),0.9)';zCtx.lineWidth=1.5;zCtx.setLineDash([6,3]);zCtx.lineDashOffset=-dash;
   zCtx.strokeRect(zone.x+.5,zone.y+.5,zone.w,zone.h);zCtx.restore();
-  zCtx.fillStyle='rgba(245,158,11,0.07)';zCtx.fillRect(zone.x,zone.y,zone.w,zone.h);
+  zCtx.fillStyle='rgba(var(--amber-rgb),0.07)';zCtx.fillRect(zone.x,zone.y,zone.w,zone.h);
   const blen=14,bthick=2;
   [[zone.x,zone.y,1,1],[zone.x+zone.w,zone.y,-1,1],[zone.x,zone.y+zone.h,1,-1],[zone.x+zone.w,zone.y+zone.h,-1,-1]].forEach(([cx,cy,dx,dy])=>{
-    zCtx.fillStyle='rgba(245,158,11,0.95)';
+    zCtx.fillStyle='rgba(var(--amber-rgb),0.95)';
     zCtx.fillRect(cx,cy-(dy<0?bthick:0),blen*dx,bthick);
     zCtx.fillRect(cx-(dx<0?bthick:0),cy,bthick,blen*dy);
   });
   [zone.x+zone.w,zone.y+zone.h,zone.x,zone.y,zone.x+zone.w,zone.y,zone.x,zone.y+zone.h].reduce((acc,v,i,arr)=>{if(i%2===0)acc.push([arr[i],arr[i+1]]);return acc;},[]).forEach(([hx,hy])=>drawHandle(hx,hy));
-  zCtx.fillStyle='rgba(245,158,11,1)';zCtx.font='bold 11px monospace';
+  zCtx.fillStyle='rgba(var(--amber-rgb),1)';zCtx.font='bold 11px monospace';
   zCtx.fillText('Zone impression',zone.x+4,zone.y>14?zone.y-5:zone.y+14);
   zoneRafId=requestAnimationFrame(drawZone);
 }
 
-function drawHandle(x,y){zCtx.fillStyle='#F59E0B';zCtx.strokeStyle='#000';zCtx.lineWidth=1;zCtx.beginPath();zCtx.arc(x,y,HANDLE_SIZE/2,0,Math.PI*2);zCtx.fill();zCtx.stroke();}
+function drawHandle(x,y){zCtx.fillStyle='var(--amber)';zCtx.strokeStyle='#000';zCtx.lineWidth=1;zCtx.beginPath();zCtx.arc(x,y,HANDLE_SIZE/2,0,Math.PI*2);zCtx.fill();zCtx.stroke();}
 function getEventPos(e){const cvs=document.getElementById('zone-canvas');const rect=cvs.getBoundingClientRect();const scaleX=CANVAS_W/rect.width,scaleY=CANVAS_H/rect.height;const src=e.touches?e.touches[0]:e;return{x:(src.clientX-rect.left)*scaleX,y:(src.clientY-rect.top)*scaleY};}
 function hitHandle(px,py,hx,hy){return Math.abs(px-hx)<=HANDLE_SIZE&&Math.abs(py-hy)<=HANDLE_SIZE;}
 function getResizeDir(px,py){if(hitHandle(px,py,zone.x+zone.w,zone.y+zone.h))return 'SE';if(hitHandle(px,py,zone.x,zone.y))return 'NW';if(hitHandle(px,py,zone.x+zone.w,zone.y))return 'NE';if(hitHandle(px,py,zone.x,zone.y+zone.h))return 'SW';return '';}
@@ -4632,7 +4640,7 @@ async function loadAiStyles() {
       : `<div style="width:100%;aspect-ratio:1;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:11px;background:var(--bg3)">Sans visuel</div>`;
     const badge = s.is_builtin
       ? `<span style="position:absolute;top:8px;left:8px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;padding:2px 8px;border-radius:20px;font-family:'DM Mono',monospace">BUILT-IN</span>`
-      : `<span style="position:absolute;top:8px;left:8px;background:var(--amber);color:#000;font-size:10px;padding:2px 8px;border-radius:20px;font-family:'DM Mono',monospace;font-weight:700">CUSTOM</span>`;
+      : `<span style="position:absolute;top:8px;left:8px;background:var(--amber);color:var(--on-amber);font-size:10px;padding:2px 8px;border-radius:20px;font-family:'DM Mono',monospace;font-weight:700">CUSTOM</span>`;
     // Bouton "Supprimer" direct sur la carte : affiché pour TOUS les styles
     // (custom ET built-in). Le bouton stoppe la propagation pour ne pas ouvrir la modale.
     const deleteBtn = true
@@ -4996,7 +5004,7 @@ async function initConfigureProductPanel() {
 
       <div style="display:flex;gap:10px">
         <button id="cp-save-btn" onclick="saveConfigureProduct('${handle}','${productId}','${encodeURIComponent(title)}')"
-          style="flex:1;background:#f5a623;color:#000;border:none;border-radius:10px;padding:13px;font-weight:700;font-size:14px;cursor:pointer">
+          style="flex:1;background:var(--amber);color:var(--on-amber);border:none;border-radius:10px;padding:13px;font-weight:700;font-size:14px;cursor:pointer">
           ✓ Enregistrer la liaison
         </button>
         <button onclick="document.getElementById('cp-modal').remove()" title="Fermer"
