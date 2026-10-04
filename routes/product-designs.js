@@ -313,6 +313,132 @@ function _appliquerOmbres(calque, photoGris, w, h) {
   return calque;
 }
 
+/**
+ * Quelle photo du produit, et avec quelle zone calibrée.
+ * ──────────────────────────────────────────────────────────────────────────
+ * Partagé par les deux aperçus (visuel de bibliothèque et composition du
+ * client) : la règle est subtile — zone maîtresse, zone propre à une photo,
+ * rapprochement par nom de fichier — et deux copies finiraient par diverger.
+ *
+ * @returns {{photo,zone,coinsPct}} ou {{erreur:number,message:string}}
+ */
+async function _photoEtZone(db, shopId, productId, demandee) {
+  const zones = db.prepare(
+    `SELECT * FROM product_display_zones
+     WHERE shop_id=? AND shopify_product_id=? AND zone_type='product_display_zone'`
+  ).all(shopId, productId);
+  const master = zones.find(z => z.is_master === 1);
+  if (!master) return { erreur: 404, message: 'Produit sans zone d\'affichage calibrée' };
+
+  const boutique = db.prepare('SELECT shop_domain, access_token FROM shops WHERE id=? AND is_active=1')
+                     .get(shopId);
+  if (!boutique?.access_token) return { erreur: 503, message: 'Shopify non configuré' };
+
+  const photos = await _photosDuProduit(boutique.shop_domain, boutique.access_token, productId);
+  if (!photos.length) return { erreur: 404, message: 'Produit sans photo' };
+
+  // `demandee` peut être un GID Shopify ou l'URL que la vitrine affiche déjà —
+  // c'est cette seconde forme que le thème sait fournir, le DOM n'exposant
+  // pas les identifiants de média. On compare alors les noms de fichier.
+  let photo = photos.find(p => p.id === master.reference_media_id) || photos[0];
+  let zone  = master;
+
+  if (demandee) {
+    const cle = _nomDeFichier(demandee);
+    const candidate = photos.find(p =>
+      p.id === demandee ||
+      _cleFichier(p.id) === _cleFichier(demandee) ||
+      (cle && _nomDeFichier(p.url) === cle));
+
+    if (candidate) {
+      // Une zone calibrée SUR cette photo l'emporte, et sans contrôle de
+      // dimensions : elle y a été posée, elle est juste par construction.
+      const propre = zones.find(z => z.is_master !== 1 && z.reference_media_id === candidate.id);
+      if (propre) {
+        photo = candidate; zone = propre;
+      } else if ((!master.reference_width  || candidate.width  === master.reference_width) &&
+                 (!master.reference_height || candidate.height === master.reference_height)) {
+        // Même cadrage que la photo de référence : le master s'applique.
+        photo = candidate;
+      } else {
+        // Cadrage différent et aucune zone propre : on ne devine pas. Mieux
+        // vaut laisser la photo intacte qu'y poser un design de travers.
+        return { erreur: 404, message: 'Photo non calibrée pour ce produit' };
+      }
+    }
+  }
+
+  let coinsPct = [];
+  try { coinsPct = JSON.parse(zone.corners_json || '[]'); } catch { coinsPct = []; }
+  if (coinsPct.length !== 4) return { erreur: 409, message: 'Zone illisible' };
+
+  return { photo, zone, coinsPct };
+}
+
+/** Pose un design sur la photo, en perspective et sous les ombres du tissu. */
+async function _composerSurPhoto(photo, coinsPct, octetsDesign, chemin) {
+  const sharp = require('sharp');
+
+  // ── 1. La photo, ramenée à une taille d'affichage ────────────────────
+  const photoBrute = Buffer.from(await (await fetch(photo.url)).arrayBuffer());
+  const fond = sharp(photoBrute).resize({ width: PHOTO_LARGEUR_MAX, withoutEnlargement: true });
+  const { data: fondPix, info } = await fond.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const W = info.width, H = info.height;
+
+  // ── 2. Les coins, en pixels de cette image ───────────────────────────
+  const coins = PERSP.coinsEnPixels(coinsPct, W, H);
+  if (!coins) throw new Error('Coins inexploitables');
+  const cadre = PERSP.cadreEnglobant(coins, W, H);
+  if (!cadre.w || !cadre.h) throw new Error('Zone hors de la photo');
+
+  // ── 3. Le design, à une définition adaptée à la zone ─────────────────
+  //    Inutile d'échantillonner une image de 4000 px pour une zone de 300.
+  const cote = Math.max(cadre.w, cadre.h);
+  const { data: dPix, info: dInfo } = await sharp(octetsDesign)
+    .resize({ width: cote, height: cote, fit: 'inside', withoutEnlargement: true })
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  // ── 4. Projection dans le quadrilatère ───────────────────────────────
+  const calque = PERSP.projeterDansQuadrilatere(dPix, dInfo.width, dInfo.height, coins, cadre);
+  if (!calque) throw new Error('Projection impossible');
+
+  // ── 5. Ombres du tissu reportées sur le design ───────────────────────
+  const gris = await sharp(fondPix, { raw: { width: W, height: H, channels: 4 } })
+    .extract({ left: cadre.x, top: cadre.y, width: cadre.w, height: cadre.h })
+    .grayscale()
+    .raw()
+    .toBuffer();
+  _appliquerOmbres(calque, gris, cadre.w, cadre.h);
+
+  // ── 6. Composition ───────────────────────────────────────────────────
+  const png = await sharp(fondPix, { raw: { width: W, height: H, channels: 4 } })
+    .composite([{
+      input: Buffer.from(calque),
+      raw:   { width: cadre.w, height: cadre.h, channels: 4 },
+      left:  cadre.x,
+      top:   cadre.y,
+    }])
+    .png()
+    .toBuffer();
+
+  await fs.promises.mkdir(PHOTOS_DIR, { recursive: true });
+  await fs.promises.writeFile(chemin, png);
+}
+
+/** Sert un fichier déjà calculé, ou le calcule une seule fois. */
+async function _servirApercu(res, fichier, produire) {
+  const chemin   = path.join(PHOTOS_DIR, fichier);
+  const publique = `/uploads/generated/photos/${fichier}`;
+  if (fs.existsSync(chemin)) return res.redirect(302, publique);
+  if (_enCours.has(fichier)) { await _enCours.get(fichier); return res.redirect(302, publique); }
+  const travail = produire(chemin);
+  _enCours.set(fichier, travail);
+  try { await travail; } finally { _enCours.delete(fichier); }
+  res.redirect(302, publique);
+}
+
 router.get('/products/:productId/preview', attachShopId, async (req, res) => {
   const productId = String(req.params.productId || '').replace(/\D/g, '');
   const ref       = String(req.query.design || '').trim();
@@ -326,121 +452,68 @@ router.get('/products/:productId/preview', attachShopId, async (req, res) => {
       : db.prepare('SELECT * FROM library WHERE shop_id=? AND slug=? AND is_active=1').get(req.shopId, ref);
     if (!visuel) return res.status(404).json({ error: 'Visuel introuvable' });
 
-    const zones = db.prepare(
-      `SELECT * FROM product_display_zones
-       WHERE shop_id=? AND shopify_product_id=? AND zone_type='product_display_zone'`
-    ).all(req.shopId, productId);
-    const master = zones.find(z => z.is_master === 1);
-    if (!master) return res.status(404).json({ error: 'Produit sans zone d\'affichage calibrée' });
+    const ctx = await _photoEtZone(db, req.shopId, productId, String(req.query.media || '').trim());
+    if (ctx.erreur) return res.status(ctx.erreur).json({ error: ctx.message });
 
-    const boutique = db.prepare('SELECT shop_domain, access_token FROM shops WHERE id=? AND is_active=1')
-                       .get(req.shopId);
-    if (!boutique?.access_token) return res.status(503).json({ error: 'Shopify non configuré' });
-
-    const photos = await _photosDuProduit(boutique.shop_domain, boutique.access_token, productId);
-    if (!photos.length) return res.status(404).json({ error: 'Produit sans photo' });
-
-    // ── Quelle photo, et avec quelle zone ────────────────────────────────
-    //
-    // `media` peut être un GID Shopify ou l'URL que la vitrine affiche déjà —
-    // c'est cette seconde forme que le thème sait fournir, le DOM n'exposant
-    // pas les identifiants de média. On compare alors les noms de fichier.
-    const demandee = String(req.query.media || '').trim();
-    let photo = photos.find(p => p.id === master.reference_media_id) || photos[0];
-    let zone  = master;
-
-    if (demandee) {
-      const cle = _nomDeFichier(demandee);
-      const candidate = photos.find(p =>
-        p.id === demandee ||
-        _cleFichier(p.id) === _cleFichier(demandee) ||
-        (cle && _nomDeFichier(p.url) === cle));
-
-      if (candidate) {
-        // Une zone calibrée SUR cette photo l'emporte, et sans contrôle de
-        // dimensions : elle y a été posée, elle est juste par construction.
-        const propre = zones.find(z => z.is_master !== 1 && z.reference_media_id === candidate.id);
-        if (propre) {
-          photo = candidate; zone = propre;
-        } else if ((!master.reference_width  || candidate.width  === master.reference_width) &&
-                   (!master.reference_height || candidate.height === master.reference_height)) {
-          // Même cadrage que la photo de référence : le master s'applique.
-          photo = candidate;
-        } else {
-          // Cadrage différent et aucune zone propre : on ne devine pas. Mieux
-          // vaut laisser la photo intacte qu'y poser un design de travers.
-          return res.status(404).json({ error: 'Photo non calibrée pour ce produit' });
-        }
-      }
-    }
-
-    let coinsPct = [];
-    try { coinsPct = JSON.parse(zone.corners_json || '[]'); } catch { coinsPct = []; }
-    if (coinsPct.length !== 4) return res.status(409).json({ error: 'Zone illisible' });
-
-    const fichier  = `p${productId}_m${_cleFichier(photo.id)}_d${visuel.id}.png`;
-    const chemin   = path.join(PHOTOS_DIR, fichier);
-    const publique = `/uploads/generated/photos/${fichier}`;
-
-    if (fs.existsSync(chemin)) return res.redirect(302, publique);
-    if (_enCours.has(fichier)) { await _enCours.get(fichier); return res.redirect(302, publique); }
-
-    const travail = (async () => {
-      const sharp = require('sharp');
-
-      // ── 1. La photo, ramenée à une taille d'affichage ────────────────────
-      const photoBrute = Buffer.from(await (await fetch(photo.url)).arrayBuffer());
-      const fond = sharp(photoBrute).resize({ width: PHOTO_LARGEUR_MAX, withoutEnlargement: true });
-      const { data: fondPix, info } = await fond.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-      const W = info.width, H = info.height;
-
-      // ── 2. Les coins, en pixels de cette image ───────────────────────────
-      const coins = PERSP.coinsEnPixels(coinsPct, W, H);
-      if (!coins) throw new Error('Coins inexploitables');
-      const cadre = PERSP.cadreEnglobant(coins, W, H);
-      if (!cadre.w || !cadre.h) throw new Error('Zone hors de la photo');
-
-      // ── 3. Le design, à une définition adaptée à la zone ─────────────────
-      //    Inutile d'échantillonner une image de 4000 px pour une zone de 300.
-      const cote = Math.max(cadre.w, cadre.h);
-      const { data: dPix, info: dInfo } = await sharp(await _octetsDuVisuel(visuel.url))
-        .resize({ width: cote, height: cote, fit: 'inside', withoutEnlargement: true })
-        .ensureAlpha()
-        .raw()
-        .toBuffer({ resolveWithObject: true });
-
-      // ── 4. Projection dans le quadrilatère ───────────────────────────────
-      const calque = PERSP.projeterDansQuadrilatere(dPix, dInfo.width, dInfo.height, coins, cadre);
-      if (!calque) throw new Error('Projection impossible');
-
-      // ── 5. Ombres du tissu reportées sur le design ───────────────────────
-      const gris = await sharp(fondPix, { raw: { width: W, height: H, channels: 4 } })
-        .extract({ left: cadre.x, top: cadre.y, width: cadre.w, height: cadre.h })
-        .grayscale()
-        .raw()
-        .toBuffer();
-      _appliquerOmbres(calque, gris, cadre.w, cadre.h);
-
-      // ── 6. Composition ───────────────────────────────────────────────────
-      const png = await sharp(fondPix, { raw: { width: W, height: H, channels: 4 } })
-        .composite([{
-          input: Buffer.from(calque),
-          raw:   { width: cadre.w, height: cadre.h, channels: 4 },
-          left:  cadre.x,
-          top:   cadre.y,
-        }])
-        .png()
-        .toBuffer();
-
-      await fs.promises.mkdir(PHOTOS_DIR, { recursive: true });
-      await fs.promises.writeFile(chemin, png);
-    })();
-
-    _enCours.set(fichier, travail);
-    try { await travail; } finally { _enCours.delete(fichier); }
-    res.redirect(302, publique);
+    const fichier = `p${productId}_m${_cleFichier(ctx.photo.id)}_d${visuel.id}.png`;
+    await _servirApercu(res, fichier, async (chemin) => {
+      await _composerSurPhoto(ctx.photo, ctx.coinsPct, await _octetsDuVisuel(visuel.url), chemin);
+    });
   } catch (e) {
     console.error('GET /products/:id/preview :', e.message);
+    res.status(500).json({ error: 'Aperçu indisponible' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/products/:productId/composition-preview — la création du client
+// ─────────────────────────────────────────────────────────────────────────────
+// Même rendu que ci-dessus, mais à partir d'une COMPOSITION enregistrée et
+// non d'un visuel de la bibliothèque. C'est l'image qui illustre la ligne de
+// panier : sans elle, le client voit le vêtement vierge et doute d'avoir
+// commandé ce qu'il a dessiné.
+//
+// Le fichier d'impression seul ne suffisait pas — un visuel sur fond
+// transparent, sorti de son contexte, ne ressemble pas à ce qu'on achète.
+//
+// Protégé par le jeton du design : sans lui, l'identifiant étant un entier,
+// n'importe qui pourrait parcourir les créations des autres clients.
+router.get('/products/:productId/composition-preview', attachShopId, async (req, res) => {
+  const productId = String(req.params.productId || '').replace(/\D/g, '');
+  const designId  = Number(req.query.design);
+  const jeton     = String(req.query.token || '');
+  const face      = req.query.face === 'back' ? 'back' : 'front';
+  if (!productId || !designId) return res.status(400).json({ error: 'productId et design requis' });
+
+  try {
+    const db = getDB();
+    const design = db.prepare(
+      'SELECT id, edit_token, composition_json FROM designs WHERE id=? AND shop_id=?'
+    ).get(designId, req.shopId);
+    if (!design) return res.status(404).json({ error: 'Design introuvable' });
+    if (design.edit_token && design.edit_token !== jeton) {
+      return res.status(403).json({ error: 'Jeton design invalide' });
+    }
+
+    const ctx = await _photoEtZone(db, req.shopId, productId, String(req.query.media || '').trim());
+    if (ctx.erreur) return res.status(ctx.erreur).json({ error: ctx.message });
+
+    // Une composition ne change plus une fois enregistrée : l'identifiant
+    // suffit comme clé de cache, pas besoin d'empreinte.
+    const fichier = `p${productId}_m${_cleFichier(ctx.photo.id)}_c${designId}-${face}.png`;
+    await _servirApercu(res, fichier, async (chemin) => {
+      const COMP  = require('../utils/composition');
+      const PRINT = require('../utils/print-composition');
+      const racine = process.env.DATA_DIR || path.join(__dirname, '..');
+      let composition;
+      try { composition = COMP.normaliser(JSON.parse(design.composition_json || '{}')); }
+      catch { composition = COMP.creer(); }
+      const rendu = await PRINT.rendreFace(composition, face, { racineLocale: racine });
+      if (!rendu) throw new Error('face vide');
+      await _composerSurPhoto(ctx.photo, ctx.coinsPct, rendu.buffer, chemin);
+    });
+  } catch (e) {
+    console.error('GET /products/:id/composition-preview :', e.message);
     res.status(500).json({ error: 'Aperçu indisponible' });
   }
 });
