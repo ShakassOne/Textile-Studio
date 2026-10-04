@@ -62,26 +62,27 @@
     // thème dispose en rangée, le conteneur était écrasé à zéro de large et
     // la barre devenait invisible — présente dans le DOM, mais sans surface.
     + '.tsle{position:relative;margin:16px 0;width:100%;flex:1 1 100%;min-width:0;box-sizing:border-box}'
-    + '.tsle-bar{display:flex;gap:6px;overflow-x:auto;padding:4px 0;min-width:0;scrollbar-width:none}'
-    + '.tsle-bar::-webkit-scrollbar{display:none}'
+    // Barre et panneau sont déplacés dans la grille produit : le bloc du
+    // marchand n'a plus rien à montrer, et son emplacement n'importe plus.
+    + '.tsle-efface{display:none!important}'
+    // La barre vit sous la photo, centrée.
+    + '.tsle-bar{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;'
+    +   'padding:14px 0 2px;width:100%;box-sizing:border-box}'
     + '.tsle-tool{flex:0 0 auto;display:inline-flex;align-items:center;gap:7px;padding:9px 14px;border-radius:999px;'
     +   'border:1px solid rgba(128,128,128,.35);background:transparent;color:inherit;font:inherit;font-size:.85rem;'
     +   'cursor:pointer;line-height:1;white-space:nowrap;transition:background .18s,color .18s,border-color .18s}'
     + '.tsle-tool svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}'
     + '.tsle-tool[aria-expanded="true"]{background:var(--tsle-accent,#111114);color:var(--tsle-on-accent,#fff);border-color:var(--tsle-accent,#111114)}'
 
-    // Le tiroir est ancré au BAS du bloc et se déploie vers le haut : c'est ce
-    // qui lui fait recouvrir le titre, le prix et les tailles sans jamais
-    // masquer les couleurs ni le bouton panier, qui sont dessous.
-    // Le tiroir est ancré sur la BARRE et non sur le bloc : `bottom:100%` de
-    // l'ancre le place pile au-dessus des icônes, qui restent donc visibles —
-    // l'icône active doit se voir tant que son panneau est ouvert.
-    + '.tsle-anchor{position:relative}'
-    + '.tsle-drawer{position:absolute;left:0;right:0;bottom:calc(100% + 8px);z-index:30;'
-    +   'background:var(--tsle-surface,#fff);color:inherit;border:1px solid rgba(128,128,128,.25);'
-    +   'border-radius:16px;box-shadow:0 -6px 40px rgba(0,0,0,.14);overflow:hidden;'
-    +   'opacity:0;transform:translateY(10px) scale(.985);pointer-events:none;visibility:hidden}'
-    + '.tsle-drawer.open{opacity:1;transform:none;pointer-events:auto;visibility:visible}'
+    // Le panneau occupe EXACTEMENT la colonne d'informations : il ne se
+    // superpose plus, il la remplace. Plus d'ombre ni de bordure — ce n'est
+    // pas un objet posé sur la page, c'est la colonne elle-même.
+    + '.tsle-vue{position:absolute;inset:0;z-index:4;display:flex;flex-direction:column;'
+    +   'overflow:hidden;will-change:transform,opacity}'
+    // Repli sur un thème dont on ne sait pas lire la grille : le panneau
+    // reste dans le flux, encadré, sans animation.
+    + '.tsle-vue.tsle-plat{position:static;border:1px solid rgba(128,128,128,.25);'
+    +   'border-radius:16px;margin-top:10px;max-height:70vh}'
     + '.tsle-head{display:flex;align-items:center;gap:12px;padding:16px 18px 10px}'
     + '.tsle-head-icon{flex:0 0 auto;width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;'
     +   'background:rgba(128,128,128,.14)}'
@@ -93,7 +94,7 @@
     +   'background:transparent;color:inherit;font-size:24px;line-height:1;cursor:pointer;opacity:.7;'
     +   'pointer-events:auto;display:flex;align-items:center;justify-content:center}'
     + '.tsle-close:hover{opacity:1;background:rgba(128,128,128,.14)}'
-    + '.tsle-body{padding:4px 18px 18px}'
+    + '.tsle-body{flex:1;min-height:0;overflow-y:auto;padding:4px 18px 18px}'
     + '.tsle-panel{display:none}'
     + '.tsle-panel.on{display:block}'
     + '.tsle-vide{padding:26px 0;text-align:center;font-size:.85rem;opacity:.5}'
@@ -209,10 +210,10 @@
 
     // Panneau Calques
     + '.tsle-deux > div{min-width:0}'
-    + '.tsle-drawer.large .tsle-deux{display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;align-items:start}'
-    + '.tsle-drawer.large .tsle-deux > div + div:not(.tsle-pleine){padding-left:24px;'
+    + '.tsle-vue.large .tsle-deux{display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;align-items:start}'
+    + '.tsle-vue.large .tsle-deux > div + div:not(.tsle-pleine){padding-left:24px;'
     +   'border-left:1px solid rgba(128,128,128,.22)}'
-    + '.tsle-drawer.large .tsle-pleine{grid-column:1/-1}'
+    + '.tsle-vue.large .tsle-pleine{grid-column:1/-1}'
     + '.tsle-entete{display:flex;flex-direction:column;gap:2px;padding:10px 13px;border-radius:11px;'
     +   'background:rgba(128,128,128,.12)}'
     + '.tsle-entete b{font-size:.88rem}'
@@ -261,29 +262,10 @@
     + '.tsle-sousbloc{display:none;grid-column:1/-1}'
     + '.tsle-sousbloc.on{display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:15px 18px;align-items:end}'
 
-    // Barre fixe mobile : couleurs + panier, toujours atteignables.
-    + '.tsle-mbar{position:fixed;left:0;right:0;bottom:0;z-index:40;display:none;align-items:center;gap:10px;'
-    +   'padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px));'
-    +   'background:var(--tsle-surface,#fff);border-top:1px solid rgba(128,128,128,.25);'
-    +   'box-shadow:0 -4px 20px rgba(0,0,0,.10)}'
-    + '.tsle-swatches{flex:1;min-width:0;display:flex;gap:7px;overflow-x:auto;scrollbar-width:none}'
-    + '.tsle-swatches::-webkit-scrollbar{display:none}'
-    + '.tsle-sw{flex:0 0 auto;width:28px;height:28px;border-radius:50%;border:2px solid rgba(128,128,128,.4);'
-    +   'padding:0;cursor:pointer;background-clip:padding-box}'
-    + '.tsle-sw[aria-pressed="true"]{outline:2px solid var(--tsle-accent,#111114);outline-offset:2px}'
-    + '.tsle-mcart{flex:0 0 auto;border:0;border-radius:999px;padding:11px 18px;font:inherit;font-size:.9rem;font-weight:600;'
-    +   'background:var(--tsle-accent,#111114);color:var(--tsle-on-accent,#fff);cursor:pointer;white-space:nowrap}'
-
     + '.tsle-alerte{animation:tsle-pulse 1.1s ease 2}'
     + '@keyframes tsle-pulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,0)}50%{box-shadow:0 0 0 4px rgba(220,38,38,.35)}}'
 
-    + '@media (max-width:767px){'
-    +   '.tsle-mbar{display:flex}'
-    +   '.tsle-drawer{position:fixed;left:0;right:0;bottom:0;top:auto;border-radius:18px 18px 0 0;'
-    +     'max-height:58vh;overflow-y:auto;transform:translateY(100%);box-shadow:0 -10px 40px rgba(0,0,0,.25)}'
-    +   '.tsle-drawer.open{transform:translateY(calc(-1 * var(--tsle-mbar-h,64px)))}'
-    + '}'
-    + '@media (prefers-reduced-motion:reduce){.tsle-drawer,.tsle-panel{transition:none!important}}';
+    + '@media (prefers-reduced-motion:reduce){.tsle-vue,.tsle-panel{transition:none!important}}';
 
   function styles() {
     if (document.getElementById('tsle-css')) return;
@@ -345,37 +327,47 @@
       this.racine.style.setProperty('--tsle-on-accent', '#ffffff');
     } // 'theme' : on laisse les valeurs par défaut du CSS
 
-    var html = '<div class="tsle-anchor"><div class="tsle-bar" role="tablist">';
-    this.outils.forEach(function (cle) {
+    // La barre va SOUS la photo, le panneau DANS la colonne d'informations.
+    // Le bloc du marchand ne porte donc plus rien de visible : il reste en
+    // place parce que c'est lui qui transporte les réglages, mais sans
+    // surface. Ça rend aussi son emplacement dans le thème indifférent.
+    this.barre = document.createElement('div');
+    this.barre.className = 'tsle-bar';
+    this.barre.setAttribute('role', 'tablist');
+    this.barre.innerHTML = this.outils.map(function (cle) {
       var o = OUTILS[cle];
-      html += '<button type="button" class="tsle-tool" data-outil="' + cle + '" aria-expanded="false">'
-            +   '<svg viewBox="0 0 24 24" aria-hidden="true">' + o.icone + '</svg>'
-            +   '<span>' + esc(o.titre) + '</span>'
-            + '</button>';
-    });
-    html += '</div>';
+      return '<button type="button" class="tsle-tool" data-outil="' + cle + '" aria-expanded="false">'
+           +   '<svg viewBox="0 0 24 24" aria-hidden="true">' + o.icone + '</svg>'
+           +   '<span>' + esc(o.titre) + '</span>'
+           + '</button>';
+    }).join('');
 
-    html += '<div class="tsle-drawer" role="dialog" aria-modal="false" aria-label="Personnalisation">'
-          +   '<div class="tsle-head">'
-          +     '<span class="tsle-head-icon"><svg viewBox="0 0 24 24" aria-hidden="true"></svg></span>'
-          +     '<span class="tsle-head-txt"><b></b><span></span></span>'
-          +     '<button type="button" class="tsle-close" aria-label="Fermer">×</button>'
-          +   '</div>'
-          +   '<div class="tsle-body">';
-    this.outils.forEach(function (cle) {
-      html += '<div class="tsle-panel" data-panneau="' + cle + '">'
-            +   '<div class="tsle-vide">Panneau « ' + esc(OUTILS[cle].titre) + ' » — à venir</div>'
-            + '</div>';
-    });
-    html += '</div></div></div>'; // body + drawer + anchor
+    this.vue = document.createElement('div');
+    this.vue.className = 'tsle-vue';
+    this.vue.setAttribute('role', 'dialog');
+    this.vue.setAttribute('aria-label', 'Personnalisation');
+    this.vue.hidden = true;
+    this.vue.innerHTML =
+        '<div class="tsle-head">'
+      +   '<span class="tsle-head-icon"><svg viewBox="0 0 24 24" aria-hidden="true"></svg></span>'
+      +   '<span class="tsle-head-txt"><b></b><span></span></span>'
+      +   '<button type="button" class="tsle-close" aria-label="Fermer">×</button>'
+      + '</div>'
+      + '<div class="tsle-body">'
+      +   this.outils.map(function (cle) {
+            return '<div class="tsle-panel" data-panneau="' + cle + '">'
+                 +   '<div class="tsle-vide">Panneau « ' + esc(OUTILS[cle].titre) + ' » — à venir</div>'
+                 + '</div>';
+          }).join('')
+      + '</div>';
 
-    this.racine.innerHTML = html;
-    this.drawer = this.racine.querySelector('.tsle-drawer');
-    this.barre = this.racine.querySelector('.tsle-bar');
+    this.placer();
 
-    this.racine.addEventListener('click', function (e) {
+    this.barre.addEventListener('click', function (e) {
       var t = e.target.closest ? e.target.closest('.tsle-tool') : null;
-      if (t) { self.basculer(t.getAttribute('data-outil')); return; }
+      if (t) self.basculer(t.getAttribute('data-outil'));
+    });
+    this.vue.addEventListener('click', function (e) {
       if (e.target.closest && e.target.closest('.tsle-close')) self.fermer();
     });
 
@@ -387,8 +379,8 @@
     // qui aurait dû suivre.
     var fermerSi = function (e) {
       var t = e.target;
-      if (!t || !t.closest) return;
-      if (!self.racine.contains(t) || !t.closest('.tsle-close')) return;
+      if (!t || !t.closest || !self.vue.contains(t)) return;
+      if (!t.closest('.tsle-close')) return;
       e.preventDefault(); e.stopPropagation();
       self.fermer();
     };
@@ -399,28 +391,41 @@
       if (e.key === 'Escape' && self.outil) self.fermer();
     });
 
-    // En positionnement fixe, le tiroir ne suit pas la page tout seul.
-    var attendu = false;
-    var suivre = function () {
-      if (!self.outil || attendu) return;
-      attendu = true;
-      requestAnimationFrame(function () { attendu = false; if (self.outil) self.elargir(); });
-    };
-    window.addEventListener('scroll', suivre, { passive: true });
-    window.addEventListener('resize', suivre);
+    // La largeur de la colonne change avec la fenêtre : la distance de
+    // glissement aussi, sinon le contenu sorti réapparaît par le bord.
+    window.addEventListener('resize', function () {
+      if (self.outil) self.glisser(true, true);
+    });
 
-    // Hauteur réelle de la barre : le tiroir s'arrête juste au-dessus d'elle.
-    var mesurerBarre = function () {
-      self.racine.style.setProperty('--tsle-bar-h', self.barre.offsetHeight + 'px');
-    };
-    mesurerBarre();
-    window.addEventListener('resize', function () { mesurerBarre(); if (self.outil) self.ajuster(); });
+    // Le thème reconstruit ses colonnes au changement de variante : la barre
+    // et le panneau disparaissent avec. On les repose.
+    if (window.MutationObserver) {
+      var o = new MutationObserver(function () {
+        if (!self.colonne || !self.barre.isConnected || !self.vue.isConnected) self.placer();
+      });
+      o.observe(document.body, { childList: true, subtree: true });
+    }
 
-    this.barreMobile();
+    // Les images ne sont pas forcément mises en page quand le script
+    // s'exécute : sans seconde tentative, une fiche parfaitement normale
+    // resterait sur le repli pour toute la visite.
+    if (!this.colonne) {
+      window.addEventListener('load', function () { self.placer(); });
+      setTimeout(function () {
+        self.placer();
+        // On n'avertit qu'après avoir réessayé : une photo pas encore mise
+        // en page n'est pas un défaut d'intégration, et crier trop tôt
+        // enverrait l'intégrateur chercher un problème qui n'existe pas.
+        if (!self.colonne) {
+          console.warn('[TSL] Colonne produit introuvable : la barre et le panneau restent '
+            + 'dans le bloc. Vérifiez que la fiche a bien une photo principale.');
+        }
+      }, 1200);
+    }
+
+    this.reperColoris();
     this.brancherPrix();
     this.brancherPanier();
-
-    this.verifierPlacement();
 
     var parDefaut = this.racine.getAttribute('data-tsl-default-tool');
     if (parDefaut && OUTILS[parDefaut] && this.outils.indexOf(parDefaut) >= 0) {
@@ -428,38 +433,77 @@
     }
   };
 
+  // ── Où poser la barre et le panneau ───────────────────────────────────────
+  //
+  // Rien n'est codé en dur sur le thème : on part de la photo du produit et
+  // on remonte. La colonne d'informations est le premier ancêtre du bloc qui
+  // ne contient PAS la photo alors que son parent, lui, la contient — c'est
+  // la définition même de « l'autre colonne de la grille produit ».
+
+  Editeur.prototype.colonneInfos = function (img) {
+    if (!img) return null;
+    var n = this.racine;
+    while (n && n.parentElement && n.parentElement !== document.body) {
+      if (!n.contains(img) && n.parentElement.contains(img)) return n;
+      n = n.parentElement;
+    }
+    return null;
+  };
+
+  Editeur.prototype.colonneMedia = function (colonne, img) {
+    var grille = colonne && colonne.parentElement;
+    if (!grille) return null;
+    for (var i = 0; i < grille.children.length; i++) {
+      if (grille.children[i].contains(img)) return grille.children[i];
+    }
+    return null;
+  };
+
   /**
-   * Signale un placement qui ne peut pas fonctionner.
+   * Fond opaque hérité de la page.
    *
-   * Le tiroir s'ouvre vers le haut : posé tout en haut de la colonne d'infos,
-   * il n'a rien à recouvrir et s'affiche dans le vide. Posé dans un groupe
-   * disposé en rangée, le bloc n'a pas de largeur du tout. Dans les deux cas
-   * l'intégrateur ne voit rien et ne sait pas pourquoi — d'où cet
-   * avertissement en console plutôt qu'un échec muet.
+   * Le panneau recouvre la colonne : il lui faut un fond, et un fond blanc
+   * codé en dur serait illisible sur un thème sombre. On remonte jusqu'au
+   * premier ancêtre qui en déclare un vraiment.
    */
-  Editeur.prototype.verifierPlacement = function () {
-    var self = this;
-    setTimeout(function () {
-      var r = self.racine.getBoundingClientRect();
-      if (r.width < 80) {
-        console.warn('[TSL] Le bloc éditeur n\'a presque pas de largeur (' + Math.round(r.width)
-          + 'px). Il est probablement posé dans un groupe de blocs disposé en rangée : '
-          + 'déplacez-le au niveau de la colonne produit.');
-      }
-      // Même mesure que le placement réel : inutile d'avertir quand le
-      // tiroir trouve sa place.
-      var section = self.sectionProduit();
-      if (section) {
-        var plafond = Math.max(self.bandeauHaut() + 8, MARGE,
-                               Math.round(section.getBoundingClientRect().top));
-        if (Math.round(self.barre.getBoundingClientRect().top) - 8 - plafond < HAUT_MIN) {
-          console.info('[TSL] Pas assez de place au-dessus de la barre d\'outils : le '
-            + 'tiroir s\'ouvrira vers le BAS et recouvrira les couleurs tant qu\'il est '
-            + 'ouvert. Pour qu\'il monte et s\'arrête juste avant elles, descendez le '
-            + 'bloc dans la colonne, entre le prix et le sélecteur de variante.');
-        }
-      }
-    }, 300);
+  function fondOpaque(el) {
+    var n = el;
+    while (n && n !== document.documentElement) {
+      var c = getComputedStyle(n).backgroundColor;
+      if (c && c !== 'transparent' && !/rgba\(\s*0,\s*0,\s*0,\s*0\s*\)/.test(c)) return c;
+      n = n.parentElement;
+    }
+    return '#ffffff';
+  }
+
+  Editeur.prototype.placer = function () {
+    var img = imageProduit();
+    var colonne = this.colonneInfos(img);
+    var media = colonne ? this.colonneMedia(colonne, img) : null;
+
+    if (!colonne || !media) {
+      // Repli : thème dont on ne sait pas lire la grille. Tout reste dans le
+      // bloc, en flux normal — moins beau, mais utilisable, et l'intégrateur
+      // sait pourquoi.
+      this.vue.classList.add('tsle-plat');
+      if (this.barre.parentElement !== this.racine) this.racine.appendChild(this.barre);
+      if (this.vue.parentElement !== this.racine) this.racine.appendChild(this.vue);
+      this.colonne = null;
+      return false;
+    }
+
+    this.racine.classList.add('tsle-efface');
+    this.vue.classList.remove('tsle-plat');
+    if (this.barre.parentElement !== media) media.appendChild(this.barre);
+    if (this.vue.parentElement !== colonne) colonne.appendChild(this.vue);
+    this.colonne = colonne;
+
+    // Repère de positionnement du panneau. On ne touche à rien d'autre :
+    // la colonne garde sa largeur, sa hauteur et son comportement collant.
+    if (getComputedStyle(colonne).position === 'static') colonne.style.position = 'relative';
+    this.vue.style.background = fondOpaque(colonne);
+    this.vue.classList.toggle('large', colonne.offsetWidth >= 640);
+    return true;
   };
 
   // ── Ouverture, fermeture, changement d'outil ──────────────────────────────
@@ -475,18 +519,18 @@
     this.outil = cle;
 
     var o = OUTILS[cle];
-    this.drawer.querySelector('.tsle-head-icon svg').innerHTML = o.icone;
-    this.drawer.querySelector('.tsle-head-txt b').textContent = o.titre;
-    this.drawer.querySelector('.tsle-head-txt span').textContent = o.sous;
+    this.vue.querySelector('.tsle-head-icon svg').innerHTML = o.icone;
+    this.vue.querySelector('.tsle-head-txt b').textContent = o.titre;
+    this.vue.querySelector('.tsle-head-txt span').textContent = o.sous;
 
-    // Changement d'outil tiroir ouvert : on fond le contenu, on ne referme pas.
-    var corps = this.drawer.querySelector('.tsle-body');
+    // Changement d'outil panneau ouvert : on fond le contenu, la colonne ne
+    // revient pas pour repartir aussitôt.
+    var corps = this.vue.querySelector('.tsle-body');
     var montrer = function () {
-      self.drawer.querySelectorAll('.tsle-panel').forEach(function (p) {
+      self.vue.querySelectorAll('.tsle-panel').forEach(function (p) {
         p.classList.toggle('on', p.getAttribute('data-panneau') === cle);
       });
       self.remplirPanneau(cle);
-      self.ajuster();
     };
     if (changement && !SOBRE && !sansAnim) {
       corps.style.transition = 'opacity 120ms linear';
@@ -500,14 +544,7 @@
       b.setAttribute('aria-expanded', b.getAttribute('data-outil') === cle ? 'true' : 'false');
     });
 
-    if (!this.drawer.classList.contains('open')) {
-      if (this.mesurerBarreMobile) this.mesurerBarreMobile();
-      this.drawer.style.transition = (SOBRE || sansAnim) ? 'none'
-        : 'opacity ' + DUREE + 'ms ' + COURBE + ', transform ' + DUREE + 'ms ' + COURBE;
-      // Laisser le navigateur enregistrer l'état fermé avant d'animer.
-      void this.drawer.offsetWidth;
-      this.drawer.classList.add('open');
-    }
+    if (!changement) this.glisser(true, sansAnim);
   };
 
   Editeur.prototype.fermer = function () {
@@ -517,187 +554,97 @@
     // tactiles et le client ne peut plus faire défiler la fiche produit.
     if (this.scene) this.scene.classList.remove('actif');
     if (this.moteur) this.moteur.canvas.discardActiveObject().requestRenderAll();
-    // Rendre le tiroir à son ancrage CSS : laissé en fixe, il resterait
-    // affiché par-dessus la page pendant l'animation de fermeture.
-    var d = this.drawer;
-    ['position', 'left', 'right', 'top', 'bottom', 'width', 'maxHeight', 'overflowY', 'zIndex']
-      .forEach(function (p) { d.style[p] = ''; });
-    this.drawer.classList.remove('open');
-    this.barre.querySelectorAll('.tsle-tool').forEach(function (b) { b.setAttribute('aria-expanded', 'false'); });
-    this.racine.style.paddingTop = '';
-  };
-
-  /**
-   * Fait de la place au tiroir sans jamais recouvrir ce qui est sous le bloc.
-   *
-   * Le tiroir est ancré au bas du bloc et monte. S'il est plus haut que
-   * l'espace disponible au-dessus, c'est le bloc qui grandit : les couleurs
-   * et le bouton panier descendent doucement au lieu d'être masqués.
-   */
-  /**
-   * Section produit : le plus proche ancêtre qui contient AUSSI la photo.
-   * C'est elle qui donne les marges de la page, donc le cadre dans lequel le
-   * tiroir doit s'inscrire.
-   */
-  Editeur.prototype.sectionProduit = function () {
-    var img = imageProduit();
-    var n = this.racine.parentElement;
-    while (n && n !== document.body) {
-      if (!img || n.contains(img)) return n;
-      n = n.parentElement;
-    }
-    return this.racine.parentElement;
-  };
-
-  var MARGE = 16;
-  var HAUT_MIN = 300;
-
-  /**
-   * Bas du bandeau collé en haut de la fenêtre (en-tête du thème).
-   *
-   * Sans cette mesure, le tiroir se plaçait dans la bande occupée par
-   * l'en-tête : à moitié recouvert, et surtout **la croix de fermeture
-   * devenait incliquable** — les clics atterrissaient sur le logo du site,
-   * qui est au-dessus dans l'ordre d'empilement. C'était la vraie cause du
-   * « le bouton fermer ne marche pas ».
-   */
-  Editeur.prototype.bandeauHaut = function () {
-    if (!document.elementsFromPoint) return 0;
-    var self = this, bas = 0;
-    [60, Math.round(window.innerWidth / 2), Math.max(60, window.innerWidth - 60)].forEach(function (x) {
-      var els = document.elementsFromPoint(x, 2) || [];
-      for (var k = 0; k < els.length; k++) {
-        var e = els[k];
-        if (!e || e === document.body || e === document.documentElement) continue;
-        if (self.racine.contains(e)) continue;   // notre propre tiroir
-        var p = getComputedStyle(e).position;
-        if (p !== 'fixed' && p !== 'sticky') continue;
-        var r = e.getBoundingClientRect();
-        // Un bandeau, pas un calque plein écran : on ignore ce qui descend
-        // au-delà du premier tiers de la fenêtre.
-        if (r.top <= 2 && r.bottom > bas && r.bottom < window.innerHeight * 0.4) bas = r.bottom;
-      }
+    this.barre.querySelectorAll('.tsle-tool').forEach(function (b) {
+      b.setAttribute('aria-expanded', 'false');
     });
-    return Math.round(bas);
+    this.glisser(false);
   };
 
   /**
-   * Haut du premier « séparateur » sous la barre : sélecteur de variante,
-   * de couleur, ou à défaut le formulaire panier. C'est la limite basse
-   * demandée — le tiroir ne doit pas recouvrir les couleurs.
-   */
-  var ARRETS = '[data-tsl-stop],variant-selects,variant-radios,.product-form__input,'
-             + '.product-variant-picker,.product-form,form[action*="/cart/add"]';
-
-  Editeur.prototype.arretBas = function (depuis) {
-    var self = this, haut = 0;
-    var cands = document.querySelectorAll(ARRETS);
-    for (var k = 0; k < cands.length; k++) {
-      var e = cands[k];
-      if (self.racine.contains(e) || e.contains(self.racine)) continue;
-      var r = e.getBoundingClientRect();
-      if (r.height < 10) continue;
-      if (r.top > depuis + 40 && (!haut || r.top < haut)) haut = r.top;
-    }
-    return Math.round(haut);
-  };
-
-  /**
-   * Place le tiroir : jusqu'au bord gauche de la section, et dans le sens
-   * où il y a la place.
+   * Échange la colonne d'informations contre le panneau, par glissement.
    *
-   * La maquette montre le tiroir qui MONTE depuis la barre d'outils : il
-   * recouvre le titre et le prix, jamais les couleurs ni le panier. Ça ne
-   * tient que si la barre est posée bas dans la colonne. Posée tout en
-   * haut — le cas aujourd'hui sur le thème — il ne restait au-dessus que
-   * la bande de l'en-tête : le tiroir s'y écrasait en bandeau inutilisable.
-   * On choisit donc le sens selon la place réellement disponible.
+   * Le contenu de la colonne part vers la DROITE, le panneau arrive par la
+   * GAUCHE : les deux ne se croisent jamais à l'écran. On déplace les
+   * enfants de la colonne, pas la colonne elle-même — une translation ne
+   * change pas la place occupée dans la mise en page, donc la fiche ne bouge
+   * pas d'un pixel et le comportement collant de la colonne est intact.
+   *
+   * Le rognage est posé sur la colonne elle-même, jamais sur un de ses
+   * parents : `overflow` sur un ancêtre d'un élément collant le décolle.
+   * Et `clip` plutôt que `hidden`, qui lui créerait un conteneur de
+   * défilement.
    */
-  Editeur.prototype.elargir = function () {
-    var d = this.drawer;
-    if (window.innerWidth < 768) {
-      // Mobile : feuille pleine largeur pilotée par la CSS.
-      ['position', 'left', 'right', 'top', 'bottom', 'width', 'maxHeight', 'overflowY', 'zIndex']
-        .forEach(function (p) { d.style[p] = ''; });
-      return;
-    }
-    var section = this.sectionProduit();
-    if (!section) return;
-    var rs = section.getBoundingClientRect();
-    var rb = this.barre.getBoundingClientRect();
+  Editeur.prototype.glisser = function (ouvert, instantane) {
+    var self = this;
+    var col = this.colonne;
+    var duree = (instantane || SOBRE) ? 0 : DUREE;
 
-    // Positionnement FIXE et explicite plutôt qu'un décalage négatif depuis
-    // le bloc : le tiroir déborde volontairement de la colonne d'infos, et
-    // un ancêtre en overflow:hidden le rognerait sans prévenir.
-    var gauche = Math.round(Math.max(MARGE, rs.left + MARGE));
-    var droite = Math.round(Math.min(window.innerWidth - MARGE, rb.right));
-    // Le tiroir s'étale vers la gauche, mais il s'arrête à la photo : c'est
-    // elle qui montre le texte en place sur le vêtement, la recouvrir
-    // reviendrait à personnaliser à l'aveugle. On ne déborde dessus que si
-    // la colonne restante est trop étroite pour loger les réglages.
-    var photo = imageProduit();
-    if (photo) {
-      var rp = photo.getBoundingClientRect();
-      if (rp.right > rs.left && droite - rp.right >= 380) gauche = Math.round(rp.right) + MARGE;
-    }
-    d.style.position = 'fixed';
-    // Au-dessus de l'en-tête du thème : c'est lui qui rendait la croix
-    // incliquable.
-    d.style.zIndex = '2147483000';
-    d.style.left = gauche + 'px';
-    d.style.right = 'auto';
-    var largeur = Math.max(300, droite - gauche);
-    d.style.width = largeur + 'px';
-    d.style.overflowY = 'auto';
-    // Au-delà de cette largeur, les panneaux passent sur deux colonnes :
-    // une mise en page verticale dans un tiroir de 700 px laisse la moitié
-    // de la surface vide et oblige à faire défiler pour rien. Le seuil
-    // dépend du TIROIR, pas de la fenêtre — une requête de média ne saurait
-    // pas le mesurer.
-    d.classList.toggle('large', largeur >= 760);
+    clearTimeout(this._finGlissement);
 
-    var plafond = Math.max(this.bandeauHaut() + 8, MARGE, Math.round(rs.top));
-    var placeDessus = Math.round(rb.top) - 8 - plafond;
-
-    if (placeDessus >= HAUT_MIN) {
-      // Le tiroir monte, comme sur la maquette.
-      d.style.top = 'auto';
-      d.style.bottom = Math.round(window.innerHeight - rb.top + 8) + 'px';
-      d.style.maxHeight = placeDessus + 'px';
+    if (!col) {
+      // Repli sans colonne : le panneau se montre et se cache, sans décor.
+      this.vue.hidden = !ouvert;
       return;
     }
 
-    // Pas la place au-dessus : il descend. On s'arrête juste avant les
-    // couleurs tant que ça laisse une hauteur exploitable — sinon un
-    // tiroir de 150 px, correct sur le papier et inutilisable en vrai.
-    var y = Math.round(rb.bottom + 8);
-    var fond = window.innerHeight - MARGE;
-    // On ne s'arrête avant les couleurs QUE si le panneau y tient en
-    // entier. Sinon on préfère le recouvrir : un tiroir de 180 px où il
-    // faut faire défiler pour atteindre un bouton n'est pas utilisable,
-    // et il se referme d'un clic.
-    var arret = this.arretBas(rb.bottom);
-    var besoin = Math.max(HAUT_MIN, d.scrollHeight);
-    if (arret && arret - 8 - y >= besoin) fond = arret - 8;
-    d.style.bottom = 'auto';
-    d.style.top = y + 'px';
-    d.style.maxHeight = Math.max(HAUT_MIN, fond - y) + 'px';
-  };
+    var dx = Math.round(col.offsetWidth + 24);
+    var enfants = [];
+    for (var i = 0; i < col.children.length; i++) {
+      if (col.children[i] !== this.vue) enfants.push(col.children[i]);
+    }
 
-  /**
-   * Place le tiroir. Le nom reste `ajuster` parce qu'il est appelé de
-   * plusieurs endroits ; le travail, lui, est entièrement dans elargir().
-   *
-   * La version précédente poussait le bloc vers le bas pour faire de la
-   * place au-dessus. Devenu inutile : le tiroir est maintenant positionné en
-   * fixe et borné en hauteur, il ne déplace plus rien dans la page.
-   */
-  Editeur.prototype.ajuster = function () {
-    // Rien à placer tant que le tiroir est fermé : le panneau Calques se
-    // reconstruit au gré du canevas, y compris quand il n'est pas affiché.
-    if (!this.outil) return;
-    this.racine.style.paddingTop = '';
-    this.elargir();
+    // `CSS` est ici la feuille de styles du module, pas l'objet global —
+    // d'où window.CSS. `clip` est préférable à `hidden` : il rogne sans
+    // créer de conteneur de défilement.
+    var clip = window.CSS && window.CSS.supports && window.CSS.supports('overflow', 'clip');
+    col.style.overflow = clip ? 'clip' : 'hidden';
+
+    // Le panneau a souvent plus à dire que la colonne n'est haute. On
+    // l'étire à la hauteur de la photo : la rangée de la grille fait déjà
+    // cette hauteur, donc rien ne bouge dans la page, et le panneau tombe
+    // en face du visuel qu'il sert à composer — c'est la maquette.
+    if (ouvert) {
+      var media = this.colonneMedia(col, imageProduit());
+      var vise = media ? Math.min(media.offsetHeight, Math.round(window.innerHeight * 0.9)) : 0;
+      if (vise > col.offsetHeight) col.style.minHeight = vise + 'px';
+    }
+    var transition = duree
+      ? 'transform ' + duree + 'ms ' + COURBE + ', opacity ' + duree + 'ms linear'
+      : 'none';
+
+    enfants.forEach(function (e) {
+      e.style.transition = transition;
+      e.style.transform = ouvert ? 'translateX(' + dx + 'px)' : '';
+      e.style.opacity = ouvert ? '0' : '';
+      e.style.pointerEvents = ouvert ? 'none' : '';
+      if (ouvert) e.setAttribute('aria-hidden', 'true');
+      else e.removeAttribute('aria-hidden');
+    });
+
+    this.vue.style.transition = transition;
+    if (ouvert) {
+      this.vue.hidden = false;
+      this.vue.style.transform = 'translateX(-' + dx + 'px)';
+      this.vue.style.opacity = '0';
+      // Laisser le navigateur enregistrer la position de départ avant
+      // d'animer, sinon il interpole depuis l'état final.
+      void this.vue.offsetWidth;
+      this.vue.style.transform = 'translateX(0)';
+      this.vue.style.opacity = '1';
+    } else {
+      this.vue.style.transform = 'translateX(-' + dx + 'px)';
+      this.vue.style.opacity = '0';
+    }
+
+    this._finGlissement = setTimeout(function () {
+      if (!ouvert) {
+        self.vue.hidden = true;
+        col.style.overflow = '';
+        col.style.minHeight = '';
+        enfants.forEach(function (e) { e.style.transition = ''; });
+      }
+      self.vue.style.transition = '';
+    }, duree + 30);
   };
 
   /**
@@ -716,7 +663,7 @@
 
   Editeur.prototype.remplirPanneau = function (cle) {
     var self = this;
-    var hote = this.drawer.querySelector('.tsle-panel[data-panneau="' + cle + '"]');
+    var hote = this.vue.querySelector('.tsle-panel[data-panneau="' + cle + '"]');
     var batisseur = BATISSEURS[cle];
     if (!hote || !batisseur) {
       if (this.scene) this.scene.classList.remove('actif');
@@ -736,7 +683,6 @@
     hote.innerHTML = '<div class="tsle-chargement">Préparation de l\'éditeur…</div>';
     this.prepareScene().then(function () {
       self[batisseur](hote);
-      self.ajuster();
       if (self.outil === cle && self.scene) self.scene.classList.add('actif');
     }).catch(function () {
       // Rouvrir doit pouvoir réessayer : une coupure réseau passagère ne
@@ -877,7 +823,6 @@
         if (b.getAttribute('data-r') === 'contour') {
           var bloc = q('blocContour');
           if (bloc) bloc.classList.toggle('on', b.getAttribute('aria-pressed') === 'true');
-          self.ajuster();
         }
         self.majTexteActif();
         return;
@@ -888,7 +833,7 @@
 
   /** Réglages courants du panneau. */
   Editeur.prototype._reglagesTexte = function () {
-    var h = this.drawer;
+    var h = this.vue;
     var al = h.querySelector('[data-r="al"][aria-pressed="true"]');
     var v = function (r, d) { var e = h.querySelector('[data-r="' + r + '"]'); return e ? e.value : d; };
     var p = function (r) {
@@ -1004,7 +949,7 @@
 
   /** Message éphémère dans le tiroir, sous l'en-tête. */
   Editeur.prototype._message = function (txt, erreur) {
-    var corps = this.drawer.querySelector('.tsle-body');
+    var corps = this.vue.querySelector('.tsle-body');
     var n = corps.querySelector('.tsle-note.volatile');
     if (!n) {
       n = document.createElement('div');
@@ -1017,9 +962,7 @@
     var self = this;
     this._minuteurNote = setTimeout(function () {
       if (n.parentNode) n.parentNode.removeChild(n);
-      self.ajuster();
     }, erreur ? 6000 : 3000);
-    this.ajuster();
   };
 
   /**
@@ -1280,7 +1223,6 @@
       catch (e) { return this._message('Ce visuel vient d\'un autre domaine : le détourage est impossible.', true); }
     }
     hote.querySelector('[data-r="blocFond"]').classList.add('on');
-    this.ajuster();
     this.detourer(Number(hote.querySelector('[data-r="fondTol"]').value) || 25);
   };
 
@@ -1387,7 +1329,6 @@
                + '</button>';
         }).join('')
       : '<div class="tsle-vide">Aucun design dans cette catégorie.</div>';
-    this.ajuster();
   };
 
   // ── Panneau IA ────────────────────────────────────────────────────────────
@@ -1517,7 +1458,6 @@
       return this.genererIA(hote, (hote.querySelector('[data-r="style"]').value || '').trim());
     }
     bloc.classList.add('on');
-    this.ajuster();
     try { hote.querySelector('[data-r="style"]').focus(); } catch (e) {}
   };
 
@@ -1534,7 +1474,6 @@
         hote.querySelector('[data-r="photoApercu"]').src = src;
         hote.querySelector('[data-r="photoVue"]').style.display = '';
         hote.querySelector('[data-r="photoZone"]').style.display = 'none';
-        self.ajuster();
       });
     };
     fr.readAsDataURL(f);
@@ -1544,7 +1483,6 @@
     this._photoIA = null;
     hote.querySelector('[data-r="photoVue"]').style.display = 'none';
     hote.querySelector('[data-r="photoZone"]').style.display = '';
-    this.ajuster();
   };
 
   Editeur.prototype.majQuotaIA = function (hote, etat) {
@@ -1579,7 +1517,7 @@
     if (btn.disabled) return;
     btn.disabled = true;
     btn.textContent = 'Génération en cours…';
-    var fini = function () { btn.disabled = false; btn.textContent = 'Générer le design'; self.ajuster(); };
+    var fini = function () { btn.disabled = false; btn.textContent = 'Générer le design'; };
 
     var photo = this._photoIA;
     var chemin, corps;
@@ -1643,7 +1581,6 @@
     b.innerHTML = '<img src="' + esc(src) + '" alt="' + esc(titre || '') + '">';
     b.addEventListener('click', function () { self.poserImage(src, 'Visuel IA'); });
     grille.insertBefore(b, grille.firstChild);
-    this.ajuster();
   };
 
   // ── Panneau QR code ───────────────────────────────────────────────────────
@@ -1757,7 +1694,6 @@
         if (bascule.getAttribute('data-r') === 'qrDegrade') {
           hote.querySelector('[data-r="blocCouleur2"]').style.display = on ? '' : 'none';
           hote.querySelector('[data-r="blocSens"]').style.display = on ? '' : 'none';
-          self.ajuster();
         }
         self.majQR(hote);
         return;
@@ -1832,7 +1768,6 @@
                +   '<img src="' + esc(u) + '" alt="' + esc(c.name || '') + '" loading="lazy"></button>';
         }).join('');
         hote.querySelector('[data-r="blocCadres"]').style.display = '';
-        self.ajuster();
       }).catch(function () {});
   };
 
@@ -2026,7 +1961,7 @@
     if (!calques.length) {
       liste.innerHTML = '<div class="tsle-vide">Aucun élément pour l\'instant — '
                       + 'ajoutez un texte ou une image.</div>';
-      return this.ajuster();
+      return;
     }
 
     liste.innerHTML = calques.map(function (c, rang) {
@@ -2052,7 +1987,6 @@
            +       (c.locked ? CADENAS.ferme : CADENAS.libre) + '</svg></button>'
            + '</div>';
     }).join('');
-    this.ajuster();
   };
 
   /** Décale un calque d'un cran. `sens` : +1 vers l'avant, -1 vers l'arrière. */
@@ -2098,7 +2032,9 @@
       if (imgs[i].closest('.tsle') || imgs[i].closest('.tsld')) continue;
       var r = imgs[i].getBoundingClientRect();
       var a = r.width * r.height;
-      if (a > 40000 && a > aire) { aire = a; meilleure = imgs[i]; }
+      // 20000 ≈ 141×141 : au-dessus des vignettes de galerie, en dessous
+      // de la photo principale d'un téléphone étroit, qui était écartée.
+      if (a > 20000 && a > aire) { aire = a; meilleure = imgs[i]; }
     }
     return meilleure;
   }
@@ -2191,117 +2127,22 @@
     this.cadre.style.height = z.h + 'px';
   };
 
-  // ── Barre fixe mobile : couleurs + panier ─────────────────────────────────
+  // ── Coloris ───────────────────────────────────────────────────────────────
 
-  Editeur.prototype.barreMobile = function () {
-    var self = this;
-    var d = this.donnees;
+  /**
+   * Repère l'option « couleur » dans les variantes.
+   *
+   * Il n'y a plus de pastilles à nous : le panneau remplace la colonne et le
+   * nuancier du thème revient dès qu'on referme. On garde seulement l'indice,
+   * qui sert à nommer le coloris sur la commande.
+   */
+  Editeur.prototype.reperColoris = function () {
     var iCouleur = -1;
-    (d.optionNames || []).forEach(function (n, i) {
+    ((this.donnees && this.donnees.optionNames) || []).forEach(function (n, i) {
       if (/couleur|colou?r/i.test(n)) iCouleur = i;
     });
-
-    var bar = document.createElement('div');
-    bar.className = 'tsle-mbar';
-    bar.setAttribute('data-tsl-mbar', this.produit);
-
-    var pastilles = '';
-    if (iCouleur >= 0) {
-      var vues = {};
-      d.variants.forEach(function (v) {
-        var val = v.options[iCouleur];
-        if (!val || vues[val]) return;
-        vues[val] = 1;
-        pastilles += '<button type="button" class="tsle-sw" data-couleur="' + esc(val) + '"'
-                   + ' title="' + esc(val) + '" aria-label="' + esc(val) + '" aria-pressed="false"></button>';
-      });
-    }
-    bar.innerHTML = '<div class="tsle-swatches">' + pastilles + '</div>'
-                  + '<button type="button" class="tsle-mcart"></button>';
-    document.body.appendChild(bar);
-    this.mbar = bar;
-
-    // Hauteur réelle de la barre : le tiroir mobile s'ouvre juste au-dessus.
-    // On la remesure à chaque ouverture et à chaque redimensionnement — la
-    // mesurer une seule fois à la construction donnait une valeur trop faible,
-    // les pastilles n'ayant pas encore leur taille définitive, et le tiroir
-    // mordait sur la barre de quelques pixels.
-    this.mesurerBarreMobile = function () {
-      var h = bar.getBoundingClientRect().height || bar.offsetHeight;
-      document.documentElement.style.setProperty('--tsle-mbar-h', Math.ceil(h) + 'px');
-    };
-    this.mesurerBarreMobile();
-    window.addEventListener('resize', this.mesurerBarreMobile);
-    if (window.ResizeObserver) new ResizeObserver(this.mesurerBarreMobile).observe(bar);
-
-    bar.addEventListener('click', function (e) {
-      var sw = e.target.closest ? e.target.closest('.tsle-sw') : null;
-      if (sw) { self.choisirCouleur(sw.getAttribute('data-couleur'), iCouleur); return; }
-      if (e.target.closest && e.target.closest('.tsle-mcart')) self.ajouterAuPanier();
-    });
-
     this.iCouleur = iCouleur;
-    this.teinterPastilles();
   };
-
-  /**
-   * Teinte les pastilles avec les coloris réels du produit.
-   * Le backend les déduit de la photo de chaque variante quand Shopify ne
-   * les renseigne pas (cf. GET /api/products/:id/colors).
-   */
-  Editeur.prototype.teinterPastilles = function () {
-    var self = this;
-    if (this.iCouleur < 0) return;
-    var shop = (window.Shopify && window.Shopify.shop) || window.location.hostname;
-    fetch('https://textile-studio-production.up.railway.app/api/products/' + this.produit
-          + '/colors?shop=' + encodeURIComponent(shop), { credentials: 'omit', mode: 'cors' })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) {
-        if (!d || !d.colors) return;
-        var parNom = {};
-        d.colors.forEach(function (c) { parNom[c.name] = c.hex; });
-        self.mbar.querySelectorAll('.tsle-sw').forEach(function (sw) {
-          var hex = parNom[sw.getAttribute('data-couleur')];
-          if (hex) sw.style.background = hex;
-        });
-      })
-      .catch(function () { /* pastilles sans teinte : le libellé reste en infobulle */ });
-  };
-
-  /**
-   * Sélectionne un coloris. On passe par le sélecteur du thème quand on le
-   * trouve, pour que le thème mette à jour SA galerie et SON prix ; l'URL
-   * sert de repli et rend la sélection partageable.
-   */
-  Editeur.prototype.choisirCouleur = function (valeur, iCouleur) {
-    var d = this.donnees;
-    var actuel = this.variantCourant();
-    var cible = null;
-    d.variants.forEach(function (v) {
-      if (cible || v.options[iCouleur] !== valeur) return;
-      // Garder les autres options identiques si possible.
-      var memeReste = !actuel || v.options.every(function (o, i) {
-        return i === iCouleur || o === actuel.options[i];
-      });
-      if (memeReste) cible = v;
-    });
-    if (!cible) {
-      d.variants.forEach(function (v) { if (!cible && v.options[iCouleur] === valeur) cible = v; });
-    }
-    if (!cible) return;
-
-    var entree = document.querySelector('input[type="radio"][value="' + CSS_echap(valeur) + '"]');
-    if (entree) { entree.click(); }
-    else {
-      var u = new URL(window.location.href);
-      u.searchParams.set('variant', cible.id);
-      window.history.replaceState(null, '', u.toString());
-    }
-    this.donnees.selected = cible.id;
-    this.majPrix();
-  };
-
-  function CSS_echap(v) { return String(v).replace(/"/g, '\\"'); }
 
   // ── Prix dynamique ────────────────────────────────────────────────────────
 
@@ -2385,19 +2226,9 @@
     var base = this.racine.getAttribute('data-tsl-cart-label') || 'Ajouter au panier';
     var libelle = base + ' — ' + montant;
 
-    if (this.mbar) {
-      var mc = this.mbar.querySelector('.tsle-mcart');
-      if (mc && mc.textContent !== montant) { mc.textContent = montant; fondu(mc); }
-    }
     if (this.boutonTheme) {
       var el = this.boutonTheme.querySelector('span') || this.boutonTheme;
       if (el.textContent.trim() !== libelle) { el.textContent = libelle; fondu(el); }
-    }
-    if (this.iCouleur >= 0 && this.mbar) {
-      var actuelle = v.options[this.iCouleur];
-      this.mbar.querySelectorAll('.tsle-sw').forEach(function (sw) {
-        sw.setAttribute('aria-pressed', sw.getAttribute('data-couleur') === actuelle ? 'true' : 'false');
-      });
     }
   };
 
@@ -2659,7 +2490,6 @@
       setTimeout(function () { el.classList.remove('tsle-alerte'); self.majPrix(); }, 4000);
     };
     dire(this.boutonTheme, 'Échec — réessayez');
-    if (this.mbar) dire(this.mbar.querySelector('.tsle-mcart'), 'Échec');
   };
 
   /** Pendant l'envoi, tous les boutons panier disent la même chose. */
@@ -2670,10 +2500,6 @@
       if (occupe) { this.boutonTheme.__tsleAvant = el.textContent; el.textContent = libelle; }
       else if (this.boutonTheme.__tsleAvant) { el.textContent = this.boutonTheme.__tsleAvant; }
       this.boutonTheme.disabled = !!occupe;
-    }
-    if (this.mbar) {
-      var mc = this.mbar.querySelector('.tsle-mcart');
-      if (mc) { mc.disabled = !!occupe; if (occupe) mc.textContent = '…'; }
     }
     if (!occupe) this.majPrix();
   };
