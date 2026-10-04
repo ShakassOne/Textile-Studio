@@ -175,7 +175,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
       res.setHeader('Expires', '0');
     }
     // tl-modal.js chargé depuis n'importe quel domaine Shopify via <script src>
-    if (filePath.endsWith('tl-modal.js') || filePath.endsWith('tl-designs.js') || filePath.endsWith('tl-editor.js')) {
+    if (filePath.endsWith('tl-modal.js') || filePath.endsWith('tl-designs.js') || filePath.endsWith('tl-editor.js') || filePath.endsWith('tsl-engine.js')) {
       res.setHeader('Access-Control-Allow-Origin', '*');
     }
   },
@@ -514,6 +514,7 @@ app.use((req, res, next) => {
     '/tl-modal.js',
     '/tl-designs.js',
     '/tl-editor.js',
+    '/tsl-engine.js',
     '/uploads',
     '/assets',
   ];

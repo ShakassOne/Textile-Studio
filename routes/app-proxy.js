@@ -277,6 +277,26 @@ router.get('/tl-designs.js', requireProxyHMAC, (req, res) => {
 // Même logique que tl-modal.js : l'origin du backend en dur est remplacé par
 // celui de l'app réellement installée sur cette boutique.
 // ─────────────────────────────────────────────────────────────────────────────
+// Scripts storefront servis à l'identique : on factorise plutôt que de
+// recopier une quatrième fois la même réécriture d'origin.
+function servirScriptStorefront(nom) {
+  return (req, res) => {
+    const fs     = require('fs');
+    const appUrl = (process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
+    fs.readFile(path.join(__dirname, '..', 'public', nom), 'utf8', (err, js) => {
+      if (err) return res.status(404).type('application/javascript').send(`// ${nom} introuvable`);
+      const out = appUrl
+        ? js.replace(/https:\/\/textile-studio-production\.up\.railway\.app/g, appUrl)
+        : js;
+      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.send(out);
+    });
+  };
+}
+router.get('/tsl-engine.js', requireProxyHMAC, servirScriptStorefront('tsl-engine.js'));
+
 router.get('/tl-editor.js', requireProxyHMAC, (req, res) => {
   const fs     = require('fs');
   const appUrl = (process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
