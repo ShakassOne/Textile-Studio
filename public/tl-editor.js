@@ -33,6 +33,10 @@
   if (window.__TSL_EDITOR_LOADED) return;
   window.__TSL_EDITOR_LOADED = true;
 
+  // Même littéral que tl-modal.js et tl-designs.js : l'App Proxy le remplace
+  // par l'origin du backend réellement installé sur la boutique.
+  var BACKEND = 'https://textile-studio-production.up.railway.app';
+
   var DUREE = 280;
   var COURBE = 'cubic-bezier(.32,.72,0,1)';
   var SOBRE = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -92,6 +96,35 @@
     + '.tsle-panel{display:none}'
     + '.tsle-panel.on{display:block}'
     + '.tsle-vide{padding:26px 0;text-align:center;font-size:.85rem;opacity:.5}'
+    + '.tsle-chargement{padding:26px 0;text-align:center;font-size:.85rem;opacity:.6}'
+
+    // Calque d'édition posé SUR la photo produit. `pointer-events:none` tant
+    // qu'aucun outil n'est ouvert : sans ça, Fabric capte les gestes tactiles
+    // et bloque le défilement de la page — on ne peut plus lire la fiche.
+    + '.tsle-scene{position:absolute;inset:0;z-index:5;pointer-events:none}'
+    + '.tsle-scene.actif{pointer-events:auto}'
+    + '.tsle-scene canvas{position:absolute;top:0;left:0}'
+    + '.tsle-cadre{position:absolute;border:1px dashed rgba(0,0,0,.45);pointer-events:none;'
+    +   'box-shadow:0 0 0 9999px rgba(255,255,255,.08)}'
+    + '.tsle-scene:not(.actif) .tsle-cadre{display:none}'
+
+    // Panneau Textes
+    + '.tsle-champ{display:block;margin-bottom:12px}'
+    + '.tsle-champ > span{display:block;font-size:.76rem;opacity:.65;margin-bottom:5px}'
+    + '.tsle-input,.tsle-select{width:100%;box-sizing:border-box;padding:9px 11px;font:inherit;font-size:.9rem;'
+    +   'border:1px solid rgba(128,128,128,.4);border-radius:9px;background:transparent;color:inherit}'
+    + '.tsle-rangee{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}'
+    + '.tsle-rangee > *{flex:1 1 120px;min-width:0}'
+    + '.tsle-groupe{display:flex;gap:4px}'
+    + '.tsle-mini{flex:0 0 auto;min-width:38px;padding:8px 10px;border:1px solid rgba(128,128,128,.4);'
+    +   'border-radius:8px;background:transparent;color:inherit;font:inherit;font-size:.85rem;cursor:pointer}'
+    + '.tsle-mini[aria-pressed="true"]{background:var(--tsle-accent,#111114);color:var(--tsle-on-accent,#fff);'
+    +   'border-color:var(--tsle-accent,#111114)}'
+    + '.tsle-couleur{width:38px;height:38px;padding:2px;border:1px solid rgba(128,128,128,.4);border-radius:9px;'
+    +   'background:transparent;cursor:pointer}'
+    + '.tsle-compteur{font-size:.72rem;opacity:.5;text-align:right;margin-top:-8px;margin-bottom:10px}'
+    + '.tsle-ajouter{width:100%;padding:11px;border:0;border-radius:10px;font:inherit;font-weight:600;'
+    +   'background:var(--tsle-accent,#111114);color:var(--tsle-on-accent,#fff);cursor:pointer}'
 
     // Barre fixe mobile : couleurs + panier, toujours atteignables.
     + '.tsle-mbar{position:fixed;left:0;right:0;bottom:0;z-index:40;display:none;align-items:center;gap:10px;'
@@ -123,6 +156,10 @@
     s.id = 'tsle-css';
     s.textContent = CSS;
     document.head.appendChild(s);
+  }
+
+  function boutique() {
+    return (window.Shopify && window.Shopify.shop) || window._TL_SHOP || window.location.hostname;
   }
 
   function esc(v) {
@@ -282,6 +319,7 @@
       self.drawer.querySelectorAll('.tsle-panel').forEach(function (p) {
         p.classList.toggle('on', p.getAttribute('data-panneau') === cle);
       });
+      self.remplirPanneau(cle);
       self.ajuster();
     };
     if (changement && !SOBRE && !sansAnim) {
@@ -309,6 +347,10 @@
   Editeur.prototype.fermer = function () {
     if (!this.outil) return;
     this.outil = null;
+    // Le canevas redevient inerte : laissé actif, Fabric capte les gestes
+    // tactiles et le client ne peut plus faire défiler la fiche produit.
+    if (this.scene) this.scene.classList.remove('actif');
+    if (this.moteur) this.moteur.canvas.discardActiveObject().requestRenderAll();
     this.drawer.classList.remove('open');
     this.barre.querySelectorAll('.tsle-tool').forEach(function (b) { b.setAttribute('aria-expanded', 'false'); });
     this.racine.style.paddingTop = '';
@@ -335,6 +377,312 @@
     // le tiroir étant ancré sur la barre.
     this.racine.style.transition = SOBRE ? 'none' : 'padding-top ' + DUREE + 'ms ' + COURBE;
     this.racine.style.paddingTop = manque ? manque + 'px' : '';
+  };
+
+  /**
+   * Remplit un panneau à sa première ouverture, et réveille la scène.
+   *
+   * Le contenu n'est construit qu'une fois : le reconstruire à chaque
+   * ouverture perdrait la saisie en cours et ferait clignoter le tiroir.
+   */
+  Editeur.prototype.remplirPanneau = function (cle) {
+    var self = this;
+    var hote = this.drawer.querySelector('.tsle-panel[data-panneau="' + cle + '"]');
+    if (!hote) return;
+
+    if (cle === 'text') {
+      if (!hote.__rempli) {
+        hote.__rempli = true;
+        hote.innerHTML = '<div class="tsle-chargement">Préparation de l\'éditeur…</div>';
+        this.prepareScene().then(function () {
+          self.panneauTexte(hote);
+          self.ajuster();
+          if (self.outil === 'text' && self.scene) self.scene.classList.add('actif');
+        }).catch(function () {
+          hote.innerHTML = '<div class="tsle-vide">Éditeur indisponible — rechargez la page.</div>';
+        });
+      } else if (this.scene) {
+        this.scene.classList.add('actif');
+      }
+      return;
+    }
+
+    // Les autres outils restent à construire ; la scène se met en retrait
+    // pour ne pas bloquer le défilement.
+    if (this.scene) this.scene.classList.remove('actif');
+  };
+
+  // ── Panneau Textes ────────────────────────────────────────────────────────
+
+  var POLICES = ['Montserrat', 'Bebas Neue', 'Oswald', 'Pacifico', 'Anton',
+                 'Playfair Display', 'Poppins', 'Permanent Marker'];
+  var MAX_CARACTERES = 60;
+
+  Editeur.prototype.panneauTexte = function (hote) {
+    var self = this;
+    hote.innerHTML =
+        '<label class="tsle-champ"><span>Votre texte</span>'
+      +   '<input class="tsle-input" data-r="texte" maxlength="' + MAX_CARACTERES + '" placeholder="Winshirt"></label>'
+      + '<div class="tsle-compteur" data-r="compteur">0/' + MAX_CARACTERES + '</div>'
+      + '<div class="tsle-rangee">'
+      +   '<label class="tsle-champ"><span>Police</span><select class="tsle-select" data-r="police">'
+      +     POLICES.map(function (p) { return '<option value="' + esc(p) + '">' + esc(p) + '</option>'; }).join('')
+      +   '</select></label>'
+      +   '<label class="tsle-champ" style="flex:0 0 auto"><span>Style</span>'
+      +     '<span class="tsle-groupe">'
+      +       '<button type="button" class="tsle-mini" data-r="gras" aria-pressed="false"><b>B</b></button>'
+      +       '<button type="button" class="tsle-mini" data-r="italique" aria-pressed="false"><i>I</i></button>'
+      +     '</span></label>'
+      + '</div>'
+      + '<div class="tsle-rangee">'
+      +   '<label class="tsle-champ"><span>Taille</span>'
+      +     '<input class="tsle-input" data-r="taille" type="range" min="10" max="100" value="40"></label>'
+      +   '<label class="tsle-champ" style="flex:0 0 auto"><span>Couleur</span>'
+      +     '<input class="tsle-couleur" data-r="couleur" type="color" value="#111114"></label>'
+      +   '<label class="tsle-champ" style="flex:0 0 auto"><span>Alignement</span>'
+      +     '<span class="tsle-groupe">'
+      +       '<button type="button" class="tsle-mini" data-r="al" data-v="left" aria-pressed="false">⯇</button>'
+      +       '<button type="button" class="tsle-mini" data-r="al" data-v="center" aria-pressed="true">≡</button>'
+      +       '<button type="button" class="tsle-mini" data-r="al" data-v="right" aria-pressed="false">⯈</button>'
+      +     '</span></label>'
+      + '</div>'
+      + '<button type="button" class="tsle-ajouter" data-r="ajouter">Ajouter ce texte</button>';
+
+    var q = function (r) { return hote.querySelector('[data-r="' + r + '"]'); };
+    this._t = {
+      texte: q('texte'), police: q('police'), taille: q('taille'),
+      couleur: q('couleur'), compteur: q('compteur'), gras: q('gras'), italique: q('italique'),
+    };
+
+    // Saisie : on met à jour l'objet sélectionné s'il y en a un, sinon on
+    // prépare simplement le prochain ajout. Pas de création automatique à la
+    // frappe — un texte vide posé sur le vêtement dérouterait.
+    q('texte').addEventListener('input', function () {
+      self._t.compteur.textContent = this.value.length + '/' + MAX_CARACTERES;
+      self.majTexteActif();
+    });
+    ['police', 'taille', 'couleur'].forEach(function (r) {
+      q(r).addEventListener('input', function () { self.majTexteActif(); });
+    });
+    hote.addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('.tsle-mini') : null;
+      if (b) {
+        if (b.getAttribute('data-r') === 'al') {
+          hote.querySelectorAll('[data-r="al"]').forEach(function (x) {
+            x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+          });
+        } else {
+          b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+        }
+        self.majTexteActif();
+        return;
+      }
+      if (e.target.closest && e.target.closest('[data-r="ajouter"]')) self.ajouterTexte();
+    });
+  };
+
+  /** Réglages courants du panneau. */
+  Editeur.prototype._reglagesTexte = function () {
+    var h = this.drawer;
+    var al = h.querySelector('[data-r="al"][aria-pressed="true"]');
+    return {
+      texte:   this._t.texte.value || '',
+      police:  this._t.police.value,
+      taille:  Number(this._t.taille.value) || 40,
+      couleur: this._t.couleur.value,
+      gras:    this._t.gras.getAttribute('aria-pressed') === 'true',
+      italique: this._t.italique.getAttribute('aria-pressed') === 'true',
+      align:   al ? al.getAttribute('data-v') : 'center',
+    };
+  };
+
+  Editeur.prototype.ajouterTexte = function () {
+    var self = this;
+    var r = this._reglagesTexte();
+    if (!r.texte.trim()) { this._t.texte.focus(); return; }
+    this.prepareScene().then(function () {
+      if (!self.moteur) return;
+      self.scene.classList.add('actif');
+      var obj = self.moteur.ajouterTexte(r.texte, {
+        fontFamily: r.police, fill: r.couleur,
+        fontSize: Math.max(8, Math.round(self.moteur.zone.h * (r.taille / 100))),
+      });
+      obj.set({ fontWeight: r.gras ? 'bold' : 'normal',
+                fontStyle: r.italique ? 'italic' : 'normal',
+                textAlign: r.align });
+      self.moteur._centrer(obj);
+      self.moteur.canvas.requestRenderAll();
+      self.chargerPolice(r.police);
+    });
+  };
+
+  /** Met à jour le texte sélectionné, s'il y en a un. */
+  Editeur.prototype.majTexteActif = function () {
+    if (!this.moteur) return;
+    var o = this.moteur.canvas.getActiveObject();
+    if (!o || o.__tslType !== 'text') return;
+    var r = this._reglagesTexte();
+    o.set({
+      text: r.texte || o.text,
+      fontFamily: r.police,
+      fill: r.couleur,
+      fontWeight: r.gras ? 'bold' : 'normal',
+      fontStyle: r.italique ? 'italic' : 'normal',
+      textAlign: r.align,
+    });
+    var cible = Math.max(8, Math.round(this.moteur.zone.h * (r.taille / 100)));
+    o.set({ scaleX: 1, scaleY: 1, fontSize: cible });
+    this.moteur.canvas.requestRenderAll();
+    this.chargerPolice(r.police);
+  };
+
+  /**
+   * Charge une police Google pour le rendu à l'écran.
+   * Le serveur a la sienne pour le fichier d'impression ; ici il s'agit
+   * seulement que le client voie ce qu'il choisit.
+   */
+  Editeur.prototype.chargerPolice = function (nom) {
+    if (!nom) return;
+    this._polices = this._polices || {};
+    if (this._polices[nom]) return;
+    this._polices[nom] = true;
+    var l = document.createElement('link');
+    l.rel = 'stylesheet';
+    l.href = 'https://fonts.googleapis.com/css2?family='
+           + encodeURIComponent(nom).replace(/%20/g, '+') + ':wght@400;700&display=swap';
+    document.head.appendChild(l);
+    var self = this;
+    // Fabric mesure le texte avant que la police soit prête : on redessine
+    // une fois chargée, sinon la première frappe s'affiche dans une autre
+    // police et saute.
+    if (document.fonts && document.fonts.load) {
+      document.fonts.load('16px "' + nom + '"').then(function () {
+        if (self.moteur) self.moteur.canvas.requestRenderAll();
+      }).catch(function () {});
+    }
+  };
+
+  // ── Scène d'édition ───────────────────────────────────────────────────────
+  //
+  // Le canevas se pose SUR la photo du produit, à l'endroit exact où le
+  // design s'imprimera. La zone vient de la calibration faite en admin
+  // (product_display_zone) : on en prend le rectangle englobant, parce qu'un
+  // canevas ne sait pas s'éditer en perspective. Le léger biais de la photo
+  // est rétabli au rendu serveur, qui lui projette dans le quadrilatère.
+  //
+  // Fabric n'est chargé qu'au premier clic sur un outil : l'embarquer sur
+  // chaque fiche produit coûterait 300 Ko à tous les visiteurs, y compris
+  // ceux qui ne personnalisent rien.
+
+  var FABRIC = 'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js';
+
+  function charger(src) {
+    return new Promise(function (ok, ko) {
+      if ([].slice.call(document.scripts).some(function (s) { return s.src === src; })) return ok();
+      var e = document.createElement('script');
+      e.src = src; e.onload = ok; e.onerror = function () { ko(new Error('chargement : ' + src)); };
+      document.head.appendChild(e);
+    });
+  }
+
+  /** Image principale du produit — la plus grande de la page, hors nos vignettes. */
+  function imageProduit() {
+    var imgs = document.querySelectorAll('img');
+    var meilleure = null, aire = 0;
+    for (var i = 0; i < imgs.length; i++) {
+      if (imgs[i].closest('.tsle') || imgs[i].closest('.tsld')) continue;
+      var r = imgs[i].getBoundingClientRect();
+      var a = r.width * r.height;
+      if (a > 40000 && a > aire) { aire = a; meilleure = imgs[i]; }
+    }
+    return meilleure;
+  }
+
+  Editeur.prototype.prepareScene = function () {
+    var self = this;
+    if (this._scenePrete) return this._scenePrete;
+
+    this._scenePrete = Promise.all([
+      charger(FABRIC).then(function () { return charger(BACKEND + '/tsl-engine.js'); }),
+      fetch(BACKEND + '/api/products/' + this.produit + '/display-zone?shop='
+            + encodeURIComponent(boutique()), { credentials: 'omit', mode: 'cors' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .catch(function () { return null; }),
+    ]).then(function (res) {
+      self.zoneCalibree = res[1] && res[1].exists ? res[1] : null;
+      return self._monterCanvas();
+    });
+    return this._scenePrete;
+  };
+
+  Editeur.prototype._monterCanvas = function () {
+    var img = imageProduit();
+    if (!img || !window.fabric || !window.TSLEngine) return null;
+
+    var hote = img.parentElement;
+    if (getComputedStyle(hote).position === 'static') hote.style.position = 'relative';
+
+    var scene = document.createElement('div');
+    scene.className = 'tsle-scene';
+    var cnv = document.createElement('canvas');
+    scene.appendChild(cnv);
+    var cadre = document.createElement('div');
+    cadre.className = 'tsle-cadre';
+    scene.appendChild(cadre);
+    hote.appendChild(scene);
+
+    this.scene = scene;
+    this.cadre = cadre;
+    this.imageProduit = img;
+
+    var dims = this._dimensions();
+    cnv.width = dims.largeur; cnv.height = dims.hauteur;
+    this.moteur = new window.TSLEngine.Moteur(cnv, { zone: dims.zone });
+    this._placerCadre(dims.zone);
+
+    // La photo change de taille (chargement, redimensionnement, variante) :
+    // le canevas et la zone doivent suivre, sinon le design dérive.
+    var self = this;
+    var suivre = function () {
+      var d = self._dimensions();
+      self.moteur.canvas.setDimensions({ width: d.largeur, height: d.hauteur });
+      self.moteur.definirZone(d.zone);
+      self._placerCadre(d.zone);
+    };
+    window.addEventListener('resize', suivre);
+    if (window.ResizeObserver) new ResizeObserver(suivre).observe(img);
+    return this.moteur;
+  };
+
+  /** Taille du canevas et zone d'édition, en pixels de la photo affichée. */
+  Editeur.prototype._dimensions = function () {
+    var r = this.imageProduit.getBoundingClientRect();
+    var largeur = Math.max(1, Math.round(r.width));
+    var hauteur = Math.max(1, Math.round(r.height));
+
+    var coins = this.zoneCalibree && this.zoneCalibree.corners;
+    if (!coins || coins.length !== 4) {
+      // Produit non calibré : zone par défaut au centre, pour que l'outil
+      // reste utilisable plutôt que de refuser de s'ouvrir.
+      return { largeur: largeur, hauteur: hauteur,
+               zone: { x: largeur * 0.3, y: hauteur * 0.25, w: largeur * 0.4, h: hauteur * 0.4 } };
+    }
+    // Rectangle englobant du quadrilatère calibré : un canevas ne s'édite
+    // pas en perspective, la projection exacte est faite au rendu serveur.
+    var xs = coins.map(function (c) { return c.x / 100 * largeur; });
+    var ys = coins.map(function (c) { return c.y / 100 * hauteur; });
+    var x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs);
+    var y0 = Math.min.apply(null, ys), y1 = Math.max.apply(null, ys);
+    return { largeur: largeur, hauteur: hauteur,
+             zone: { x: x0, y: y0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0) } };
+  };
+
+  Editeur.prototype._placerCadre = function (z) {
+    if (!this.cadre) return;
+    this.cadre.style.left = z.x + 'px';
+    this.cadre.style.top = z.y + 'px';
+    this.cadre.style.width = z.w + 'px';
+    this.cadre.style.height = z.h + 'px';
   };
 
   // ── Barre fixe mobile : couleurs + panier ─────────────────────────────────
