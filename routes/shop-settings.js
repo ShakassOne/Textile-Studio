@@ -26,6 +26,13 @@
  *      vraies réalisations clients, curées en admin via /api/social-proof)
  *      affiché au-dessus du bouton panier. Désactivé par défaut : vide tant
  *      qu'aucune vignette n'a été ajoutée par l'admin.
+ *    ai_generic_identity_prompt_enabled bool — formulation d'identité générique
+ *      ("preserve the subject's key identifying features") dans le prompt IA
+ *      Photo → Illustration (routes/ai.js), au lieu de la formulation historique
+ *      centrée visage/barbe/coiffure. Désactivé par défaut : à comparer sur un
+ *      échantillon de photos (portraits ET non-portraits) avant diffusion large.
+ *      Comportement 100% serveur (construction du prompt) : pas exposé sur la
+ *      route publique, inutile au storefront.
  *
  *  Cors public : Cross-origin (shop_domain.myshopify.com → textile-studio-production)
  *    → le storefront fait fetch direct, on autorise tout origin sur le GET public.
@@ -75,6 +82,9 @@ const MOBILE_PRICE_BAR_DEFAULT = false;
 // Preuve sociale désactivée par défaut : vide tant que l'admin n'a pas curé
 // au moins une vignette (pas de fallback automatique, cf. ROADMAP §2bis).
 const SOCIAL_PROOF_DEFAULT = false;
+// Formulation d'identité générique du prompt IA désactivée par défaut : à
+// comparer sur un échantillon réel avant diffusion large (backlog item 16).
+const AI_GENERIC_IDENTITY_PROMPT_DEFAULT = false;
 
 // ── GET /api/shop-settings/style — lecture admin ────────────────────────────
 router.get('/style', requireAuth, attachShopId, (req, res) => {
@@ -84,6 +94,7 @@ router.get('/style', requireAuth, attachShopId, (req, res) => {
     reassurance_banner_enabled: readBoolSetting(req.shopId, 'reassurance_banner_enabled', REASSURANCE_BANNER_DEFAULT),
     mobile_price_bar_enabled:   readBoolSetting(req.shopId, 'mobile_price_bar_enabled', MOBILE_PRICE_BAR_DEFAULT),
     social_proof_enabled:       readBoolSetting(req.shopId, 'social_proof_enabled', SOCIAL_PROOF_DEFAULT),
+    ai_generic_identity_prompt_enabled: readBoolSetting(req.shopId, 'ai_generic_identity_prompt_enabled', AI_GENERIC_IDENTITY_PROMPT_DEFAULT),
   });
 });
 
@@ -118,6 +129,10 @@ router.post('/style', requireAuth, attachShopId, express.json(), (req, res) => {
     setSetting(req.shopId, 'social_proof_enabled', coerceBool(body.social_proof_enabled) ? '1' : '0');
   }
 
+  if ('ai_generic_identity_prompt_enabled' in body) {
+    setSetting(req.shopId, 'ai_generic_identity_prompt_enabled', coerceBool(body.ai_generic_identity_prompt_enabled) ? '1' : '0');
+  }
+
   res.json({
     ok: true,
     cart_drawer_bg_color:       getSetting(req.shopId, 'cart_drawer_bg_color') || '',
@@ -125,6 +140,7 @@ router.post('/style', requireAuth, attachShopId, express.json(), (req, res) => {
     reassurance_banner_enabled: readBoolSetting(req.shopId, 'reassurance_banner_enabled', REASSURANCE_BANNER_DEFAULT),
     mobile_price_bar_enabled:   readBoolSetting(req.shopId, 'mobile_price_bar_enabled', MOBILE_PRICE_BAR_DEFAULT),
     social_proof_enabled:       readBoolSetting(req.shopId, 'social_proof_enabled', SOCIAL_PROOF_DEFAULT),
+    ai_generic_identity_prompt_enabled: readBoolSetting(req.shopId, 'ai_generic_identity_prompt_enabled', AI_GENERIC_IDENTITY_PROMPT_DEFAULT),
   });
 });
 

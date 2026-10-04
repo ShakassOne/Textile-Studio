@@ -9,6 +9,17 @@ const { requireShopifySession, verifyJWT, setReauthHeaders } = require('./shopif
 const { getDB, getShop } = require('../db/database');
 const { attachShopId } = require('./_shop-context');
 const { getSetting, setSetting, deleteSetting } = require('../db/settings');
+const { buildGenerationPrompt, buildTransformPrompt } = require('../utils/ai-prompts');
+
+// Flag `ai_generic_identity_prompt_enabled` (pattern readBoolSetting/setSetting
+// de routes/shop-settings.js, dupliqué ici pour ne pas dépendre de ce module) —
+// voir utils/ai-prompts.js pour le détail des deux formulations.
+function readBoolSetting(shopId, key, defaultVal) {
+  const v = getSetting(shopId, key);
+  if (v === '' || v == null) return defaultVal;
+  return v === '1' || v === 'true';
+}
+const GENERIC_IDENTITY_PROMPT_DEFAULT = false;
 
 // ── Middleware hybride : Bearer JWT (App Bridge) OU X-Shop-Domain (storefront iframe) ──
 // Permet aux requêtes frontend sans App Bridge (standalone Railway) de fonctionner.
@@ -241,66 +252,10 @@ async function loadStyleCoverInput(imageUrl) {
 }
 
 // ── Construction du prompt de transformation ──
-// hasStyleReference=true → prompt structuré Image A (identité) / Image B (style),
-// sinon fallback texte seul (point 5). Le prompt custom du style est conservé
-// puis enrichi (point 9) avec les contraintes d'identité et de rendu.
-// Règles de rendu communes à TOUTES les générations, quelle que soit la route.
-// Le cadrage est le premier point : sans consigne explicite, gpt-image-1 cadre
-// serré et rogne systématiquement le sujet (tête, pieds, bords du dessin).
-const COMMON_RENDER_RULES = [
-  'CRITICAL — FRAMING: the ENTIRE subject must be fully visible inside the image, nothing cropped.',
-  'Do NOT crop or cut off any part of the artwork: no cropped head, hair, ears, feet, hands, wings, tails, weapons or lettering.',
-  'Leave a comfortable empty margin on ALL FOUR sides (roughly 10% of the image): headroom above, footroom below, and space left and right.',
-  'Compose the subject fully zoomed out and centered. Never bleed off the edges, never let any element touch the border.',
-  'Clean illustration: avoid any greasy, oily, waxy or pasty over-rendered look — keep crisp, clean edges.',
-  'Fully transparent background (PNG alpha): no background scene, no backdrop, no canvas, no drop shadow.',
-  'Deliver a print-ready DTF transfer: high contrast, clean separated colors, no semi-transparent halo around the edges.',
-];
-
-// Prompt des générations de zéro (POST /dalle). On enrobe la demande du client
-// des mêmes règles que la transformation de photo — notamment le cadrage, qui
-// manquait ici : les visuels revenaient rognés sur les bords.
-function buildGenerationPrompt(userPrompt) {
-  const base = String(userPrompt || '').trim();
-  return [
-    base,
-    '',
-    'Strict requirements:',
-    ...COMMON_RENDER_RULES.map((r) => '- ' + r),
-  ].join('\n');
-}
-
-function buildTransformPrompt(customPrompt, hasStyleReference, userPrompt) {
-  // La consigne libre du client prime sur le prompt du style : c'est elle qui
-  // exprime son intention (« transforme cette photo en affiche vintage »).
-  // Sans consigne, on retombe sur le prompt du style, comportement historique.
-  const free = String(userPrompt || '').trim();
-  const base = free || (customPrompt || STYLE_PROMPTS_FALLBACK.cartoon).trim();
-  const commonRules = [
-    'Keep the EXACT number of people present in the source photo.',
-    "Preserve each person's likeness: face, glasses, beard, hairstyle and hair length, and smile/expression.",
-    ...COMMON_RENDER_RULES,
-  ];
-  if (hasStyleReference) {
-    return [
-      'You are given TWO reference images.',
-      'IMAGE A (the FIRST image) = SOURCE IDENTITY. The people, their count and their likeness must come EXCLUSIVELY from IMAGE A.',
-      'IMAGE B (the SECOND image) = STYLE REFERENCE. Use IMAGE B ONLY as a strict graphic-style reference (line work, shading, color treatment, finish). Do NOT copy the people, faces, objects, composition or background of IMAGE B.',
-      '',
-      'Redraw the subject of IMAGE A in this style: ' + base,
-      '',
-      'Strict requirements:',
-      '- Use IMAGE B as a STRICT style reference only; identity and number of people come solely from IMAGE A.',
-      ...commonRules.map((r) => '- ' + r),
-    ].join('\n');
-  }
-  return [
-    base,
-    '',
-    'Strict requirements:',
-    ...commonRules.map((r) => '- ' + r),
-  ].join('\n');
-}
+// Construction des prompts (buildGenerationPrompt/buildTransformPrompt) extraite
+// dans utils/ai-prompts.js — module pur, testable sans charger routes/auth.js.
+// Voir ce module pour le détail des deux formulations d'identité (people vs
+// subject générique) et le flag qui choisit entre les deux.
 
 // ── GET  /api/ai/settings — Lire la config IA (admin, scopé shop) ───────────────
 router.get('/settings', requireAuth, attachShopId, (req, res) => {
@@ -589,7 +544,11 @@ router.post('/transform', requireAIContext, attachShopId, aiIpRateLimiter, aiRat
     const styleReferenceUsed = !!cover;
 
     // Point 3, 4, 5, 9 : prompt structuré (Image A/Image B) si cover, sinon texte seul.
-    const prompt = buildTransformPrompt(customPrompt, styleReferenceUsed, userPrompt);
+    // Backlog item 16 : formulation d'identité générique (pas "face/beard/hairstyle")
+    // derrière un flag, pour ne pas dégrader les photos sans visage (animal, objet,
+    // logo, paysage) tant qu'elle n'a pas été comparée sur un échantillon réel.
+    const genericIdentityPrompt = readBoolSetting(req.shopId, 'ai_generic_identity_prompt_enabled', GENERIC_IDENTITY_PROMPT_DEFAULT);
+    const prompt = buildTransformPrompt(customPrompt, styleReferenceUsed, userPrompt, genericIdentityPrompt);
 
     // FormData natif (Node 22) + Blob.
     const form = new FormData();
