@@ -3678,6 +3678,63 @@
       var el = this.boutonTheme.querySelector('span') || this.boutonTheme;
       if (el.textContent.trim() !== libelle) { el.textContent = libelle; fondu(el); }
     }
+
+    this.majPrixAffiche(v.price * qte, (v.price + Math.round(sur.total * 100)) * qte);
+  };
+
+  /**
+   * Met le prix de la fiche d'accord avec le bouton.
+   *
+   * Le prix du thème restait celui du produit nu pendant que le bouton
+   * annonçait le prix réel : deux montants différents sur le même écran,
+   * et c'est toujours le plus bas qu'on retient. On modifie donc aussi
+   * l'affichage du thème.
+   *
+   * L'élément n'est pas cherché par une classe — chaque thème a la sienne —
+   * mais par son CONTENU : la feuille de prix est celle qui affiche
+   * exactement le montant de la variante courante.
+   */
+  Editeur.prototype.majPrixAffiche = function (centimesBase, centimesTotal) {
+    var fmt = this.donnees.moneyFormat;
+    var txtBase = prix(centimesBase, fmt);
+    var txtTotal = prix(centimesTotal, fmt);
+
+    var el = this._prixTheme;
+    if (el && !el.isConnected) el = this._prixTheme = null;
+    if (!el) el = this._prixTheme = this.trouverPrixAffiche(txtBase);
+    if (!el) return;
+
+    if (el.textContent.trim() !== txtTotal) {
+      el.textContent = txtTotal;
+      fondu(el);
+    }
+  };
+
+  /** Montant seul, sans symbole ni espace — pour comparer deux écritures. */
+  function chiffresPrix(t) {
+    return String(t || '').replace(/[^0-9]/g, '');
+  }
+
+  Editeur.prototype.trouverPrixAffiche = function (txtBase) {
+    var racine = this.colonne || document.querySelector('form[action*="/cart/add"]');
+    if (!racine) return null;
+    var vise = chiffresPrix(txtBase);
+    if (!vise) return null;
+
+    var noeuds = racine.querySelectorAll('*');
+    for (var i = 0; i < noeuds.length; i++) {
+      var n = noeuds[i];
+      // Feuille seulement : un conteneur qui englobe le prix contient aussi
+      // le titre et la description, le réécrire effacerait la fiche.
+      if (n.children.length) continue;
+      if (this.vue && this.vue.contains(n)) continue;   // notre propre panneau
+      if (this.barre && this.barre.contains(n)) continue;
+      if (this.boutonTheme && this.boutonTheme.contains(n)) continue;
+      var t = (n.textContent || '').trim();
+      if (!t || t.length > 24) continue;
+      if (chiffresPrix(t) === vise) return n;
+    }
+    return null;
   };
 
   function fondu(el) {
