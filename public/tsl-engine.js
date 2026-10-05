@@ -136,21 +136,43 @@
   /** Remplace les calques de la face courante. */
   Moteur.prototype.poserCalques = function (calques, pret) {
     var self = this;
+    // Jeton de pose : une image se charge de façon asynchrone, et rien
+    // n'empêche de rechanger de face avant la fin. Sans ce garde-fou, le
+    // visuel du recto arrivait sur le verso quelques dixièmes de seconde
+    // plus tard — les faces se mélangeaient, parfois en double.
+    var jeton = (this._pose = (this._pose || 0) + 1);
+
+    this._poseEnCours = true;
     this.objets().forEach(function (o) { self.canvas.remove(o); });
     var restants = (calques || []).length;
-    if (!restants) { this.canvas.requestRenderAll(); if (pret) pret(); return; }
+    if (!restants) {
+      this._poseEnCours = false;
+      this.canvas.requestRenderAll();
+      if (pret) pret();
+      return;
+    }
 
     // On pose dans l'ordre reçu pour préserver l'empilement, et on n'appelle
-    // `pret` qu'une fois le dernier chargé — les images sont asynchrones.
-    var fini = function () { if (--restants === 0) { self.canvas.requestRenderAll(); if (pret) pret(); } };
-    calques.forEach(function (c) { self._poserUn(c, fini); });
+    // `pret` qu'une fois le dernier chargé.
+    var fini = function () {
+      if (jeton !== self._pose) return;   // pose périmée : une autre a pris la main
+      if (--restants === 0) {
+        self._poseEnCours = false;
+        self.canvas.requestRenderAll();
+        if (pret) pret();
+      }
+    };
+    calques.forEach(function (c) { self._poserUn(c, fini, jeton); });
   };
 
-  Moteur.prototype._poserUn = function (c, fini) {
+  Moteur.prototype._poserUn = function (c, fini, jeton) {
     var self = this;
     var boite = versPixels(c, this.zone);
 
     var appliquer = function (obj) {
+      // La face a changé pendant le chargement : ce calque n'a plus lieu
+      // d'être posé, il appartient à ce qu'on vient de quitter.
+      if (jeton !== undefined && jeton !== self._pose) { fini(); return; }
       obj.__tslType = c.type;
       if (f.__customName) obj.__customName = f.__customName;
       // La déformation AVANT la mise à l'échelle : elle change la largeur et
@@ -214,8 +236,13 @@
    */
   Moteur.prototype.changerFace = function (face, pret, avantPose) {
     if (FACES.indexOf(face) < 0 || face === this.face) { if (pret) pret(); return; }
-    this.compositions[this.face] = this.lireCalques();
-    this.ratios[this.face] = this.zone.w / this.zone.h;
+    // Une pose encore en cours veut dire que le canevas ne montre pas
+    // encore la face qu'on quitte : l'enregistrer reviendrait à remplacer
+    // ses calques par le vide. Sa version en mémoire fait toujours foi.
+    if (!this._poseEnCours) {
+      this.compositions[this.face] = this.lireCalques();
+      this.ratios[this.face] = this.zone.w / this.zone.h;
+    }
     this.face = face;
     if (avantPose) avantPose();
     this.poserCalques(this.compositions[face] || [], pret);
@@ -223,8 +250,12 @@
 
   /** Composition complète, au format partagé. */
   Moteur.prototype.exporterComposition = function () {
-    this.compositions[this.face] = this.lireCalques();
-    this.ratios[this.face] = this.zone.w / this.zone.h;
+    // Même précaution qu'au changement de face : on n'écrase pas une face
+    // par un canevas qui n'a pas fini de la charger.
+    if (!this._poseEnCours) {
+      this.compositions[this.face] = this.lireCalques();
+      this.ratios[this.face] = this.zone.w / this.zone.h;
+    }
     var faces = {};
     var self = this;
     FACES.forEach(function (nom) {

@@ -292,13 +292,14 @@
     +   'stroke-linecap:round;stroke-linejoin:round}'
     + '.tsle-police{text-align:left;cursor:pointer;display:flex;align-items:center}'
     + '.tsle-police::after{content:"\\25BE";margin-left:auto;opacity:.5;font-size:.8em}'
-    // Hauteur bornée et défilement : cent lignes déroulées pousseraient tout
-    // le reste du panneau hors de vue.
-    + '.tsle-polices{max-height:260px;overflow-y:auto;margin-top:10px;display:grid;'
-    +   'grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px}'
-    + '.tsle-pol{padding:9px 12px;border:1px solid rgba(128,128,128,.28);border-radius:10px;'
-    +   'background:transparent;color:inherit;font-size:1rem;cursor:pointer;text-align:left;'
-    +   'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4}'
+    // Une colonne, pas une grille : chaque nom doit avoir la place de
+    // montrer sa police. Hauteur bornée, sinon cent dix-huit lignes
+    // pousseraient tout le reste du panneau hors de vue.
+    + '.tsle-polices{max-height:300px;overflow-y:auto;margin-top:10px;'
+    +   'border:1px solid rgba(128,128,128,.28);border-radius:12px;padding:6px}'
+    + '.tsle-pol{display:block;width:100%;padding:9px 12px;border:0;border-radius:9px;'
+    +   'background:transparent;color:inherit;font-size:1.15rem;cursor:pointer;text-align:left;'
+    +   'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.5}'
     + '.tsle-pol:hover{background:rgba(128,128,128,.12)}'
     + '.tsle-pol[aria-pressed="true"]{background:var(--tsle-accent,#111114);'
     +   'color:var(--tsle-on-accent,#fff);border-color:var(--tsle-accent,#111114)}'
@@ -616,12 +617,13 @@
     var media = this.media;
     var img = imageProduit();
     if (!media || !img || this.barre.classList.contains('tsle-flottante')) return;
-    var hote = img.parentElement || img;
-    var ri = img.getBoundingClientRect();
-    var rh = hote.getBoundingClientRect();
-    var rm = media.getBoundingClientRect();
-    var bas = Math.min(ri.bottom, rh.bottom);
-    this.barre.style.top = Math.round(bas - rm.top + 10) + 'px';
+    // Position de MISE EN PAGE, pas d'affichage : la photo agrandie déborde
+    // de son conteneur, qui la rogne, et c'est le bord de ce conteneur —
+    // donc la boîte non zoomée — que la barre doit suivre. La mesurer à
+    // l'écran la faisait descendre sous le visuel à chaque changement
+    // d'outil, d'autant que la transition n'est pas finie quand on mesure.
+    var d = decalageDans(img, media);
+    this.barre.style.top = Math.round(d.y + img.offsetHeight + 10) + 'px';
   };
 
   /**
@@ -1091,7 +1093,6 @@
 
       + '<div class="tsle-sousbloc" data-r="blocPolices">'
       +   '<div class="tsle-f" style="grid-column:1/-1">'
-      +     '<input class="tsle-input" data-r="chercherPolice" placeholder="Chercher une police…">'
       +     '<div class="tsle-polices" data-r="listePolices"></div>'
       +   '</div>'
       + '</div>'
@@ -1118,27 +1119,28 @@
     var liste = q('listePolices');
     var bouton = q('policeBtn');
 
-    var dessiner = function (filtre) {
-      var f = (filtre || '').trim().toLowerCase();
-      var vues = POLICES.filter(function (n) { return !f || n.toLowerCase().indexOf(f) >= 0; });
-      liste.innerHTML = vues.length
-        ? vues.map(function (n) {
-            return '<button type="button" class="tsle-pol" data-police="' + esc(n) + '" '
-                 +   'style="font-family:\'' + esc(n) + '\',sans-serif"'
-                 +   (n === self._t.police.value ? ' aria-pressed="true"' : '') + '>'
-                 +   esc(n) + '</button>';
-          }).join('')
-        : '<div class="tsle-vide">Aucune police à ce nom.</div>';
+    // Une liste déroulante, pas un moteur de recherche : personne ne connaît
+    // le nom des cent dix-huit familles, on les reconnaît en les voyant.
+    // D'où une ligne par police, chacune écrite dans la sienne.
+    var dessiner = function () {
+      liste.innerHTML = POLICES.map(function (n) {
+        return '<button type="button" class="tsle-pol" data-police="' + esc(n) + '" '
+             +   'style="font-family:\'' + esc(n) + '\',sans-serif"'
+             +   (n === self._t.police.value ? ' aria-pressed="true"' : '') + '>'
+             +   esc(n) + '</button>';
+      }).join('');
+      // La police retenue est amenée sous les yeux : sans ça, rouvrir la
+      // liste la laissait quelque part au milieu des cent autres.
+      var actif = liste.querySelector('[aria-pressed="true"]');
+      if (actif) liste.scrollTop = Math.max(0, actif.offsetTop - 80);
     };
 
     bouton.addEventListener('click', function () {
       var ouvert = bloc.classList.toggle('on');
       if (!ouvert) return;
       chargerCatalogueFontes();
-      dessiner(q('chercherPolice').value);
-      try { q('chercherPolice').focus(); } catch (e) {}
+      dessiner();
     });
-    q('chercherPolice').addEventListener('input', function () { dessiner(this.value); });
     liste.addEventListener('click', function (e) {
       var b = e.target.closest ? e.target.closest('[data-police]') : null;
       if (!b) return;
