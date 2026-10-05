@@ -73,6 +73,7 @@
     + '.tsle-bar{position:relative;z-index:6;display:flex;flex-wrap:wrap;justify-content:center;'
     +   'gap:6px;padding:14px 0 2px;width:100%;box-sizing:border-box;pointer-events:auto}'
     + '.tsle-bar .tsle-tool{pointer-events:auto}'
+    + '.tsle-bar.tsle-sousphoto{position:absolute;left:0;right:0;width:auto;padding:0}'
     // Repli : la barre flotte au bas de la photo quand sa place dans le
     // flux s'avère inutilisable.
     + '.tsle-bar.tsle-flottante{position:absolute;z-index:2147483000;width:auto;padding:0;'
@@ -543,6 +544,14 @@
     this.racine.classList.add('tsle-efface');
     this.vue.classList.remove('tsle-plat');
     if (this.barre.parentElement !== media) media.appendChild(this.barre);
+    this.media = media;
+    // La colonne média est souvent plus haute que la photo — galerie qui
+    // garde la place de ses autres vues, espace réservé — et la barre,
+    // simplement ajoutée à la fin, se retrouvait très loin dessous. On la
+    // cale donc SUR la photo plutôt que sur le flux du thème.
+    if (getComputedStyle(media).position === 'static') media.style.position = 'relative';
+    this.barre.classList.add('tsle-sousphoto');
+    this.calerBarre();
     if (this.vue.parentElement !== colonne) colonne.appendChild(this.vue);
     this.colonne = colonne;
 
@@ -553,6 +562,25 @@
     this.vue.classList.toggle('large', colonne.offsetWidth >= 640);
     this.verifierBarre();
     return true;
+  };
+
+  /**
+   * Pose la barre juste sous la photo, dans le repère de la colonne média.
+   *
+   * On vise le bas de la zone VISIBLE : pendant le zoom, la photo déborde
+   * de son conteneur, qui la rogne. Suivre le bas de l'image elle-même
+   * ferait descendre la barre hors de l'écran.
+   */
+  Editeur.prototype.calerBarre = function () {
+    var media = this.media;
+    var img = imageProduit();
+    if (!media || !img || this.barre.classList.contains('tsle-flottante')) return;
+    var hote = img.parentElement || img;
+    var ri = img.getBoundingClientRect();
+    var rh = hote.getBoundingClientRect();
+    var rm = media.getBoundingClientRect();
+    var bas = Math.min(ri.bottom, rh.bottom);
+    this.barre.style.top = Math.round(bas - rm.top + 10) + 'px';
   };
 
   /**
@@ -834,6 +862,9 @@
       poser(this.scene, '', '');
       this.definitionCanevas(1);
       this.affinerPhoto(0);
+      var self = this;
+      // Après la transition : le conteneur a retrouvé sa taille.
+      setTimeout(function () { self.calerBarre(); }, SOBRE ? 0 : 420);
       if (this._surplusHote !== undefined) hote.style.overflow = this._surplusHote;
       return;
     }
@@ -841,9 +872,11 @@
     var d = this._dimensions();
     var z = d.zone;
     if (!z.w || !z.h) return;
-    // Viser 78 % de la photo, sans jamais dézoomer ni dépasser 2,4×, au-delà
-    // duquel un cliché de catalogue devient flou.
-    var k = Math.min(2.4, Math.max(1, Math.min(d.largeur * 0.78 / z.w, d.hauteur * 0.78 / z.h)));
+    // Viser 90 % de la photo, sans jamais dézoomer ni dépasser 3×. On peut
+    // serrer d'autant plus que la définition du canevas et celle de la photo
+    // suivent désormais le facteur : ce n'est plus le zoom qui limite la
+    // netteté, mais la source.
+    var k = Math.min(3, Math.max(1, Math.min(d.largeur * 0.9 / z.w, d.hauteur * 0.9 / z.h)));
     var ox = (z.x + z.w / 2) / d.largeur * 100;
     var oy = (z.y + z.h / 2) / d.hauteur * 100;
 
@@ -863,6 +896,7 @@
     poser(this.scene, echelle, origine);
     this.definitionCanevas(k);
     this.affinerPhoto(k);
+    this.calerBarre();
   };
 
   // ── Panneau Textes ────────────────────────────────────────────────────────
@@ -2287,6 +2321,7 @@
 
     var suivre = function () {
       self._placerScene();
+      self.calerBarre();
       self.placerCtx();
       var d = self._dimensions();
       self.moteur.canvas.setDimensions({ width: d.largeur, height: d.hauteur });
