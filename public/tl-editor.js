@@ -3440,6 +3440,8 @@
         panneauOuvert: vue ? vue.classList.contains('ouvert') : null,
         panneauAffiche: vue ? getComputedStyle(vue).display : null,
         flottante: bar ? bar.classList.contains('tsle-flottante') : null,
+        faces: (this.instances[0] && this.instances[0].faces || []).map(function (x) { return x.face; }),
+        zoneCalibree: !!(this.instances[0] && this.instances[0].zoneCalibree),
       };
       if (bar) {
         var b = bar.querySelector('.tsle-tool');

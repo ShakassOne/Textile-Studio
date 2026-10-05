@@ -656,7 +656,7 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
           <button class="btn" onclick="loadDisplayZones()">↺ Produits</button>
           <button class="btn" id="dz-heriter" onclick="heriterDuMaster()" style="display:none" title="Supprimer la zone propre à cette photo : elle suivra de nouveau la zone de référence">↳ Suivre la référence</button>
           <button class="btn" id="dz-reset" onclick="resetDisplayZone()" style="display:none" title="Remettre un rectangle droit, en gardant la taille et la position actuelles">⬛ Redresser</button>
-          <button class="btn" id="dz-face" onclick="basculerFaceZone()" style="display:none" title="Une photo de dos donne une seconde face à imprimer. Une photo du même côté, cadrée autrement — un autre coloris par exemple — reste un recto.">🙂 Recto</button>
+          <button class="btn" id="dz-face" onclick="basculerFaceZone()" style="display:none" title="Cochez si cette photo montre le DOS du vêtement : elle devient une seconde face à imprimer. Décoché, la zone n'est qu'un cadrage de rechange pour le même côté — le cas d'un autre coloris.">☐ Verso</button>
           <button class="btn btn-danger" id="dz-del" onclick="deleteDisplayZone()" style="display:none">🗑 Supprimer la zone</button>
           <button class="btn btn-primary" id="dz-save" onclick="saveDisplayZone()" disabled>💾 Enregistrer la zone</button>
         </div>
@@ -3689,15 +3689,18 @@ function basculerFaceZone() {
   _dzFace = _dzFace === 'back' ? 'front' : 'back';
   _dzMajBoutonFace();
   showToast(_dzFace === 'back'
-    ? 'Cette photo sera traitée comme le VERSO — second fichier d\'impression'
-    : 'Cette photo revient au recto');
+    ? 'Verso coché — pensez à enregistrer la zone'
+    : 'Verso décoché : cette zone restera un cadrage du recto');
 }
 
 function _dzMajBoutonFace() {
   const b = document.getElementById('dz-face');
   if (!b) return;
+  // Une case à cocher, pas un libellé d'état : un bouton marqué « Recto »
+  // se lit comme une information, pas comme une action, et on ne devine pas
+  // qu'il faut cliquer dessus pour désigner le dos.
   b.style.display = '';
-  b.textContent = _dzFace === 'back' ? '🔄 Verso' : '🙂 Recto';
+  b.textContent = (_dzFace === 'back' ? '☑' : '☐') + ' Verso';
   b.classList.toggle('btn-primary', _dzFace === 'back');
 }
 
@@ -3811,7 +3814,8 @@ function _dzMajStatut() {
   const propre = _dzImage && _dzOverrides[_dzImage.id];
   const estPhotoDuMaster = _dzMaster && _dzImage && _dzMaster.referenceMediaId === _dzImage.id;
 
-  if (propre)                   badge.textContent = '◆ zone propre à cette photo';
+  if (propre && propre.face === 'back') badge.textContent = '🔄 verso — seconde face à imprimer';
+  else if (propre)              badge.textContent = '◆ zone propre à cette photo';
   else if (estPhotoDuMaster)    badge.textContent = '✓ zone de référence';
   else if (_dzMaster)           badge.textContent = '↳ hérite de la zone de référence';
   else                          badge.textContent = 'zone à poser';
@@ -3823,12 +3827,14 @@ function _dzMajStatut() {
 
 function _dzRenderImages() {
   document.getElementById('dz-images').innerHTML = _dzImages.map(i => {
-    const propre = !!_dzOverrides[i.id];
+    const zone   = _dzOverrides[i.id];
+    const verso  = zone && zone.face === 'back';
+    const propre = !!zone;
     const master = _dzMaster && _dzMaster.referenceMediaId === i.id;
-    const marque = propre ? '◆' : (master ? '✓' : '');
+    const marque = verso ? 'V' : (propre ? '◆' : (master ? '✓' : ''));
     return `
     <div class="dz-thumb ${_dzImage && i.id === _dzImage.id ? 'on' : ''}" data-id="${_esc(i.id)}"
-         title="${i.width}×${i.height}${propre ? ' — zone propre' : (master ? ' — zone de référence' : '')}"
+         title="${i.width}×${i.height}${verso ? ' — VERSO' : (propre ? ' — zone propre' : (master ? ' — zone de référence' : ''))}"
          onclick="_dzChoisirImage('${_esc(i.id)}')">
       <img src="${_esc(i.url)}" alt="" loading="lazy">
       ${marque ? `<span class="dz-marque">${marque}</span>` : ''}
