@@ -80,6 +80,7 @@
     this.zone = options.zone || { x: 0, y: 0, w: this.canvas.getWidth(), h: this.canvas.getHeight() };
     this.face = 'front';
     this.compositions = {};   // face → calques sérialisés des faces inactives
+    this.ratios = {};         // face → rapport de sa zone, pour l'export
     this.onChange = options.onChange || function () {};
     this._brancher();
   }
@@ -202,16 +203,28 @@
   // ── Composition complète, toutes faces ───────────────────────────────────
 
   /** Bascule de face en mémorisant celle qu'on quitte. */
-  Moteur.prototype.changerFace = function (face, pret) {
+  /**
+   * Bascule de face.
+   *
+   * `avantPose` est appelé ENTRE la sauvegarde de la face qu'on quitte et le
+   * chargement de celle qu'on rejoint. C'est là, et nulle part ailleurs, que
+   * la zone doit changer : les calques sont enregistrés en fractions de
+   * zone, donc les relire avec la nouvelle les décalerait, et les poser avec
+   * l'ancienne aussi.
+   */
+  Moteur.prototype.changerFace = function (face, pret, avantPose) {
     if (FACES.indexOf(face) < 0 || face === this.face) { if (pret) pret(); return; }
     this.compositions[this.face] = this.lireCalques();
+    this.ratios[this.face] = this.zone.w / this.zone.h;
     this.face = face;
+    if (avantPose) avantPose();
     this.poserCalques(this.compositions[face] || [], pret);
   };
 
   /** Composition complète, au format partagé. */
   Moteur.prototype.exporterComposition = function () {
     this.compositions[this.face] = this.lireCalques();
+    this.ratios[this.face] = this.zone.w / this.zone.h;
     var faces = {};
     var self = this;
     FACES.forEach(function (nom) {
@@ -220,7 +233,10 @@
         faces[nom] = {
           layers: calques,
           format: (self.formats || {})[nom] || null,
-          zone:   { ratio: self.zone.w / self.zone.h },
+          // Le rapport de CETTE face : les deux photos n'ont aucune raison
+          // d'avoir la même zone, et c'est lui qui donnera le format du
+          // fichier d'impression.
+          zone:   { ratio: self.ratios[nom] || (self.zone.w / self.zone.h) },
         };
       }
     });
@@ -232,6 +248,7 @@
     comp = comp || {};
     var faces = comp.faces || {};
     this.compositions = {};
+    this.ratios = {};
     this.formats = {};
     var self = this;
     FACES.forEach(function (nom) {

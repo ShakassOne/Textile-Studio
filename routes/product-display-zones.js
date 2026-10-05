@@ -261,12 +261,67 @@ router.get('/admin/product-display-zones', requireAuth, requireShopifySession, (
 // Appelée par la vitrine pour savoir si ce produit sait afficher un design sur
 // sa photo. Toujours 200 : `exists: false` veut dire « pas calibré », ce qui
 // n'est pas une erreur.
-router.get('/products/:productId/display-zone', attachShopId, (req, res) => {
+router.get('/products/:productId/display-zone', attachShopId, async (req, res) => {
   const productId = _chiffres(req.params.productId);
   if (!productId) return res.status(400).json({ error: 'productId invalide' });
+  const db = getDB();
   const media = String(req.query.media || '').trim();
-  const zone  = _exposer(_zonePourPhoto(getDB(), req.shopId, productId, media));
-  res.json(zone ? { exists: true, ...zone } : { exists: false, productId });
+  const zone  = _exposer(_zonePourPhoto(db, req.shopId, productId, media));
+  if (!zone) return res.json({ exists: false, productId });
+
+  // ── Les faces personnalisables ────────────────────────────────────────
+  //
+  // Une zone calibrée sur une seconde photo, c'est une seconde face à
+  // imprimer : le marchand a désigné où poser un visuel sur le dos du
+  // vêtement. La vitrine a besoin de l'URL de chaque photo pour pouvoir
+  // basculer de l'une à l'autre, d'où la résolution des médias ici.
+  //
+  // Jamais bloquant : sans jeton Shopify ou sans réponse de l'Admin API,
+  // on rend la zone seule et la fiche reste mono-face, comme avant.
+  let faces = [];
+  try {
+    const boutique = db.prepare(
+      'SELECT shop_domain, access_token FROM shops WHERE id=? AND is_active=1'
+    ).get(req.shopId);
+    const zones = _lireZones(db, req.shopId, productId);
+    if (boutique?.access_token && zones.length) {
+      const { photosDuProduit } = require('./product-designs');
+      const photos = await photosDuProduit(boutique.shop_domain, boutique.access_token, productId);
+      const parId = {};
+      photos.forEach((ph) => { parId[ph.id] = ph; });
+
+      // Le master d'abord — c'est le recto par convention — puis les zones
+      // propres à une photo, dans l'ordre où le produit les présente.
+      const rang = (z) => {
+        if (z.is_master === 1) return -1;
+        const i = photos.findIndex((ph) => ph.id === z.reference_media_id);
+        return i < 0 ? 999 : i;
+      };
+      faces = zones
+        .slice()
+        .sort((a2, b2) => rang(a2) - rang(b2))
+        .map((z) => {
+          const ph = parId[z.reference_media_id] || photos[0] || null;
+          return {
+            mediaId: z.reference_media_id || null,
+            url:     ph ? ph.url : null,
+            largeur: ph ? ph.width : null,
+            hauteur: ph ? ph.height : null,
+            corners: _lireCoins(z.corners_json),
+            isMaster: z.is_master === 1,
+          };
+        })
+        .filter((f) => f.url && f.corners.length === 4)
+        // Le format de composition ne connaît que deux faces : au-delà, on
+        // ne saurait pas où ranger la troisième ni quoi en imprimer.
+        .slice(0, 2)
+        .map((f, i) => ({ face: i === 0 ? 'front' : 'back', ...f }));
+    }
+  } catch (e) {
+    console.warn('display-zone faces :', e.message);
+  }
+
+  res.json({ exists: true, ...zone, faces });
 });
 
 /**

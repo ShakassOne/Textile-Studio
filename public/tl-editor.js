@@ -74,6 +74,12 @@
     +   'gap:6px;padding:14px 0 2px;width:100%;box-sizing:border-box;pointer-events:auto}'
     + '.tsle-bar .tsle-tool{pointer-events:auto}'
     + '.tsle-bar.tsle-sousphoto{position:absolute;left:0;right:0;width:auto;padding:0}'
+    // Le sélecteur de face occupe sa propre ligne au-dessus des outils.
+    + '.tsle-faces{flex:0 0 100%;display:flex;justify-content:center;gap:6px;margin-bottom:8px}'
+    + '.tsle-face{padding:7px 16px;border-radius:999px;border:1px solid rgba(128,128,128,.35);'
+    +   'background:transparent;color:inherit;font:inherit;font-size:.8rem;cursor:pointer;line-height:1}'
+    + '.tsle-face[aria-pressed="true"]{background:var(--tsle-accent,#111114);'
+    +   'color:var(--tsle-on-accent,#fff);border-color:var(--tsle-accent,#111114)}'
     // Repli : la barre flotte au bas de la photo quand sa place dans le
     // flux s'avère inutilisable.
     + '.tsle-bar.tsle-flottante{position:absolute;z-index:2147483000;width:auto;padding:0;'
@@ -2540,6 +2546,7 @@
       zone,
     ]).then(function (res) {
       self.zoneCalibree = res[1] && res[1].exists ? res[1] : null;
+      self.faces = (res[1] && res[1].faces) || [];
       return self._monterCanvas();
     });
     return this._scenePrete;
@@ -2583,18 +2590,94 @@
       .forEach(function (ev) { c.on(ev, function () { self.placerCtx(); }); });
     window.addEventListener('scroll', function () { self.placerCtx(); }, { passive: true });
 
-    var suivre = function () {
-      self._placerScene();
-      self.calerBarre();
-      self.placerCtx();
-      var d = self._dimensions();
-      self.moteur.canvas.setDimensions({ width: d.largeur, height: d.hauteur });
-      self.moteur.definirZone(d.zone);
-      self._placerCadre(d.zone);
-    };
+    var suivre = function () { self.recalerScene(); };
     window.addEventListener('resize', suivre);
     if (window.ResizeObserver) new ResizeObserver(suivre).observe(img);
+    this.monterFaces();
     return this.moteur;
+  };
+
+  /** Remet canevas, zone, cadre et barres en accord avec la photo affichée. */
+  Editeur.prototype.recalerScene = function () {
+    if (!this.moteur) return;
+    this._placerScene();
+    this.calerBarre();
+    this.placerCtx();
+    var d = this._dimensions();
+    this.moteur.canvas.setDimensions({ width: d.largeur, height: d.hauteur });
+    this.moteur.definirZone(d.zone);
+    this._placerCadre(d.zone);
+  };
+
+  // ── Recto / verso ─────────────────────────────────────────────────────────
+  //
+  // Une face, c'est une photo du produit sur laquelle le marchand a calibré
+  // une zone. Deux zones calibrées valent donc deux faces à imprimer, et le
+  // format de composition en accepte exactement deux.
+
+  var NOM_FACE = { front: 'Recto', back: 'Verso' };
+
+  Editeur.prototype.monterFaces = function () {
+    var self = this;
+    if (!this.faces || this.faces.length < 2 || this.selFaces) return;
+
+    var el = document.createElement('div');
+    el.className = 'tsle-faces';
+    el.innerHTML = this.faces.map(function (f) {
+      return '<button type="button" class="tsle-face" data-face="' + f.face + '" '
+           +   'aria-pressed="' + (f.face === 'front' ? 'true' : 'false') + '">'
+           +   esc(NOM_FACE[f.face] || f.face) + '</button>';
+    }).join('');
+    el.addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('[data-face]') : null;
+      if (b) self.changerFace(b.getAttribute('data-face'));
+    });
+    this.barre.insertBefore(el, this.barre.firstChild);
+    this.selFaces = el;
+  };
+
+  Editeur.prototype.changerFace = function (face) {
+    var self = this;
+    if (!this.moteur || this.moteur.face === face) return;
+    var cible = null;
+    this.faces.forEach(function (f) { if (f.face === face) cible = f; });
+    if (!cible) return;
+
+    this.moteur.changerFace(face, function () {
+      self.recalerScene();
+      if (self.outil) self.zoomerSurLaZone(true);
+      self.cacherCtx();
+      if (self.selFaces) {
+        self.selFaces.querySelectorAll('[data-face]').forEach(function (b) {
+          b.setAttribute('aria-pressed', b.getAttribute('data-face') === face ? 'true' : 'false');
+        });
+      }
+    }, function () {
+      // Entre la sauvegarde de l'ancienne face et le chargement de la
+      // nouvelle : c'est le seul moment où changer de zone ne décale rien.
+      self.zoneCalibree = { exists: true, corners: cible.corners };
+      self.montrerPhotoDeFace(cible.url);
+      self.recalerScene();
+    });
+  };
+
+  /**
+   * Affiche la photo d'une face à la place de celle du thème.
+   *
+   * On remplace la source plutôt que de piloter la galerie : son balisage
+   * change d'un thème à l'autre, alors que l'image, elle, est toujours là.
+   * L'original est mémorisé une fois pour toutes — jamais écrasé par les
+   * substitutions successives — et rendu à la fermeture.
+   */
+  Editeur.prototype.montrerPhotoDeFace = function (url) {
+    var img = this.imageProduit;
+    if (!img || !url) return;
+    if (!img.__tslOrigine) {
+      img.__tslOrigine = { src: img.currentSrc || img.src, srcset: img.getAttribute('srcset') || '' };
+    }
+    this._faceUrl = url;
+    img.setAttribute('srcset', '');
+    img.src = url;
   };
 
   /**
@@ -2682,27 +2765,29 @@
   Editeur.prototype.affinerPhoto = function (facteur) {
     var img = this.imageProduit;
     if (!img) return;
+    if (!img.__tslOrigine) {
+      img.__tslOrigine = { src: img.currentSrc || img.src, srcset: img.getAttribute('srcset') || '' };
+    }
 
     if (!facteur) {
-      if (img.__tslSrc) {
-        img.setAttribute('srcset', img.__tslSrcset || '');
-        img.src = img.__tslSrc;
-        img.__tslSrc = null;
-      }
+      // Fin d'édition : la photo du thème reprend sa place. La face choisie
+      // est conservée — rouvrir un outil doit retrouver le verso.
+      img.setAttribute('srcset', img.__tslOrigine.srcset);
+      img.src = img.__tslOrigine.src;
       return;
     }
 
-    if (!/\/\/cdn\.shopify\.com\//.test(img.currentSrc || img.src || '')) return;
-    if (!img.__tslSrc) {
-      img.__tslSrc = img.currentSrc || img.src;
-      img.__tslSrcset = img.getAttribute('srcset') || '';
+    var base = this._faceUrl || img.__tslOrigine.src;
+    if (!/\/\/cdn\.shopify\.com\//.test(base)) {
+      if (img.src !== base) { img.setAttribute('srcset', ''); img.src = base; }
+      return;
     }
     var vise = Math.min(4000, Math.ceil(img.getBoundingClientRect().width
                                         * facteur * (window.devicePixelRatio || 1)));
     // Le `srcset` est vidé le temps du zoom : laissé en place, le navigateur
     // retomberait aussitôt sur une source étroite et annulerait l'effort.
     img.setAttribute('srcset', '');
-    img.src = img.__tslSrc.split('?')[0] + '?width=' + vise;
+    img.src = base.split('?')[0] + '?width=' + vise;
   };
 
   /**
@@ -2732,6 +2817,12 @@
     this.moteur = null;
     this._scenePrete = null;
     this.affinerPhoto(0);            // rendre son `src` d'origine à l'ancienne photo
+    this._faceUrl = null;            // les URL de faces étaient celles de l'ancien coloris
+    this.faces = [];
+    if (this.selFaces && this.selFaces.parentNode) {
+      this.selFaces.parentNode.removeChild(this.selFaces);
+      this.selFaces = null;
+    }
     this._surplusHote = undefined;   // l'ancien conteneur n'est plus le nôtre
     this._densite = null;
     this.cacherCtx();

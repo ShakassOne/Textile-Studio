@@ -682,3 +682,4 @@ module.exports.viderCacheDesigns     = viderCacheDesigns;
 module.exports.purgerRendusProduit   = purgerRendusProduit;
 module.exports.resoudreFormatProduit = resoudreFormatProduit;
 module.exports.octetsDuVisuel        = _octetsDuVisuel;
+module.exports.photosDuProduit       = _photosDuProduit;
