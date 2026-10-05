@@ -656,7 +656,8 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
           <button class="btn" onclick="loadDisplayZones()">↺ Produits</button>
           <button class="btn" id="dz-heriter" onclick="heriterDuMaster()" style="display:none" title="Supprimer la zone propre à cette photo : elle suivra de nouveau la zone de référence">↳ Suivre la référence</button>
           <button class="btn" id="dz-reset" onclick="resetDisplayZone()" style="display:none" title="Remettre un rectangle droit, en gardant la taille et la position actuelles">⬛ Redresser</button>
-          <button class="btn" id="dz-face" onclick="basculerFaceZone()" style="display:none" title="Cochez si cette photo montre le DOS du vêtement : elle devient une seconde face à imprimer. Décoché, la zone n'est qu'un cadrage de rechange pour le même côté — le cas d'un autre coloris.">☐ Verso</button>
+          <button class="btn" id="dz-face-front" onclick="choisirFaceZone('front')" style="display:none" title="Cette photo montre l'AVANT du vêtement. Une seconde photo du même côté, cadrée autrement — un autre coloris — reste un recto.">Recto</button>
+          <button class="btn" id="dz-face-back" onclick="choisirFaceZone('back')" style="display:none" title="Cette photo montre le DOS du vêtement : elle devient une seconde face à imprimer.">Verso</button>
           <button class="btn btn-danger" id="dz-del" onclick="deleteDisplayZone()" style="display:none">🗑 Supprimer la zone</button>
           <button class="btn btn-primary" id="dz-save" onclick="saveDisplayZone()" disabled>💾 Enregistrer la zone</button>
         </div>
@@ -3685,23 +3686,24 @@ let _dzMaster = null, _dzOverrides = {};
 // photo sert d'abord à rattraper un cadrage, pas à désigner un dos.
 let _dzFace = 'front';
 
-function basculerFaceZone() {
-  _dzFace = _dzFace === 'back' ? 'front' : 'back';
+function choisirFaceZone(face) {
+  _dzFace = face === 'back' ? 'back' : 'front';
   _dzMajBoutonFace();
   showToast(_dzFace === 'back'
-    ? 'Verso coché — pensez à enregistrer la zone'
-    : 'Verso décoché : cette zone restera un cadrage du recto');
+    ? 'Verso sélectionné — pensez à enregistrer la zone'
+    : 'Recto sélectionné : cette zone restera un cadrage de l\'avant');
 }
 
+// Deux boutons et non un interrupteur : on choisit la face de la photo
+// qu'on est en train de calibrer, on ne bascule pas un état qu'il faudrait
+// deviner. Celui qui est actif indique ce qui sera enregistré.
 function _dzMajBoutonFace() {
-  const b = document.getElementById('dz-face');
-  if (!b) return;
-  // Une case à cocher, pas un libellé d'état : un bouton marqué « Recto »
-  // se lit comme une information, pas comme une action, et on ne devine pas
-  // qu'il faut cliquer dessus pour désigner le dos.
-  b.style.display = '';
-  b.textContent = (_dzFace === 'back' ? '☑' : '☐') + ' Verso';
-  b.classList.toggle('btn-primary', _dzFace === 'back');
+  [['front', 'dz-face-front'], ['back', 'dz-face-back']].forEach(([f, id]) => {
+    const b = document.getElementById(id);
+    if (!b) return;
+    b.style.display = '';
+    b.classList.toggle('btn-primary', _dzFace === f);
+  });
 }
 
 // Zone de départ : un cadre raisonnable au centre, que l'admin ajuste.

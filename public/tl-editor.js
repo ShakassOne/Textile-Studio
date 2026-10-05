@@ -2669,6 +2669,14 @@
    * L'original est mémorisé une fois pour toutes — jamais écrasé par les
    * substitutions successives — et rendu à la fermeture.
    */
+  /** URL ramenée en absolu, sans paramètres — pour comparer deux sources. */
+  function absolu(u) {
+    if (!u) return '';
+    var a = document.createElement('a');
+    a.href = u;
+    return a.href.split('?')[0];
+  }
+
   Editeur.prototype.montrerPhotoDeFace = function (url) {
     var img = this.imageProduit;
     if (!img || !url) return;
@@ -2678,6 +2686,23 @@
     this._faceUrl = url;
     img.setAttribute('srcset', '');
     img.src = url;
+
+    // Certaines galeries de thème réimposent leur propre source après coup.
+    // On vérifie donc que la photo a bien changé, et on insiste une fois :
+    // sans ça la bascule change les calques mais pas la vue, et on croit
+    // que le verso ne marche pas.
+    var self = this;
+    clearTimeout(this._gardePhoto);
+    this._gardePhoto = setTimeout(function () {
+      if (self._faceUrl !== url) return;
+      // Les deux formes sont ramenées en absolu avant comparaison : une URL
+      // relative et la même en absolu désignent le même fichier, et les
+      // confondre déclenchait l'alerte pour rien.
+      if (absolu(img.getAttribute('src')) === absolu(url)) return;
+      console.info('[TSL] La galerie du thème a repris la main sur la photo — on repose la face.');
+      img.setAttribute('srcset', '');
+      img.src = url;
+    }, 500);
   };
 
   /**
@@ -3440,7 +3465,11 @@
         panneauOuvert: vue ? vue.classList.contains('ouvert') : null,
         panneauAffiche: vue ? getComputedStyle(vue).display : null,
         flottante: bar ? bar.classList.contains('tsle-flottante') : null,
-        faces: (this.instances[0] && this.instances[0].faces || []).map(function (x) { return x.face; }),
+        faces: (this.instances[0] && this.instances[0].faces || []).map(function (x) {
+          return x.face + ' → ' + String(x.url || '').split('/').pop().split('?')[0];
+        }),
+        faceAffichee: (this.instances[0] && this.instances[0].moteur
+          && this.instances[0].moteur.face) || null,
         zoneCalibree: !!(this.instances[0] && this.instances[0].zoneCalibree),
       };
       if (bar) {

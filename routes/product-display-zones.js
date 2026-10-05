@@ -304,7 +304,10 @@ router.get('/products/:productId/display-zone', attachShopId, async (req, res) =
       // coloris du sac Kimood. Les prendre pour des versos ferait imprimer
       // deux fois le même côté.
       const decrire = (z) => {
-        const ph = parId[z.reference_media_id] || photos[0] || null;
+        // Pas de repli sur la première photo : une face dont on n'a pas
+        // retrouvé le média renverrait l'image du recto, et la vitrine
+        // afficherait deux fois la même vue en croyant les distinguer.
+        const ph = parId[z.reference_media_id] || null;
         if (!ph) return null;
         const coins = _lireCoins(z.corners_json);
         if (coins.length !== 4) return null;
@@ -315,12 +318,23 @@ router.get('/products/:productId/display-zone', attachShopId, async (req, res) =
         };
       };
 
-      const recto = decrire(zones.find((z) => z.is_master === 1) || zones[0] || {});
+      const zMaster = zones.find((z) => z.is_master === 1) || zones[0] || null;
+      let recto = zMaster ? decrire(zMaster) : null;
+      if (!recto && zMaster && photos[0]) {
+        // Le recto est la vue par défaut du produit : s'il a perdu son
+        // média de référence, la première photo reste un choix sensé.
+        recto = {
+          mediaId: zMaster.reference_media_id || null,
+          url: photos[0].url, largeur: photos[0].width, hauteur: photos[0].height,
+          corners: _lireCoins(zMaster.corners_json), isMaster: true,
+        };
+        if (recto.corners.length !== 4) recto = null;
+      }
       const dos = zones.filter((z) => z.face === 'back').map(decrire).filter(Boolean)[0] || null;
 
       faces = [];
       if (recto) faces.push({ face: 'front', ...recto });
-      if (dos) faces.push({ face: 'back', ...dos });
+      if (dos && (!recto || dos.url !== recto.url)) faces.push({ face: 'back', ...dos });
     }
   } catch (e) {
     console.warn('display-zone faces :', e.message);
