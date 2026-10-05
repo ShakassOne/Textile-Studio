@@ -127,7 +127,7 @@
         opacity: typeof o.opacity === 'number' ? o.opacity : 1,
         visible: o.visible !== false,
         locked:  o.selectable === false,
-        fabric:  o.toObject(['__tslId', '__tslType', '__customName']),
+        fabric:  o.toObject(['__tslId', '__tslType', '__customName', '__tslDeform', '__tslDeformInt']),
       };
     });
   };
@@ -150,6 +150,14 @@
     var boite = versPixels(c, this.zone);
 
     var appliquer = function (obj) {
+      obj.__tslType = c.type;
+      if (f.__customName) obj.__customName = f.__customName;
+      // La déformation AVANT la mise à l'échelle : elle change la largeur et
+      // la hauteur naturelles de l'objet, et la boîte enregistrée était
+      // justement celle du texte déjà courbé.
+      if (f.__tslDeform && f.__tslDeform !== 'none') {
+        self.deformer(obj, f.__tslDeform, f.__tslDeformInt);
+      }
       // On impose la taille par l'échelle plutôt que par width/height : c'est
       // la seule façon de ne pas déformer un texte ni rééchantillonner une
       // image.
@@ -166,8 +174,6 @@
         originX: 'left', originY: 'top',
       });
       obj.__tslId = c.id || ('c' + Math.random().toString(36).slice(2, 9));
-      obj.__tslType = c.type;
-      if (f.__customName) obj.__customName = f.__customName;
       self.canvas.add(obj);
       fini();
     };
@@ -280,6 +286,84 @@
       top:  z.y + (z.h - (obj.height || 1) * e) / 2,
     });
   };
+
+  /**
+   * Courbe ou incline un texte.
+   * ──────────────────────────────────────────────────────────────────────
+   * Ici et pas dans l'éditeur : c'est la seule façon qu'un texte courbé
+   * rechargé depuis une composition retrouve sa forme. Les tracés sont
+   * décrits dans le repère LOCAL du texte, centrés sur l'origine — c'est ce
+   * qui permet de les recalculer à l'identique côté serveur au moment
+   * d'imprimer, sans transporter le tracé lui-même.
+   */
+  Moteur.prototype.deformer = function (o, type, force) {
+    if (!o) return;
+    type = type || 'none';
+    force = Math.max(1, Number(force) || 35);
+
+    // Remise à plat complète : sans initDimensions(), la largeur reste celle
+    // du tracé précédent et le texte se recentre de travers.
+    o.set({ path: null, skewX: 0, skewY: 0 });
+    if (typeof o.initDimensions === 'function') o.initDimensions();
+    o.setCoords();
+
+    o.__tslDeform = type;
+    o.__tslDeformInt = force;
+    if (type === 'none') { o.dirty = true; return; }
+
+    var demi = Math.max(1, o.width / 2);
+    var corps = o.fontSize || 40;
+    var d = null;
+
+    if (type === 'arc' || type === 'arcbas') {
+      var fleche = Math.max(5, demi * (force / 90));
+      var ctrl = type === 'arcbas' ? fleche : -fleche;
+      d = 'M ' + (-demi) + ' 0 Q 0 ' + ctrl + ' ' + demi + ' 0';
+    } else if (type === 'wave') {
+      var amp = Math.max(5, corps * 0.6 * (force / 50));
+      d = 'M ' + (-demi) + ' 0'
+        + ' C ' + (-0.725 * demi) + ' ' + (-amp) + ' ' + (-0.275 * demi) + ' ' + (-amp) + ' 0 0'
+        + ' S ' + (0.725 * demi) + ' ' + amp + ' ' + demi + ' 0';
+    } else if (type === 'flag') {
+      o.set({ skewY: (force / 80) * 22 });
+    } else if (type === 'slant') {
+      o.set({ skewX: -(force / 80) * 28 });
+    }
+
+    if (d) {
+      var trace = new global.fabric.Path(d, { visible: false });
+      o.set({
+        path: trace,
+        pathSide: 'left',
+        pathStartOffset: Math.max(0, (longueurTrace(d) || o.width) - o.width) / 2,
+      });
+      // Reprendre les dimensions APRÈS avoir posé le tracé : sans ça l'objet
+      // garde la largeur du texte droit, et tout ce qui s'appuie dessus —
+      // le centrage dans la zone en premier — se trompe largement.
+      if (typeof o.initDimensions === 'function') o.initDimensions();
+      o.setCoords();
+    }
+    o.dirty = true;
+  };
+
+  /**
+   * Longueur d'un tracé SVG, pour centrer le texte dessus. Passe par un
+   * élément réellement inséré : Safari rend 0 sur un SVG détaché.
+   */
+  function longueurTrace(d) {
+    try {
+      var ns = 'http://www.w3.org/2000/svg';
+      var svg = global.document.createElementNS(ns, 'svg');
+      svg.style.cssText = 'position:absolute;visibility:hidden;width:0;height:0;overflow:hidden';
+      var el = global.document.createElementNS(ns, 'path');
+      el.setAttribute('d', d);
+      svg.appendChild(el);
+      global.document.body.appendChild(svg);
+      var l = el.getTotalLength();
+      global.document.body.removeChild(svg);
+      return isFinite(l) && l > 0 ? l : null;
+    } catch (e) { return null; }
+  }
 
   Moteur.prototype.supprimer = function (id) {
     var self = this;

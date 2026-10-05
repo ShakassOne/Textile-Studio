@@ -403,6 +403,110 @@ async function rendreFace(composition, face, opts = {}) {
  * ce qui reproduit fidèlement ce que le client a vu, quelle que soit la
  * taille de son écran.
  */
+// ── Déformations du texte ───────────────────────────────────────────────────
+//
+// Le navigateur courbe le texte en s'appuyant sur le support natif des
+// tracés de Fabric ; ici il n'y a que le contexte 2D. On REFAIT donc la même
+// géométrie : les tracés sont décrits dans le repère local du texte, centrés
+// sur l'origine, avec les mêmes formules que utils/../tsl-engine.js. C'est
+// ce qui permet de n'avoir à transporter que le type et l'intensité, et de
+// retrouver au millimètre la courbe que le client a vue.
+
+/** Un point sur une Bézier quadratique. */
+function _quad(p0, p1, p2, t) {
+  const u = 1 - t;
+  return {
+    x: u * u * p0.x + 2 * u * t * p1.x + t * t * p2.x,
+    y: u * u * p0.y + 2 * u * t * p1.y + t * t * p2.y,
+  };
+}
+
+/** Un point sur une Bézier cubique. */
+function _cube(p0, p1, p2, p3, t) {
+  const u = 1 - t;
+  return {
+    x: u * u * u * p0.x + 3 * u * u * t * p1.x + 3 * u * t * t * p2.x + t * t * t * p3.x,
+    y: u * u * u * p0.y + 3 * u * u * t * p1.y + 3 * u * t * t * p2.y + t * t * t * p3.y,
+  };
+}
+
+/**
+ * Échantillonne la courbe et rend une table (position, longueur cumulée).
+ * Deux cents points suffisent : à la définition d'impression, l'écart entre
+ * deux échantillons reste sous le dixième de millimètre.
+ */
+function _echantillonner(type, demi, amplitude) {
+  const pts = [];
+  const pousser = (p) => {
+    const d = pts.length ? Math.hypot(p.x - pts[pts.length - 1].x, p.y - pts[pts.length - 1].y) : 0;
+    pts.push({ x: p.x, y: p.y, l: (pts.length ? pts[pts.length - 1].l : 0) + d });
+  };
+
+  if (type === 'wave') {
+    // Deux cubiques. La seconde reprend le reflet de la poignée précédente,
+    // exactement comme le « S » du tracé SVG d'origine.
+    const a = { x: -demi, y: 0 }, b = { x: 0, y: 0 }, c = { x: demi, y: 0 };
+    for (let i = 0; i <= 100; i++) {
+      pousser(_cube(a, { x: -0.725 * demi, y: -amplitude }, { x: -0.275 * demi, y: -amplitude }, b, i / 100));
+    }
+    for (let i = 1; i <= 100; i++) {
+      pousser(_cube(b, { x: 0.275 * demi, y: amplitude }, { x: 0.725 * demi, y: amplitude }, c, i / 100));
+    }
+  } else {
+    const a = { x: -demi, y: 0 }, c = { x: demi, y: 0 };
+    for (let i = 0; i <= 200; i++) pousser(_quad(a, { x: 0, y: amplitude }, c, i / 200));
+  }
+  return pts;
+}
+
+/** Position et angle à une distance donnée du début de la courbe. */
+function _surLaCourbe(pts, l) {
+  const total = pts[pts.length - 1].l;
+  const d = Math.max(0, Math.min(total, l));
+  let i = 1;
+  while (i < pts.length - 1 && pts[i].l < d) i++;
+  const a = pts[i - 1], b = pts[i];
+  const t = b.l === a.l ? 0 : (d - a.l) / (b.l - a.l);
+  return {
+    x: a.x + (b.x - a.x) * t,
+    y: a.y + (b.y - a.y) * t,
+    angle: Math.atan2(b.y - a.y, b.x - a.x),
+  };
+}
+
+/** Dessine une ligne lettre par lettre le long de la courbe. */
+function _dessinerSurCourbe(ctx, ligne, type, force, cx, cy, taille, trait) {
+  const largeur = ctx.measureText(ligne).width;
+  const demi = Math.max(1, largeur / 2);
+  const amplitude = type === 'wave'
+    ? Math.max(5, taille * 0.6 * (force / 50))
+    : (type === 'arcbas' ? 1 : -1) * Math.max(5, demi * (force / 90));
+
+  const pts = _echantillonner(type, demi, amplitude);
+  const total = pts[pts.length - 1].l;
+  // Le texte est centré sur la courbe, comme le fait Fabric.
+  let avance = Math.max(0, (total - largeur) / 2);
+
+  const avant = ctx.textAlign, base = ctx.textBaseline;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  for (const lettre of ligne) {
+    const l = ctx.measureText(lettre).width;
+    const p = _surLaCourbe(pts, avance + l / 2);
+    ctx.save();
+    ctx.translate(cx + p.x, cy + p.y);
+    ctx.rotate(p.angle);
+    if (trait) ctx.strokeText(lettre, 0, 0);
+    ctx.fillText(lettre, 0, 0);
+    ctx.restore();
+    avance += l;
+  }
+
+  ctx.textAlign = avant;
+  ctx.textBaseline = base;
+}
+
 function _dessinerTexte(ctx, calque, boite) {
   const f = calque.fabric || {};
   const lignes = String(f.text != null ? f.text : '').split('\n');
@@ -454,11 +558,41 @@ function _dessinerTexte(ctx, calque, boite) {
     ctx.lineWidth = epaisseur;
     ctx.lineJoin = 'round';
   }
+
+  const deform = String(f.__tslDeform || 'none');
+  const force = Math.max(1, Number(f.__tslDeformInt) || 35);
+
+  if (deform === 'arc' || deform === 'arcbas' || deform === 'wave') {
+    const cx = boite.left + boite.width / 2;
+    lignes.forEach((ligne, i) => {
+      _dessinerSurCourbe(ctx, ligne, deform, force,
+        cx, boite.top + (i + 0.5) * hauteurLigne, taille, !!epaisseur);
+    });
+    return;
+  }
+
+  // Cisaillements : une transformation du contexte suffit, appliquée autour
+  // du centre de la boîte pour que le texte ne parte pas de côté.
+  let retablir = false;
+  if (deform === 'flag' || deform === 'slant') {
+    const a = (force / 80) * (deform === 'flag' ? 22 : -28) * Math.PI / 180;
+    const cx = boite.left + boite.width / 2;
+    const cy = boite.top + boite.height / 2;
+    ctx.save();
+    retablir = true;
+    ctx.translate(cx, cy);
+    if (deform === 'flag') ctx.transform(1, Math.tan(a), 0, 1, 0, 0);
+    else ctx.transform(1, 0, Math.tan(a), 1, 0, 0);
+    ctx.translate(-cx, -cy);
+  }
+
   lignes.forEach((ligne, i) => {
     const y = boite.top + i * hauteurLigne;
     if (epaisseur) ctx.strokeText(ligne, x, y);
     ctx.fillText(ligne, x, y);
   });
+
+  if (retablir) ctx.restore();
 }
 
 /**

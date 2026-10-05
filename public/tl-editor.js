@@ -283,6 +283,18 @@
     + '.tsle-ico[disabled]{opacity:.2;cursor:default}'
     + '.tsle-ico svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.7;'
     +   'stroke-linecap:round;stroke-linejoin:round}'
+    + '.tsle-police{text-align:left;cursor:pointer;display:flex;align-items:center}'
+    + '.tsle-police::after{content:"\\25BE";margin-left:auto;opacity:.5;font-size:.8em}'
+    // Hauteur bornée et défilement : cent lignes déroulées pousseraient tout
+    // le reste du panneau hors de vue.
+    + '.tsle-polices{max-height:260px;overflow-y:auto;margin-top:10px;display:grid;'
+    +   'grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px}'
+    + '.tsle-pol{padding:9px 12px;border:1px solid rgba(128,128,128,.28);border-radius:10px;'
+    +   'background:transparent;color:inherit;font-size:1rem;cursor:pointer;text-align:left;'
+    +   'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4}'
+    + '.tsle-pol:hover{background:rgba(128,128,128,.12)}'
+    + '.tsle-pol[aria-pressed="true"]{background:var(--tsle-accent,#111114);'
+    +   'color:var(--tsle-on-accent,#fff);border-color:var(--tsle-accent,#111114)}'
     + '.tsle-sousbloc{display:none;grid-column:1/-1}'
     + '.tsle-sousbloc.on{display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:15px 18px;align-items:end}'
 
@@ -923,9 +935,70 @@
 
   // ── Panneau Textes ────────────────────────────────────────────────────────
 
-  var POLICES = ['Montserrat', 'Bebas Neue', 'Oswald', 'Pacifico', 'Anton',
-                 'Playfair Display', 'Poppins', 'Permanent Marker'];
+  // Une centaine de familles Google, groupées par registre pour que la liste
+  // se parcoure au lieu de se lire. Toutes sont récupérables côté serveur à
+  // la demande (utils/print-composition.js), donc tout ce qui est proposé ici
+  // s'imprimera dans la bonne police.
+  var POLICES = [
+    // Sans — les plus sûres pour un slogan lisible
+    'Montserrat', 'Poppins', 'Inter', 'Roboto', 'Open Sans', 'Lato', 'Raleway',
+    'Nunito', 'Work Sans', 'Rubik', 'Karla', 'Manrope', 'Outfit', 'DM Sans',
+    'Quicksand', 'Barlow', 'Cabin', 'Mulish', 'Figtree', 'Jost', 'Urbanist',
+    'Sora', 'Space Grotesk', 'Archivo', 'Asap', 'Catamaran', 'Exo 2', 'Heebo',
+    'Hind', 'Josefin Sans', 'Kanit', 'Lexend', 'Overpass', 'Public Sans',
+    'Red Hat Display', 'Signika', 'Titillium Web', 'Ubuntu', 'Varela Round',
+    // Condensées et affiches
+    'Anton', 'Bebas Neue', 'Oswald', 'Archivo Black', 'Teko', 'Fjalla One',
+    'Staatliches', 'Russo One', 'Alfa Slab One', 'Black Ops One', 'Bungee',
+    'Chivo', 'Khand', 'Saira Condensed', 'Big Shoulders Display', 'Antonio',
+    // Serif
+    'Playfair Display', 'Merriweather', 'Lora', 'PT Serif', 'Libre Baskerville',
+    'Cormorant Garamond', 'Crimson Text', 'EB Garamond', 'Bitter', 'Arvo',
+    'Zilla Slab', 'Spectral', 'Cardo', 'Domine', 'Rozha One', 'Abril Fatface',
+    'Vollkorn', 'Noto Serif', 'Source Serif 4', 'Frank Ruhl Libre',
+    // Manuscrites et pinceau
+    'Pacifico', 'Lobster', 'Dancing Script', 'Great Vibes', 'Satisfy',
+    'Caveat', 'Sacramento', 'Parisienne', 'Allura', 'Yellowtail',
+    'Shadows Into Light', 'Indie Flower', 'Amatic SC', 'Kalam', 'Courgette',
+    'Cookie', 'Marck Script', 'Italianno', 'Petit Formal Script',
+    // Marqueur, graffiti, fantaisie
+    'Permanent Marker', 'Bangers', 'Luckiest Guy', 'Fredoka', 'Titan One',
+    'Righteous', 'Creepster', 'Monoton', 'Press Start 2P', 'Rock Salt',
+    'Special Elite', 'Nosifer', 'Bowlby One', 'Shrikhand', 'Chewy',
+    'Gloria Hallelujah', 'Patrick Hand', 'Comfortaa', 'Baloo 2',
+    // Mono
+    'Roboto Mono', 'Space Mono', 'JetBrains Mono', 'IBM Plex Mono', 'Courier Prime',
+  ];
+
+  /**
+   * Catalogue des polices, en UNE requête.
+   *
+   * La feuille déclare les cent familles, mais le navigateur ne télécharge
+   * que celles qu'il doit réellement peindre : poser cent liens séparés
+   * coûterait cent allers-retours pour le même résultat.
+   */
+  function chargerCatalogueFontes() {
+    if (document.getElementById('tsle-fontes')) return;
+    var l = document.createElement('link');
+    l.id = 'tsle-fontes';
+    l.rel = 'stylesheet';
+    l.href = 'https://fonts.googleapis.com/css2?'
+           + POLICES.map(function (n) {
+               return 'family=' + encodeURIComponent(n).replace(/%20/g, '+') + ':wght@400;700';
+             }).join('&')
+           + '&display=swap';
+    document.head.appendChild(l);
+  }
   var MAX_CARACTERES = 60;
+
+  var DEFORMATIONS = [
+    { v: 'none',  t: 'Aucune' },
+    { v: 'arc',   t: 'Arc' },
+    { v: 'arcbas', t: 'Arc bas' },
+    { v: 'wave',  t: 'Vague' },
+    { v: 'flag',  t: 'Drapeau' },
+    { v: 'slant', t: 'Penché' },
+  ];
 
   var ALIGNES = {
     left:   'M4 6h16M4 10h10M4 14h16M4 18h10',
@@ -959,10 +1032,12 @@
         +     'placeholder="Winshirt" style="padding-right:58px">'
         +   '<span class="tsle-cpt" data-r="compteur">0/' + MAX_CARACTERES + '</span></div>', true)
 
+      // Le natif <select> ne sait pas afficher chaque ligne dans sa propre
+      // police selon les navigateurs : on ouvre notre liste. La valeur reste
+      // portée par un champ caché, le reste du panneau n'a pas à le savoir.
       + champ('Police d\'écriture',
-          '<select class="tsle-select" data-r="police">'
-        + POLICES.map(function (p) { return '<option value="' + esc(p) + '">' + esc(p) + '</option>'; }).join('')
-        + '</select>')
+          '<button type="button" class="tsle-select tsle-police" data-r="policeBtn">Montserrat</button>'
+        + '<input type="hidden" data-r="police" value="Montserrat">')
 
       + champ('Style',
           '<div class="tsle-seg">'
@@ -989,11 +1064,30 @@
       + champ('Espacement des lettres', curseur('espacement', -50, 600, 0, 10))
       + champ('Opacité', curseur('opacite', 10, 100, 100))
 
+      + champ('Déformation',
+          '<div class="tsle-chips">'
+        + DEFORMATIONS.map(function (d) {
+            return '<button type="button" class="tsle-chip" data-r="deform" data-v="' + d.v + '" '
+                 +   'aria-pressed="' + (d.v === 'none' ? 'true' : 'false') + '">' + esc(d.t) + '</button>';
+          }).join('')
+        + '</div>')
+      + '<div class="tsle-f" data-r="blocIntensite" style="display:none">'
+      +   '<span class="tsle-lab">Intensité</span>'
+      +   curseur('intensite', 5, 100, 35)
+      + '</div>'
+
       + champ('Effets',
           '<div class="tsle-chips">'
         +   '<button type="button" class="tsle-chip" data-r="contour" aria-pressed="false">Contour</button>'
         +   '<button type="button" class="tsle-chip" data-r="ombre" aria-pressed="false">Ombre</button>'
         + '</div>')
+
+      + '<div class="tsle-sousbloc" data-r="blocPolices">'
+      +   '<div class="tsle-f" style="grid-column:1/-1">'
+      +     '<input class="tsle-input" data-r="chercherPolice" placeholder="Chercher une police…">'
+      +     '<div class="tsle-polices" data-r="listePolices"></div>'
+      +   '</div>'
+      + '</div>'
 
       // Réglages du contour : cachés tant que l'effet est éteint. Affichés en
       // permanence, ils occupaient deux cases de la grille pour rien.
@@ -1012,6 +1106,47 @@
       couleur: q('couleur'), compteur: q('compteur'), gras: q('gras'), italique: q('italique'),
     };
 
+    // ── Liste des polices ───────────────────────────────────────────────
+    var bloc = q('blocPolices');
+    var liste = q('listePolices');
+    var bouton = q('policeBtn');
+
+    var dessiner = function (filtre) {
+      var f = (filtre || '').trim().toLowerCase();
+      var vues = POLICES.filter(function (n) { return !f || n.toLowerCase().indexOf(f) >= 0; });
+      liste.innerHTML = vues.length
+        ? vues.map(function (n) {
+            return '<button type="button" class="tsle-pol" data-police="' + esc(n) + '" '
+                 +   'style="font-family:\'' + esc(n) + '\',sans-serif"'
+                 +   (n === self._t.police.value ? ' aria-pressed="true"' : '') + '>'
+                 +   esc(n) + '</button>';
+          }).join('')
+        : '<div class="tsle-vide">Aucune police à ce nom.</div>';
+    };
+
+    bouton.addEventListener('click', function () {
+      var ouvert = bloc.classList.toggle('on');
+      if (!ouvert) return;
+      chargerCatalogueFontes();
+      dessiner(q('chercherPolice').value);
+      try { q('chercherPolice').focus(); } catch (e) {}
+    });
+    q('chercherPolice').addEventListener('input', function () { dessiner(this.value); });
+    liste.addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('[data-police]') : null;
+      if (!b) return;
+      var nom = b.getAttribute('data-police');
+      self._t.police.value = nom;
+      bouton.textContent = nom;
+      bouton.style.fontFamily = '"' + nom + '", sans-serif';
+      liste.querySelectorAll('[data-police]').forEach(function (x) {
+        x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+      });
+      bloc.classList.remove('on');
+      self.chargerPolice(nom);
+      self.majTexteActif();
+    });
+
     // Saisie : on met à jour l'objet sélectionné s'il y en a un, sinon on
     // prépare simplement le prochain ajout. Pas de création automatique à la
     // frappe — un texte vide posé sur le vêtement dérouterait.
@@ -1026,7 +1161,7 @@
 
     // Curseur et case chiffrée : chacun recopie l'autre. C'est la case qui
     // permet une valeur exacte, et le curseur qui permet de chercher.
-    ['taille', 'espacement', 'opacite', 'contourEpaisseur'].forEach(function (r) {
+    ['taille', 'espacement', 'opacite', 'contourEpaisseur', 'intensite'].forEach(function (r) {
       var rg = q(r), va = q(r + 'Val');
       if (!rg || !va) return;
       rg.addEventListener('input', function () { va.value = rg.value; self.majTexteActif(); });
@@ -1042,10 +1177,15 @@
     hote.addEventListener('click', function (e) {
       var b = e.target.closest ? e.target.closest('.tsle-mini,.tsle-chip') : null;
       if (b) {
-        if (b.getAttribute('data-r') === 'al') {
-          hote.querySelectorAll('[data-r="al"]').forEach(function (x) {
+        var role = b.getAttribute('data-r');
+        if (role === 'al' || role === 'deform') {
+          hote.querySelectorAll('[data-r="' + role + '"]').forEach(function (x) {
             x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
           });
+          if (role === 'deform') {
+            q('blocIntensite').style.display =
+              b.getAttribute('data-v') === 'none' ? 'none' : '';
+          }
         } else {
           b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
         }
@@ -1084,6 +1224,9 @@
       contourCouleur: v('contourCouleur', '#ffffff'),
       contourEpaisseur: Number(v('contourEpaisseur', 3)) || 3,
       ombre: p('ombre'),
+      deformation: (h.querySelector('[data-r="deform"][aria-pressed="true"]') || {}).getAttribute
+        ? h.querySelector('[data-r="deform"][aria-pressed="true"]').getAttribute('data-v') : 'none',
+      intensite: Number(v('intensite', 35)) || 35,
     };
   };
 
@@ -1099,6 +1242,7 @@
         fontSize: Math.max(8, Math.round(self.moteur.zone.h * (r.taille / 100))),
       });
         self._appliquerStyle(obj, r);
+      self._appliquerDeformation(obj, r);
       self.moteur._centrer(obj);
       self.moteur.canvas.requestRenderAll();
       self.chargerPolice(r.police);
@@ -1138,6 +1282,13 @@
     });
   };
 
+  /** Délègue au moteur : la géométrie des déformations n'existe qu'à un seul
+   *  endroit, sinon un texte courbé rechargé depuis une composition
+   *  retrouverait une forme légèrement différente. */
+  Editeur.prototype._appliquerDeformation = function (o, r) {
+    if (this.moteur) this.moteur.deformer(o, r.deformation, r.intensite);
+  };
+
   /** Met à jour le texte sélectionné, s'il y en a un. */
   Editeur.prototype.majTexteActif = function () {
     if (!this.moteur) return;
@@ -1148,6 +1299,26 @@
     this._appliquerStyle(o, r);
     var cible = Math.max(8, Math.round(this.moteur.zone.h * (r.taille / 100)));
     o.set({ scaleX: 1, scaleY: 1, fontSize: cible });
+    this._appliquerDeformation(o, r);
+
+    // Le corps se déduit de la HAUTEUR de la zone : un mot long déborde donc
+    // en largeur, et une courbure élargit encore l'encombrement. On réduit
+    // juste ce qu'il faut pour rester dans la zone. Sans ce garde-fou,
+    // toucher n'importe quel réglage faisait ressortir le texte du cadre
+    // d'impression — il avait été ajusté à l'ajout, jamais aux retouches.
+    // La mesure se fait sur la BOÎTE ENGLOBANTE et non sur width/height :
+    // un cisaillement élargit l'encombrement sans toucher à la largeur
+    // propre du texte, et « Penché » ressortait de la zone de quelques
+    // pour cent.
+    var z = this.moteur.zone;
+    o.setCoords();
+    var b = o.getBoundingRect(true, true);
+    var tenir = Math.min(1,
+      (z.w * 0.98) / Math.max(1, b.width),
+      (z.h * 0.98) / Math.max(1, b.height));
+    if (tenir < 1) o.set({ scaleX: tenir, scaleY: tenir });
+    o.setCoords();
+
     this.moteur.canvas.requestRenderAll();
     this.chargerPolice(r.police);
   };
@@ -2455,6 +2626,11 @@
     var c = q('compteur');
     if (c) c.textContent = (o.text || '').length + '/' + MAX_CARACTERES;
     poser('police', o.fontFamily || 'Montserrat');
+    var bp = q('policeBtn');
+    if (bp) {
+      bp.textContent = o.fontFamily || 'Montserrat';
+      bp.style.fontFamily = '"' + (o.fontFamily || 'Montserrat') + '", sans-serif';
+    }
     poser('couleur', typeof o.fill === 'string' && o.fill.charAt(0) === '#' ? o.fill : '#111114');
     presser('gras', o.fontWeight === 'bold' || o.fontWeight === 700);
     presser('italique', o.fontStyle === 'italic');
@@ -2476,6 +2652,14 @@
     if (o.stroke && String(o.stroke).charAt(0) === '#') poser('contourCouleur', o.stroke);
     if (o.strokeWidth) { poser('contourEpaisseur', Math.round(o.strokeWidth)); poser('contourEpaisseurVal', Math.round(o.strokeWidth)); }
     presser('ombre', !!o.shadow);
+    var deform = o.__tslDeform || 'none';
+    h.querySelectorAll('[data-r="deform"]').forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-v') === deform ? 'true' : 'false');
+    });
+    poser('intensite', o.__tslDeformInt || 35);
+    poser('intensiteVal', o.__tslDeformInt || 35);
+    var bi = q('blocIntensite');
+    if (bi) bi.style.display = deform === 'none' ? 'none' : '';
     var bloc = q('blocContour');
     if (bloc) bloc.classList.toggle('on', !!(o.stroke && o.strokeWidth));
 
@@ -3129,13 +3313,17 @@
 
   // ── Démarrage ─────────────────────────────────────────────────────────────
 
+  var _instances = [];
+
   function demarrer() {
     var blocs = document.querySelectorAll('[data-tsl-editor]');
     for (var i = 0; i < blocs.length; i++) {
       if (blocs[i].__tsleInit) continue;
       blocs[i].__tsleInit = true;
       styles();
-      new Editeur(blocs[i]);
+      // Gardée pour le diagnostic : sans référence à l'instance, impossible
+      // d'inspecter le canevas depuis la console d'une boutique.
+      _instances.push(new Editeur(blocs[i]));
     }
   }
 
@@ -3148,6 +3336,7 @@
   // dans la console vaut mieux qu'un aller-retour de captures d'écran.
   window.TSL_EDITOR = {
     refresh: demarrer,
+    instances: _instances,
     diag: function () {
       var bar = document.querySelector('.tsle-bar');
       var vue = document.querySelector('.tsle-vue');
