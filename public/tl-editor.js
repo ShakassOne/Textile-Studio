@@ -2591,11 +2591,26 @@
     c.on('selection:cleared', function () { self.cacherCtx(); });
     ['object:moving', 'object:scaling', 'object:rotating', 'object:modified']
       .forEach(function (ev) { c.on(ev, function () { self.placerCtx(); }); });
-    window.addEventListener('scroll', function () { self.placerCtx(); }, { passive: true });
-
+    // Écouteurs liés à CE canevas : ils sont retenus pour être retirés au
+    // remontage. Sans ça, chaque changement de coloris en ajoutait une
+    // série de plus, toutes actives sur des canevas morts — c'est le genre
+    // d'accumulation qui finit par faire ramer la page sans rien casser de
+    // visible.
+    var auDefilement = function () { self.placerCtx(); };
     var suivre = function () { self.recalerScene(); };
+    window.addEventListener('scroll', auDefilement, { passive: true });
     window.addEventListener('resize', suivre);
-    if (window.ResizeObserver) new ResizeObserver(suivre).observe(img);
+    var observateur = null;
+    if (window.ResizeObserver) {
+      observateur = new ResizeObserver(suivre);
+      observateur.observe(img);
+    }
+    this._detacherScene = function () {
+      window.removeEventListener('scroll', auDefilement);
+      window.removeEventListener('resize', suivre);
+      if (observateur) observateur.disconnect();
+    };
+
     this.monterFaces();
     return this.moteur;
   };
@@ -2637,16 +2652,34 @@
     });
     this.barre.insertBefore(el, this.barre.firstChild);
     this.selFaces = el;
+
+    // Les deux photos sont mises en cache dès maintenant : la bascule doit
+    // être instantanée, pas lancer un téléchargement.
+    this.faces.forEach(function (f) { if (f.url) { var i = new Image(); i.src = f.url; } });
   };
 
   Editeur.prototype.changerFace = function (face) {
     var self = this;
-    if (!this.moteur || this.moteur.face === face) return;
+    if (!this.moteur || this.moteur.face === face || this._bascule) return;
     var cible = null;
     this.faces.forEach(function (f) { if (f.face === face) cible = f; });
     if (!cible) return;
 
+    // On ne bascule qu'une fois la photo prête à peindre : calques et image
+    // changent alors dans la même image-écran, sans montrer l'un sans
+    // l'autre. Et une bascule à la fois — les clics répétés attendent.
+    this._bascule = true;
+    // Filet : un chargement qui n'aboutit jamais ne doit pas condamner le
+    // sélecteur de face pour le reste de la visite.
+    clearTimeout(this._filetBascule);
+    this._filetBascule = setTimeout(function () { self._bascule = false; }, 4000);
+    prete(cible.url).then(function () { self._basculerVers(face, cible); });
+  };
+
+  Editeur.prototype._basculerVers = function (face, cible) {
+    var self = this;
     this.moteur.changerFace(face, function () {
+      self._bascule = false;
       self.recalerScene();
       if (self.outil) self.zoomerSurLaZone(true);
       self.cacherCtx();
@@ -2710,6 +2743,29 @@
     }
     img.setAttribute('srcset', img.__tslOrigine.srcset);
     img.src = img.__tslOrigine.src;
+  }
+
+  /**
+   * Attend qu'une image soit chargée ET décodée.
+   *
+   * Sans cette attente, la bascule de face changeait les calques tout de
+   * suite et la photo quelques dixièmes de seconde plus tard : on voyait
+   * le visuel du verso sur la photo du recto. `decode()` garantit que
+   * l'image est prête à peindre, pas seulement reçue.
+   */
+  function prete(url) {
+    return new Promise(function (ok) {
+      if (!url) return ok();
+      var i = new Image();
+      var fini = function () { ok(); };
+      i.onload = function () {
+        if (i.decode) i.decode().then(fini, fini); else fini();
+      };
+      i.onerror = fini;
+      i.src = url;
+      // Filet : une image qui ne répond pas ne doit pas bloquer la bascule.
+      setTimeout(fini, 2500);
+    });
   }
 
   /** URL ramenée en absolu, sans paramètres — pour comparer deux sources. */
@@ -2849,10 +2905,20 @@
     }
     var vise = Math.min(4000, Math.ceil(img.offsetWidth
                                         * facteur * (window.devicePixelRatio || 1)));
-    // Les sources du thème sont écrasées le temps du zoom : laissées en
-    // place, le navigateur retomberait aussitôt sur une image étroite et
-    // annulerait l'effort.
-    imposerSource(img, base.split('?')[0] + '?width=' + vise);
+    var cible = base.split('?')[0] + '?width=' + vise;
+    if (absolu(img.getAttribute('src')) === absolu(cible)) return;
+
+    // On n'impose la version haute définition qu'une fois reçue : posée
+    // tout de suite, elle laissait la photo vide le temps du chargement.
+    // L'agrandissement, lui, est immédiat — c'est une transformation.
+    var self = this;
+    this._hdAttendu = cible;
+    prete(cible).then(function () {
+      if (self._hdAttendu !== cible) return;   // un autre zoom a pris la main
+      // Les sources du thème sont écrasées le temps du zoom : laissées en
+      // place, le navigateur retomberait aussitôt sur une image étroite.
+      imposerSource(img, cible);
+    });
   };
 
   /**
@@ -2877,6 +2943,8 @@
     var composition = this.moteur.exporterComposition();
     var face = this.moteur.face;
 
+    if (this._detacherScene) { this._detacherScene(); this._detacherScene = null; }
+    if (this.moteur.canvas) { try { this.moteur.canvas.dispose(); } catch (e) {} }
     if (this.scene && this.scene.parentNode) this.scene.parentNode.removeChild(this.scene);
     this.scene = null;
     this.moteur = null;
