@@ -332,6 +332,8 @@
     + '.tsle-cc::-webkit-color-swatch-wrapper{padding:0}'
     + '.tsle-cc::-webkit-color-swatch{border:0;border-radius:50%}'
     + '.tsle-cs{width:1px;height:20px;background:rgba(128,128,128,.3);margin:0 3px}'
+    + '.tsle-cfmt{padding:0 8px;font-size:.76rem;white-space:nowrap;opacity:.8}'
+    + '.tsle-cfmt b{font-size:.82rem;opacity:1}'
     + '.tsle-alerte{animation:tsle-pulse 1.1s ease 2}'
     + '@keyframes tsle-pulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,0)}50%{box-shadow:0 0 0 4px rgba(220,38,38,.35)}}'
 
@@ -730,6 +732,24 @@
 
   Editeur.prototype.fermer = function () {
     if (!this.outil) return;
+
+    // Retour au recto avant de refermer. La galerie du thème reprend sa
+    // photo — celle de l'avant — et laisser le canevas sur le verso
+    // affichait le visuel du dos sur la poitrine, jusqu'à ce qu'on rouvre
+    // pour rebasculer deux fois.
+    this._attenteRecto = (this._attenteRecto || 0) + 1;
+    if (this.moteur && this.moteur.face !== 'front'
+        && this.faces && this.faces.length > 1 && this._attenteRecto < 30) {
+      var self = this;
+      this.changerFace('front');
+      // La bascule est asynchrone : on referme une fois la face revenue.
+      // Borné, pour qu'un chargement qui n'aboutit pas n'empêche jamais de
+      // fermer le panneau.
+      setTimeout(function () { self.fermer(); }, 60);
+      return;
+    }
+    this._attenteRecto = 0;
+
     this.outil = null;
     // Le canevas redevient inerte : laissé actif, Fabric capte les gestes
     // tactiles et le client ne peut plus faire défiler la fiche produit.
@@ -3284,6 +3304,28 @@
     fond:    '<circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M8.1 7.9 20 20M8.1 16.1 20 4"/>',
   };
 
+  var DIMS_MM = { A3: '297×420', A4: '210×297', A5: '148×210', A6: '105×148' };
+
+  /**
+   * Taille réelle d'un objet, en millimètres et en format.
+   *
+   * Même échelle que la tarification : c'est la largeur physique de la zone
+   * qui convertit. Le client doit voir ce qu'il achète — passer de A6 à A5
+   * en tirant une poignée doit se lire, pas se deviner au moment du panier.
+   */
+  Editeur.prototype.tailleImprimee = function (o) {
+    if (!this.moteur || !this.tarif || !o) return null;
+    var z = this.moteur.zone;
+    var Lmm = Number((this.tarif.largeurMm || {})[this.moteur.face]) || 420;
+    var Hmm = Lmm / ((z.w / z.h) || 1);
+    var b = o.getBoundingRect(true, true);
+    var mmW = Math.round(b.width / z.w * Lmm);
+    var mmH = Math.round(b.height / z.h * Hmm);
+    var mm = Math.max(mmW, mmH);
+    var fmt = mm >= 297 ? 'A3' : mm >= 210 ? 'A4' : mm >= 148 ? 'A5' : 'A6';
+    return { mmW: mmW, mmH: mmH, format: fmt };
+  };
+
   Editeur.prototype.creerCtx = function () {
     if (this.ctx) return this.ctx;
     var self = this;
@@ -3328,6 +3370,12 @@
     } else {
       html += bouton('fond', ICO_CTX.fond, 'Détourer le fond') + '<span class="tsle-cs"></span>';
     }
+    var t = this.tailleImprimee(o);
+    if (t) {
+      html += '<span class="tsle-cfmt" data-ctx-taille>'
+            +   '<b>' + t.format + '</b> ' + t.mmW + '×' + t.mmH + ' mm'
+            + '</span><span class="tsle-cs"></span>';
+    }
     html += bouton('copier', ICO_CTX.copier, 'Dupliquer')
           + bouton('monter', ICO_CTX.monter, 'Vers l\'avant')
           + bouton('baisser', ICO_CTX.baisser, 'Vers l\'arrière')
@@ -3354,9 +3402,16 @@
     var e = rc.width / (this.moteur.canvas.getWidth() || 1);
     var br = o.getBoundingRect(true);
     var x = rc.left + window.scrollX + (br.left + br.width / 2) * e;
-    var y = rc.top + window.scrollY + br.top * e - 10;
+    // On s'écarte du rayon d'une poignée : collée, la barre recouvrait la
+    // croix de suppression et le bouton de rotation.
+    var y = rc.top + window.scrollY + br.top * e - (RAYON + 14);
     this.ctx.style.left = Math.round(x) + 'px';
     this.ctx.style.top = Math.round(Math.max(window.scrollY + 6, y - this.ctx.offsetHeight)) + 'px';
+
+    // Le format se lit pendant qu'on tire la poignée, pas une fois lâchée.
+    var badge = this.ctx.querySelector('[data-ctx-taille]');
+    var t = this.tailleImprimee(o);
+    if (badge && t) badge.innerHTML = '<b>' + t.format + '</b> ' + t.mmW + '×' + t.mmH + ' mm';
   };
 
   Editeur.prototype.actionCtx = function (act, valeur) {
@@ -3475,16 +3530,64 @@
    * « Impression » vaut le montant — une seule ligne de panier, pas de
    * produit de frais à côté. C'est le modèle déjà en place pour le studio.
    */
+  /**
+   * Tous les montants possibles, du barème : une face, ou deux cumulées.
+   * Sert d'échelle de repli quand la variante exacte n'existe pas.
+   */
+  Editeur.prototype.paliers = function () {
+    var bareme = (this.tarif && this.tarif.formats) || {};
+    var valeurs = Object.keys(bareme).map(function (k) { return Number(bareme[k]) || 0; })
+                        .filter(function (v) { return v > 0; });
+    var tous = {};
+    valeurs.forEach(function (a) {
+      tous[a.toFixed(2)] = a;
+      valeurs.forEach(function (b) { var s2 = Math.round((a + b) * 100) / 100; tous[s2.toFixed(2)] = s2; });
+    });
+    return Object.keys(tous).map(function (k) { return tous[k]; })
+                 .sort(function (a, b) { return a - b; });
+  };
+
+  /**
+   * Variante pré-tarifée correspondant à la surcharge.
+   *
+   * Le coût d'impression est porté par une variante Shopify dont l'option
+   * « Impression » vaut le montant — une seule ligne de panier, pas de
+   * produit de frais à côté. C'est le modèle déjà en place pour le studio.
+   *
+   * Si ce montant exact n'est pas configuré, on monte au palier suivant
+   * plutôt que de refuser la vente : mieux vaut facturer un peu trop que
+   * dire au client que ce n'est pas possible. Règle d'Alan, et elle est
+   * juste — une vente manquée coûte plus cher qu'un euro de trop.
+   */
   Editeur.prototype.varianteTarifee = function (montant) {
+    var self = this;
     var v = this.variantCourant();
     if (!v) return Promise.resolve(null);
     if (!montant) return Promise.resolve({ ok: true, variant_id: String(v.id), amount: 0 });
 
-    return api('/api/shopify/resolve-variant?base_variant_id=' + encodeURIComponent(v.id)
-             + '&product_id=' + encodeURIComponent(this.produit)
-             + '&amount=' + encodeURIComponent(montant))
-      .then(function (r) { return r.json().catch(function () { return null; }); })
-      .catch(function () { return null; });
+    var aTenter = [montant].concat(
+      this.paliers().filter(function (p) { return p > montant; })
+    );
+
+    var essayer = function (i) {
+      if (i >= aTenter.length) return Promise.resolve(null);
+      return api('/api/shopify/resolve-variant?base_variant_id=' + encodeURIComponent(v.id)
+               + '&product_id=' + encodeURIComponent(self.produit)
+               + '&amount=' + encodeURIComponent(aTenter[i]))
+        .then(function (r) { return r.json().catch(function () { return null; }); })
+        .then(function (d) {
+          if (d && d.ok && d.variant_id) {
+            if (i > 0) {
+              console.info('[TSL] Palier ' + montant + ' € non configuré — facturé '
+                + aTenter[i] + ' €, le palier suivant.');
+            }
+            return d;
+          }
+          return essayer(i + 1);
+        })
+        .catch(function () { return essayer(i + 1); });
+    };
+    return essayer(0);
   };
 
   // ── Prix dynamique ────────────────────────────────────────────────────────
@@ -3744,10 +3847,14 @@
       var sur = self.surchargeImpression();
       return self.varianteTarifee(sur.total).then(function (v) {
         if (sur.total > 0 && (!v || !v.ok || !v.variant_id)) {
-          var pourquoi = (v && v.error) || 'variante d\'impression introuvable';
-          throw new Error(pourquoi);
+          // Aucun palier configuré du tout : on vend quand même, au prix de
+          // base, plutôt que de bloquer. L'avertissement console dit au
+          // marchand ce qu'il lui manque.
+          console.warn('[TSL] Aucune variante « Impression » disponible pour '
+            + sur.total + ' € ni au-dessus — vendu au prix de base. '
+            + 'Configurez l\'option Impression sur ce produit.');
         }
-        rendu.varianteId = v && v.variant_id;
+        rendu.varianteId = (v && v.variant_id) || null;
         rendu.surcharge = sur;
         return rendu;
       });
