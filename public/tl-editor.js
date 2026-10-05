@@ -129,7 +129,11 @@
     // En `inset:0` il couvrait tout le parent — barre d'outils comprise,
     // qui devenait incliquable dès qu'un outil était ouvert.
     + '.tsle-scene{position:absolute;z-index:5;pointer-events:none}'
-    + '.tsle-scene.actif{pointer-events:auto}'
+    // `touch-action:none` : sans ça le navigateur interprète lui-même le
+    // glissement comme un défilement ou un balayage, avant même que la page
+    // en entende parler.
+    + '.tsle-scene.actif{pointer-events:auto;touch-action:none}'
+    + '.tsle-scene.actif canvas{touch-action:none}'
     + '.tsle-scene canvas{position:absolute;top:0;left:0}'
     + '.tsle-cadre{position:absolute;border:1px dashed rgba(0,0,0,.45);pointer-events:none;'
     +   'box-shadow:0 0 0 9999px rgba(255,255,255,.08)}'
@@ -2496,6 +2500,181 @@
     this.moteur.reordonner(ids);
   };
 
+  // ── Poignées de sélection, clavier et gestes ──────────────────────────────
+  //
+  // Les mêmes quatre coins que le studio : supprimer, pivoter, dupliquer,
+  // redimensionner. Posés une seule fois sur le prototype Fabric, donc
+  // valables pour tous les objets, textes compris.
+
+  var RAYON = ('ontouchstart' in window) ? 20 : 16;
+  var _controlesPoses = false;
+
+  function poignee(ctx, couleur, icone) {
+    ctx.save();
+    ctx.shadowColor = couleur;
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.arc(0, 0, RAYON, 0, Math.PI * 2);
+    ctx.fillStyle = couleur;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = 'transparent';
+    ctx.beginPath();
+    ctx.arc(0, 0, RAYON - 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(6,6,10,.92)';
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.fillStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    icone(ctx);
+    ctx.restore();
+  }
+
+  var ICONES_P = {
+    supprimer: function (c) {
+      var s = 5.5;
+      c.beginPath(); c.moveTo(-s, -s); c.lineTo(s, s); c.stroke();
+      c.beginPath(); c.moveTo(s, -s); c.lineTo(-s, s); c.stroke();
+    },
+    pivoter: function (c) {
+      var s = 5.5;
+      c.beginPath(); c.arc(0, 0, s, -Math.PI * 0.8, Math.PI * 0.7); c.stroke();
+      c.beginPath();
+      c.moveTo(s - 0.5, 3.5); c.lineTo(s + 3, -0.5); c.lineTo(s - 3.5, -0.5);
+      c.closePath(); c.fill();
+    },
+    dupliquer: function (c) {
+      var s = 5;
+      c.strokeRect(-s + 2, -s + 2, s * 1.5, s * 1.5);
+      c.strokeRect(-s - 1, -s - 1, s * 1.5, s * 1.5);
+    },
+    agrandir: function (c) {
+      var s = 5.5;
+      c.beginPath(); c.moveTo(-s, -s); c.lineTo(s, s); c.stroke();
+      c.beginPath(); c.moveTo(s, s); c.lineTo(s - 3, s); c.lineTo(s, s - 3); c.closePath(); c.fill();
+      c.beginPath(); c.moveTo(-s, -s); c.lineTo(-s + 3, -s); c.lineTo(-s, -s + 3); c.closePath(); c.fill();
+    },
+  };
+
+  function rendu(couleur, icone) {
+    return function (ctx, gauche, haut, _style, objet) {
+      ctx.save();
+      ctx.translate(gauche, haut);
+      ctx.rotate(window.fabric.util.degreesToRadians(objet.angle || 0));
+      poignee(ctx, couleur, icone);
+      ctx.restore();
+    };
+  }
+
+  Editeur.prototype.poserControles = function () {
+    if (_controlesPoses || !window.fabric) return;
+    _controlesPoses = true;
+    var self = this;
+    var F = window.fabric;
+    var u = F.controlsUtils || {};
+
+    var surObjet = function (fn) {
+      return function () {
+        var ed = self;
+        var o = ed.moteur && ed.moteur.canvas.getActiveObject();
+        if (!o) return false;
+        fn(ed, o);
+        return true;
+      };
+    };
+
+    F.Object.prototype.controls = {
+      tl: new F.Control({
+        x: -0.5, y: -0.5, cursorStyle: 'pointer', cornerSize: RAYON * 2,
+        render: rendu('#ef4444', ICONES_P.supprimer),
+        mouseUpHandler: surObjet(function (ed, o) {
+          ed.moteur.canvas.discardActiveObject();
+          ed.moteur.supprimer(o.__tslId);
+          ed.cacherCtx();
+        }),
+      }),
+      tr: new F.Control({
+        x: 0.5, y: -0.5, cursorStyle: 'crosshair', actionName: 'rotate',
+        cornerSize: RAYON * 2,
+        actionHandler: u.rotationWithSnapping || u.rotationHandler || function () {},
+        render: rendu('#60a5fa', ICONES_P.pivoter),
+      }),
+      bl: new F.Control({
+        x: -0.5, y: 0.5, cursorStyle: 'copy', cornerSize: RAYON * 2,
+        render: rendu('#a78bfa', ICONES_P.dupliquer),
+        mouseUpHandler: surObjet(function (ed, o) { ed.dupliquerCalque(o.__tslId); }),
+      }),
+      br: new F.Control({
+        x: 0.5, y: 0.5, cursorStyle: 'nwse-resize', actionName: 'scale',
+        cornerSize: RAYON * 2,
+        actionHandler: u.scalingEqually || u.scaleEqually || function () {},
+        render: rendu('#f59e0b', ICONES_P.agrandir),
+      }),
+    };
+
+    // Pas de poignées latérales : elles déforment, et un visuel déformé
+    // s'imprime déformé.
+    F.Object.prototype.setControlsVisibility({
+      mt: false, mb: false, ml: false, mr: false, mtr: false,
+    });
+    F.Object.prototype.set({
+      borderColor: 'rgba(245,158,11,.85)',
+      borderDashArray: [6, 4],
+      borderScaleFactor: 1.5,
+      transparentCorners: false,
+      hasRotatingPoint: false,
+    });
+    if (F.IText) F.IText.prototype.controls = F.Object.prototype.controls;
+  };
+
+  /**
+   * Flèches pour déplacer, Suppr pour effacer.
+   *
+   * Seulement quand un outil est ouvert ET qu'on ne saisit pas du texte :
+   * sans cette double condition, taper « Winshirt » dans le champ déplacerait
+   * le calque à chaque flèche.
+   */
+  Editeur.prototype.brancherClavier = function () {
+    var self = this;
+    if (this._clavierBranche) return;
+    this._clavierBranche = true;
+
+    document.addEventListener('keydown', function (e) {
+      if (!self.outil || !self.moteur) return;
+      var cible = e.target;
+      var tag = cible && cible.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+          || (cible && cible.isContentEditable)) return;
+
+      var o = self.moteur.canvas.getActiveObject();
+      if (!o) return;
+      // Un texte en cours d'édition dans le canevas garde ses touches.
+      if (o.isEditing) return;
+
+      var pas = e.shiftKey ? 10 : 1;
+      var dx = 0, dy = 0;
+      if (e.key === 'ArrowLeft') dx = -pas;
+      else if (e.key === 'ArrowRight') dx = pas;
+      else if (e.key === 'ArrowUp') dy = -pas;
+      else if (e.key === 'ArrowDown') dy = pas;
+      else if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        self.moteur.canvas.discardActiveObject();
+        self.moteur.supprimer(o.__tslId);
+        self.cacherCtx();
+        return;
+      } else return;
+
+      e.preventDefault();
+      o.set({ left: (o.left || 0) + dx, top: (o.top || 0) + dy });
+      o.setCoords();
+      self.moteur.canvas.requestRenderAll();
+      self.placerCtx();
+    });
+  };
+
   // ── Scène d'édition ───────────────────────────────────────────────────────
   //
   // Le canevas se pose SUR la photo du produit, à l'endroit exact où le
@@ -2575,6 +2754,20 @@
     this.cadre = cadre;
     this.imageProduit = img;
     hote.classList.add('tsle-sanszoom');
+    this.poserControles();
+    this.brancherClavier();
+
+    // La galerie du thème écoute les gestes sur un parent. Un glissement
+    // vers la gauche y passait pour un balayage : on déplaçait un calque et
+    // c'est le carrousel qui partait à la photo suivante. On laisse Fabric
+    // traiter l'évènement — il est plus bas, donc servi en premier — puis
+    // on l'arrête avant qu'il ne remonte jusqu'au thème.
+    ['pointerdown', 'mousedown', 'touchstart', 'touchmove', 'pointermove', 'dragstart']
+      .forEach(function (ev) {
+        scene.addEventListener(ev, function (e) {
+          if (scene.classList.contains('actif')) e.stopPropagation();
+        });
+      });
 
     this._placerScene();
     var dims = this._dimensions();
