@@ -446,6 +446,10 @@
     if (window.MutationObserver) {
       var o = new MutationObserver(function () {
         if (!self.colonne || !self.barre.isConnected || !self.vue.isConnected) self.placer();
+        // Le changement de coloris remplace la photo : le canevas part avec
+        // elle. On laisse le thème finir son remplacement avant de regarder.
+        clearTimeout(self._verifScene);
+        self._verifScene = setTimeout(function () { self.verifierScene(); }, 250);
       });
       o.observe(document.body, { childList: true, subtree: true });
     }
@@ -828,6 +832,8 @@
       hote.style.removeProperty('--tsle-origine');
       poser(this.imageProduit, '', '');
       poser(this.scene, '', '');
+      this.definitionCanevas(1);
+      this.affinerPhoto(0);
       if (this._surplusHote !== undefined) hote.style.overflow = this._surplusHote;
       return;
     }
@@ -855,6 +861,8 @@
     hote.style.setProperty('--tsle-zoom', echelle);
     poser(this.imageProduit, echelle, origine);
     poser(this.scene, echelle, origine);
+    this.definitionCanevas(k);
+    this.affinerPhoto(k);
   };
 
   // ── Panneau Textes ────────────────────────────────────────────────────────
@@ -2293,16 +2301,16 @@
   /**
    * Un élément vient d'être sélectionné sur le vêtement.
    *
-   * Un texte ouvre le panneau Textes, avec ses propres réglages chargés —
-   * sans cette recopie, le premier caractère tapé écraserait sa police, sa
-   * taille et sa couleur par celles du panneau, qui dataient du texte
-   * précédent. Une image n'ouvre rien : le panneau Images sert à importer,
-   * il n'a rien à dire sur un visuel déjà posé. Elle a sa barre flottante.
+   * Chaque type ouvre son outil. Pour un texte, ses propres réglages sont
+   * chargés dans le panneau — sans cette recopie, le premier caractère tapé
+   * écraserait sa police, sa taille et sa couleur par celles du panneau,
+   * qui dataient du texte précédent.
    */
   Editeur.prototype.surSelection = function () {
     var o = this.moteur && this.moteur.canvas.getActiveObject();
     if (!o) return this.cacherCtx();
-    if (o.__tslType === 'text' && this.outil !== 'text') this.ouvrir('text');
+    var outil = o.__tslType === 'text' ? 'text' : 'image';
+    if (this.outil !== outil && this.outils.indexOf(outil) >= 0) this.ouvrir(outil);
     if (o.__tslType === 'text') this.recopierTexte(o);
     this.montrerCtx(o);
   };
@@ -2348,6 +2356,104 @@
     // renommait l'existant et en créait un second avec le même contenu.
     var b = q('ajouter');
     if (b) b.textContent = 'Ajouter un autre texte';
+  };
+
+  /**
+   * Redemande la photo dans une définition adaptée au zoom.
+   *
+   * Le thème sert un cliché dimensionné pour l'affichage normal ; agrandi
+   * deux fois, il devient mou. Le CDN Shopify sait en servir un plus grand
+   * à la demande. On ne touche qu'aux URL de ce CDN — ailleurs on ne sait
+   * pas ce qu'un paramètre de largeur provoquerait — et l'original est
+   * remis en place à la fermeture.
+   */
+  Editeur.prototype.affinerPhoto = function (facteur) {
+    var img = this.imageProduit;
+    if (!img) return;
+
+    if (!facteur) {
+      if (img.__tslSrc) {
+        img.setAttribute('srcset', img.__tslSrcset || '');
+        img.src = img.__tslSrc;
+        img.__tslSrc = null;
+      }
+      return;
+    }
+
+    if (!/\/\/cdn\.shopify\.com\//.test(img.currentSrc || img.src || '')) return;
+    if (!img.__tslSrc) {
+      img.__tslSrc = img.currentSrc || img.src;
+      img.__tslSrcset = img.getAttribute('srcset') || '';
+    }
+    var vise = Math.min(4000, Math.ceil(img.getBoundingClientRect().width
+                                        * facteur * (window.devicePixelRatio || 1)));
+    // Le `srcset` est vidé le temps du zoom : laissé en place, le navigateur
+    // retomberait aussitôt sur une source étroite et annulerait l'effort.
+    img.setAttribute('srcset', '');
+    img.src = img.__tslSrc.split('?')[0] + '?width=' + vise;
+  };
+
+  /**
+   * La photo a-t-elle été remplacée sous nos pieds ?
+   *
+   * Changer de coloris fait reconstruire la colonne média par le thème : la
+   * nouvelle photo est un autre nœud, et le calque d'édition s'en va avec
+   * l'ancienne — le client voyait sa composition disparaître. On remonte
+   * donc le canevas sur la nouvelle photo et on y REMET la composition.
+   *
+   * Elle est relue avant démontage, et non conservée au fil de l'eau : la
+   * seule version qui fasse autorité est celle du canevas à cet instant.
+   */
+  Editeur.prototype.verifierScene = function () {
+    var self = this;
+    if (!this.moteur || this._remonte) return;
+    var img = imageProduit();
+    if (!img) return;
+    if (this.scene && this.scene.isConnected && this.imageProduit === img) return;
+
+    this._remonte = true;
+    var composition = this.moteur.exporterComposition();
+    var face = this.moteur.face;
+
+    if (this.scene && this.scene.parentNode) this.scene.parentNode.removeChild(this.scene);
+    this.scene = null;
+    this.moteur = null;
+    this._scenePrete = null;
+    this.affinerPhoto(0);            // rendre son `src` d'origine à l'ancienne photo
+    this._surplusHote = undefined;   // l'ancien conteneur n'est plus le nôtre
+    this._densite = null;
+    this.cacherCtx();
+
+    this.prepareScene().then(function () {
+      self._remonte = false;
+      if (!self.moteur) return;
+      self.moteur.chargerComposition(composition, face, function () {
+        if (!self.outil) return;
+        self.scene.classList.add('actif');
+        self.zoomerSurLaZone(true);
+      });
+    }).catch(function () { self._remonte = false; });
+  };
+
+  /**
+   * Densité du canevas pendant le zoom.
+   *
+   * Le canevas garde la taille de la photo à l'écran, mais l'agrandissement
+   * CSS étire ses pixels : un visuel en 4000 px se retrouvait rendu dans
+   * 756 px puis grossi presque deux fois, d'où le flou alors que la source
+   * est parfaitement nette. On multiplie donc sa définition interne par le
+   * facteur de zoom — sa taille affichée, elle, ne change pas.
+   */
+  Editeur.prototype.definitionCanevas = function (facteur) {
+    if (!this.moteur || !window.fabric) return;
+    var base = window.devicePixelRatio || 1;
+    var vise = base * Math.max(1, facteur || 1);
+    if (this._densite === vise) return;
+    this._densite = vise;
+    window.fabric.devicePixelRatio = vise;
+    var d = this._dimensions();
+    this.moteur.canvas.setDimensions({ width: d.largeur, height: d.hauteur });
+    this.moteur.canvas.requestRenderAll();
   };
 
   /** Cale le calque d'édition sur la photo, à l'intérieur de son conteneur. */
