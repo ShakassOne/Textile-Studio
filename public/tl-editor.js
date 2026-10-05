@@ -2669,6 +2669,46 @@
    * L'original est mémorisé une fois pour toutes — jamais écrasé par les
    * substitutions successives — et rendu à la fermeture.
    */
+  /**
+   * Impose une image, quoi qu'en dise le thème.
+   * ──────────────────────────────────────────────────────────────────────
+   * Changer `src` ne suffit pas : dans un <picture>, ce sont les <source>
+   * qui décident, et l'attribut `srcset` de l'image elle-même passe avant
+   * `src`. Une galerie bâtie ainsi gardait donc la photo du recto pendant
+   * qu'on croyait afficher le verso — les calques basculaient, l'image non.
+   *
+   * Les valeurs d'origine sont mémorisées une seule fois, au premier
+   * remplacement, pour pouvoir rendre la galerie intacte à la fermeture.
+   */
+  function imposerSource(img, url) {
+    if (!img || !url) return;
+    if (!img.__tslOrigine) {
+      img.__tslOrigine = { src: img.currentSrc || img.src, srcset: img.getAttribute('srcset') || '' };
+    }
+    var pic = img.closest ? img.closest('picture') : null;
+    if (pic) {
+      pic.querySelectorAll('source').forEach(function (so) {
+        if (so.__tslSrcset === undefined) so.__tslSrcset = so.getAttribute('srcset') || '';
+        so.setAttribute('srcset', url);
+      });
+    }
+    img.setAttribute('srcset', '');
+    img.src = url;
+  }
+
+  /** Rend à la galerie ses propres sources. */
+  function rendreSource(img) {
+    if (!img || !img.__tslOrigine) return;
+    var pic = img.closest ? img.closest('picture') : null;
+    if (pic) {
+      pic.querySelectorAll('source').forEach(function (so) {
+        if (so.__tslSrcset !== undefined) { so.setAttribute('srcset', so.__tslSrcset); so.__tslSrcset = undefined; }
+      });
+    }
+    img.setAttribute('srcset', img.__tslOrigine.srcset);
+    img.src = img.__tslOrigine.src;
+  }
+
   /** URL ramenée en absolu, sans paramètres — pour comparer deux sources. */
   function absolu(u) {
     if (!u) return '';
@@ -2684,8 +2724,7 @@
       img.__tslOrigine = { src: img.currentSrc || img.src, srcset: img.getAttribute('srcset') || '' };
     }
     this._faceUrl = url;
-    img.setAttribute('srcset', '');
-    img.src = url;
+    imposerSource(img, url);
 
     // Certaines galeries de thème réimposent leur propre source après coup.
     // On vérifie donc que la photo a bien changé, et on insiste une fois :
@@ -2700,8 +2739,7 @@
       // confondre déclenchait l'alerte pour rien.
       if (absolu(img.getAttribute('src')) === absolu(url)) return;
       console.info('[TSL] La galerie du thème a repris la main sur la photo — on repose la face.');
-      img.setAttribute('srcset', '');
-      img.src = url;
+      imposerSource(img, url);
     }, 500);
   };
 
@@ -2795,24 +2833,23 @@
     }
 
     if (!facteur) {
-      // Fin d'édition : la photo du thème reprend sa place. La face choisie
-      // est conservée — rouvrir un outil doit retrouver le verso.
-      img.setAttribute('srcset', img.__tslOrigine.srcset);
-      img.src = img.__tslOrigine.src;
+      // Fin d'édition : la galerie du thème reprend ses sources. La face
+      // choisie est conservée — rouvrir un outil doit retrouver le verso.
+      rendreSource(img);
       return;
     }
 
     var base = this._faceUrl || img.__tslOrigine.src;
     if (!/\/\/cdn\.shopify\.com\//.test(base)) {
-      if (img.src !== base) { img.setAttribute('srcset', ''); img.src = base; }
+      if (absolu(img.getAttribute('src')) !== absolu(base)) imposerSource(img, base);
       return;
     }
     var vise = Math.min(4000, Math.ceil(img.getBoundingClientRect().width
                                         * facteur * (window.devicePixelRatio || 1)));
-    // Le `srcset` est vidé le temps du zoom : laissé en place, le navigateur
-    // retomberait aussitôt sur une source étroite et annulerait l'effort.
-    img.setAttribute('srcset', '');
-    img.src = base.split('?')[0] + '?width=' + vise;
+    // Les sources du thème sont écrasées le temps du zoom : laissées en
+    // place, le navigateur retomberait aussitôt sur une image étroite et
+    // annulerait l'effort.
+    imposerSource(img, base.split('?')[0] + '?width=' + vise);
   };
 
   /**
@@ -3470,6 +3507,14 @@
         }),
         faceAffichee: (this.instances[0] && this.instances[0].moteur
           && this.instances[0].moteur.face) || null,
+        photoAffichee: (function () {
+          var e = this.instances[0];
+          var im = e && e.imageProduit;
+          if (!im) return null;
+          var pic = im.closest ? im.closest('picture') : null;
+          return (im.currentSrc || im.src || '').split('/').pop().split('?')[0]
+               + (pic ? ' (dans un <picture>, ' + pic.querySelectorAll('source').length + ' source)' : '');
+        }).call(this),
         zoneCalibree: !!(this.instances[0] && this.instances[0].zoneCalibree),
       };
       if (bar) {
