@@ -80,6 +80,7 @@ function _exposer(row) {
     referenceWidth:   row.reference_width,
     referenceHeight:  row.reference_height,
     corners:          _lireCoins(row.corners_json),
+    face:             row.face === 'back' ? 'back' : 'front',
     isMaster:         row.is_master === 1 || row.is_master === undefined,
     updatedAt:        row.updated_at,
   };
@@ -195,23 +196,30 @@ router.put('/admin/products/:productId/display-zone', requireAuth, requireShopif
     //   • une autre photo → remplacement propre à celle-ci, les autres ne
     //     bougent pas. C'est exactement le besoin du sac Kimood, dont
     //     certains coloris cadrent le produit plus haut.
-    const estMaster = !master || master.reference_media_id === mediaId ? 1 : 0;
+    // Le verso n'est jamais la référence : il désigne une AUTRE face, pas un
+    // cadrage de secours pour les photos du recto.
+    const face = req.body?.face === 'back' ? 'back' : 'front';
+    const estMaster = face === 'back' ? 0
+                    : (!master || master.reference_media_id === mediaId ? 1 : 0);
 
     db.prepare(`
       INSERT INTO product_display_zones
         (shop_id, shopify_product_id, zone_type, reference_media_id,
-         reference_width, reference_height, corners_json, is_master, updated_at)
-      VALUES (?,?,?,?,?,?,?,?, datetime('now'))
+         reference_width, reference_height, corners_json, is_master, face, updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?, datetime('now'))
       ON CONFLICT(shop_id, shopify_product_id, zone_type, reference_media_id) DO UPDATE SET
         reference_width    = excluded.reference_width,
         reference_height   = excluded.reference_height,
         corners_json       = excluded.corners_json,
+        is_master          = excluded.is_master,
+        face               = excluded.face,
         updated_at         = datetime('now')
-    `).run(req.shopId, productId, ZONE_TYPE, mediaId, w, h, JSON.stringify(v.coins), estMaster);
+    `).run(req.shopId, productId, ZONE_TYPE, mediaId, w, h, JSON.stringify(v.coins), estMaster, face);
 
     _purgerRendus(productId);
     res.json({
       ok: true,
+      face,
       estMaster: estMaster === 1,
       zone: _exposer(_zonePourPhoto(db, req.shopId, productId, mediaId)),
     });
@@ -290,32 +298,29 @@ router.get('/products/:productId/display-zone', attachShopId, async (req, res) =
       const parId = {};
       photos.forEach((ph) => { parId[ph.id] = ph; });
 
-      // Le master d'abord — c'est le recto par convention — puis les zones
-      // propres à une photo, dans l'ordre où le produit les présente.
-      const rang = (z) => {
-        if (z.is_master === 1) return -1;
-        const i = photos.findIndex((ph) => ph.id === z.reference_media_id);
-        return i < 0 ? 999 : i;
+      // Le verso est DÉSIGNÉ dans l'écran de calibration, jamais déduit de
+      // l'ordre des photos : une zone posée sur une seconde photo est, par
+      // défaut, un cadrage de rechange pour le même recto — c'est le cas des
+      // coloris du sac Kimood. Les prendre pour des versos ferait imprimer
+      // deux fois le même côté.
+      const decrire = (z) => {
+        const ph = parId[z.reference_media_id] || photos[0] || null;
+        if (!ph) return null;
+        const coins = _lireCoins(z.corners_json);
+        if (coins.length !== 4) return null;
+        return {
+          mediaId: z.reference_media_id || null,
+          url: ph.url, largeur: ph.width, hauteur: ph.height,
+          corners: coins, isMaster: z.is_master === 1,
+        };
       };
-      faces = zones
-        .slice()
-        .sort((a2, b2) => rang(a2) - rang(b2))
-        .map((z) => {
-          const ph = parId[z.reference_media_id] || photos[0] || null;
-          return {
-            mediaId: z.reference_media_id || null,
-            url:     ph ? ph.url : null,
-            largeur: ph ? ph.width : null,
-            hauteur: ph ? ph.height : null,
-            corners: _lireCoins(z.corners_json),
-            isMaster: z.is_master === 1,
-          };
-        })
-        .filter((f) => f.url && f.corners.length === 4)
-        // Le format de composition ne connaît que deux faces : au-delà, on
-        // ne saurait pas où ranger la troisième ni quoi en imprimer.
-        .slice(0, 2)
-        .map((f, i) => ({ face: i === 0 ? 'front' : 'back', ...f }));
+
+      const recto = decrire(zones.find((z) => z.is_master === 1) || zones[0] || {});
+      const dos = zones.filter((z) => z.face === 'back').map(decrire).filter(Boolean)[0] || null;
+
+      faces = [];
+      if (recto) faces.push({ face: 'front', ...recto });
+      if (dos) faces.push({ face: 'back', ...dos });
     }
   } catch (e) {
     console.warn('display-zone faces :', e.message);

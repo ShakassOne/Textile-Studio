@@ -656,6 +656,7 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
           <button class="btn" onclick="loadDisplayZones()">↺ Produits</button>
           <button class="btn" id="dz-heriter" onclick="heriterDuMaster()" style="display:none" title="Supprimer la zone propre à cette photo : elle suivra de nouveau la zone de référence">↳ Suivre la référence</button>
           <button class="btn" id="dz-reset" onclick="resetDisplayZone()" style="display:none" title="Remettre un rectangle droit, en gardant la taille et la position actuelles">⬛ Redresser</button>
+          <button class="btn" id="dz-face" onclick="basculerFaceZone()" style="display:none" title="Une photo de dos donne une seconde face à imprimer. Une photo du même côté, cadrée autrement — un autre coloris par exemple — reste un recto.">🙂 Recto</button>
           <button class="btn btn-danger" id="dz-del" onclick="deleteDisplayZone()" style="display:none">🗑 Supprimer la zone</button>
           <button class="btn btn-primary" id="dz-save" onclick="saveDisplayZone()" disabled>💾 Enregistrer la zone</button>
         </div>
@@ -3680,6 +3681,25 @@ let _dzProducts = [], _dzImages = [], _dzImage = null, _dzCorners = null, _dzZon
 // Pour le produit en cours : la zone master (valable par défaut sur toutes
 // les photos) et les zones propres à une photo, indexées par identifiant.
 let _dzMaster = null, _dzOverrides = {};
+// Face de la zone en cours d'édition. Le recto est la règle : une seconde
+// photo sert d'abord à rattraper un cadrage, pas à désigner un dos.
+let _dzFace = 'front';
+
+function basculerFaceZone() {
+  _dzFace = _dzFace === 'back' ? 'front' : 'back';
+  _dzMajBoutonFace();
+  showToast(_dzFace === 'back'
+    ? 'Cette photo sera traitée comme le VERSO — second fichier d\'impression'
+    : 'Cette photo revient au recto');
+}
+
+function _dzMajBoutonFace() {
+  const b = document.getElementById('dz-face');
+  if (!b) return;
+  b.style.display = '';
+  b.textContent = _dzFace === 'back' ? '🔄 Verso' : '🙂 Recto';
+  b.classList.toggle('btn-primary', _dzFace === 'back');
+}
 
 // Zone de départ : un cadre raisonnable au centre, que l'admin ajuste.
 // Ordre imposé : haut-gauche, haut-droit, bas-droit, bas-gauche.
@@ -3840,6 +3860,10 @@ async function heriterDuMaster() {
 function _dzAfficherImage() {
   const img = document.getElementById('dz-img');
   _dzCorners = _dzCoinsPourPhoto();
+  // La face suit la photo affichée : on reprend ce qui a été enregistré
+  // pour elle, et on retombe sur le recto pour une photo encore vierge.
+  _dzFace = (_dzOverrides[_dzImage.id] || {}).face === 'back' ? 'back' : 'front';
+  _dzMajBoutonFace();
   _dzMajStatut();
   img.onload = () => { _dzPoserPoignees(); document.getElementById('dz-save').disabled = false; };
   img.src = _dzImage.url;
@@ -3983,9 +4007,17 @@ async function saveDisplayZone() {
       referenceMediaId: _dzImage.id,
       referenceWidth:   _dzImage.width,
       referenceHeight:  _dzImage.height,
+      face:             _dzFace,
     }),
   });
   if (r === null) return showToast('⚠ ' + (window.__TL_LAST_API_ERROR || 'Enregistrement impossible'));
+
+  if (r.face === 'back') {
+    _dzOverrides[_dzImage.id] = { referenceMediaId: _dzImage.id, face: 'back',
+                                  corners: _dzCorners.map(c => ({ ...c })) };
+    _dzZones = await api('/api/admin/product-display-zones').catch(() => _dzZones) || _dzZones;
+    return showToast('✅ Verso enregistré — le client pourra personnaliser les deux faces');
+  }
 
   const zoneEnregistree = { referenceMediaId: _dzImage.id, corners: _dzCorners.map(c => ({ ...c })) };
   if (r.estMaster) {

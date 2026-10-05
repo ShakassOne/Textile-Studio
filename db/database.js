@@ -358,6 +358,15 @@ function initDB() {
     console.warn('[DB] Migration des zones produit ignorée :', e.message);
   }
 
+  // Face de la zone : recto par défaut.
+  // ────────────────────────────────────────────────────────────────────────
+  // Une zone posée sur une AUTRE photo sert de remplacement — même face,
+  // cadrage différent : c'est le cas des coloris du sac Kimood. Rien ne
+  // permettait d'y distinguer « cette photo est le dos du vêtement », qui
+  // demande un second fichier d'impression. Sans cette colonne, toute
+  // surcharge de cadrage serait prise pour un verso.
+  try { db.exec("ALTER TABLE product_display_zones ADD COLUMN face TEXT DEFAULT 'front'"); } catch {}
+
   // ── Table: upsell_candidates (suggestions "vous aimeriez aussi" curées par shop) ──
   // Spec Upsell V2 étape 1 (docs/ROADMAP-DEV.md §2) : pas d'algorithme automatique,
   // l'admin associe à la main 2-4 produits cibles déjà liés à un mockup pour un
