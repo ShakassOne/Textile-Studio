@@ -509,6 +509,84 @@ router.post('/dalle', requireAIContext, attachShopId, aiIpRateLimiter, aiRateLim
   }
 });
 
+// ── POST /api/ai/questions — ce qu'il manque pour bien générer ─────────────
+//
+// Le client décrit son visuel en une phrase et oublie presque toujours une
+// décision que le modèle devra prendre à sa place : la couleur du texte, le
+// fond, le cadrage. Il découvre le choix de l'IA après coup, sur son quota.
+//
+// On demande donc au modèle de LIRE la demande et de ne poser que les
+// questions réellement manquantes — jamais plus de deux, jamais une question
+// dont la réponse est déjà dans la phrase. C'est la différence avec la
+// question de style, qui était la même pour tout le monde.
+//
+// Appel volontairement bon marché, et jamais bloquant : une panne ici ne
+// doit pas empêcher de générer, elle fait seulement sauter les questions.
+router.post('/questions', requireAIContext, attachShopId, aiIpRateLimiter, async (req, res) => {
+  const demande = String(req.body?.prompt || '').trim();
+  if (!demande) return res.json({ questions: [] });
+
+  const apiKey = resolveOpenAIKey(req.shopId);
+  if (!apiKey) return res.json({ questions: [] });
+
+  const consigne = [
+    'Tu prépares la génération d\'un visuel destiné à être imprimé sur un vêtement.',
+    'On te donne la demande d\'un client. Trouve ce qui MANQUE vraiment pour produire',
+    'le visuel qu\'il a en tête, et pose au maximum deux questions courtes, en français,',
+    'tutoiement exclu (vouvoiement).',
+    '',
+    'Règles :',
+    '- ne pose JAMAIS une question dont la réponse figure déjà dans la demande ;',
+    '- une question doit changer le résultat (couleur, fond, cadrage, ambiance, texte exact) ;',
+    '- pas de question sur le format, la taille, le support ni la technique d\'impression ;',
+    '- si la demande se suffit à elle-même, renvoie une liste vide ;',
+    '- propose pour chaque question 3 à 4 réponses courtes, cliquables.',
+    '',
+    'Réponds UNIQUEMENT par du JSON de la forme :',
+    '{"questions":[{"id":"couleur_texte","label":"De quelle couleur voulez-vous le texte ?",',
+    '"suggestions":["Noir","Blanc","Rouge vif"]}]}',
+  ].join('\n');
+
+  try {
+    const r = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        temperature: 0.3,
+        max_tokens: 300,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: consigne },
+          { role: 'user', content: demande },
+        ],
+      }),
+    });
+    const data = await r.json();
+    if (data.error) throw new Error(data.error.message);
+
+    let parsed = {};
+    try { parsed = JSON.parse(data.choices?.[0]?.message?.content || '{}'); } catch { parsed = {}; }
+
+    // On ne fait jamais confiance à la forme renvoyée : deux questions au
+    // plus, quatre suggestions au plus, et tout est ramené à du texte.
+    const questions = (Array.isArray(parsed.questions) ? parsed.questions : [])
+      .slice(0, 2)
+      .map((q, i) => ({
+        id: String(q?.id || 'q' + i).slice(0, 40),
+        label: String(q?.label || '').slice(0, 160),
+        suggestions: (Array.isArray(q?.suggestions) ? q.suggestions : [])
+          .slice(0, 4).map(v => String(v).slice(0, 40)),
+      }))
+      .filter(q => q.label);
+
+    res.json({ questions });
+  } catch (e) {
+    console.warn('/api/ai/questions :', e.message);
+    res.json({ questions: [] });   // jamais bloquant
+  }
+});
+
 // ── POST /api/ai/transform — Photo → Art (scopé shop) ─────────────
 // Auth Shopify session token (App Bridge 4) + rate-limit par shop (audit B3)
 router.post('/transform', requireAIContext, attachShopId, aiIpRateLimiter, aiRateLimiter, checkAiQuota, async (req, res) => {

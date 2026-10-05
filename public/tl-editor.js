@@ -353,6 +353,28 @@
     this.outils = String(racine.getAttribute('data-tsl-tools') || '')
       .split(',').map(function (s) { return s.trim(); }).filter(function (s) { return OUTILS[s]; });
     if (!this.outils.length || !this.donnees) return;
+
+    // Un produit vendu tel quel, déjà imprimé, ne doit rien proposer. Le
+    // marqueur retenu est la zone d'impression calibrée : c'est une donnée
+    // que le marchand tient déjà, et sans elle l'éditeur ne saurait de
+    // toute façon pas où poser un visuel. Rien n'est construit tant que la
+    // réponse n'est pas là — faire apparaître une barre pour la retirer
+    // ensuite serait pire que de ne rien montrer.
+    var self = this;
+    if (racine.getAttribute('data-tsl-exiger-zone') === '1') {
+      api('/api/products/' + this.produit + '/display-zone')
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) {
+          if (d && d.exists) { self.zoneCalibree = d; self.construire(); }
+          else {
+            console.info('[TSL] Produit sans zone d\'impression calibrée : '
+              + 'personnalisation non proposée. Calibrez-le dans Zones produit '
+              + 'pour l\'activer.');
+          }
+        })
+        .catch(function () { /* backend injoignable : on ne propose rien */ });
+      return;
+    }
     this.construire();
   }
 
@@ -1564,12 +1586,11 @@
 
   // ── Panneau IA ────────────────────────────────────────────────────────────
   //
-  // Mêmes réglages que l'onglet IA du studio, sans ajout : en-tête, photo de
-  // départ facultative, description, génération, quota, galerie. Le style
-  // n'est pas une liste mais une question posée au moment de générer — et
-  // seulement si la description n'en mentionne aucun, comme au studio.
-
-  var MOTS_STYLE = /\b(style|esth[ée]tique|vibe|look|fa[çc]on|mani[èe]re|inspir[ée]|comme un[e]?|cartoon|manga|anime|chibi|disney|pixar|aquarelle|watercolor|r[ée]aliste|photoreal|minimal|minimaliste|vintage|r[ée]tro|streetwear|graffiti|sketch|crayonn[ée]|sticker|caricature|lego|3d|pixel\s?art|cyberpunk|gothique|n[ée]on|bd|bande\s?dessin[ée]e|comic|pop\s?art|surr[ée]aliste|fantasy|peinture|gravure|tatouage|tattoo|geometric|g[ée]om[ée]trique|tribal|kawaii|gothic|baroque)\b/i;
+  // Les réglages de l'onglet IA du studio : en-tête, photo de départ
+  // facultative, description, génération, quota, galerie. À une différence
+  // près, et elle est voulue : au lieu d'une question de style identique
+  // pour tout le monde, le modèle lit la demande et ne réclame que ce qui
+  // lui manque réellement.
 
   Editeur.prototype.panneauIA = function (hote) {
     var self = this;
@@ -1608,18 +1629,18 @@
       + '<div class="tsle-aide">Décrivez librement ce que vous voulez. Précisez le style si vous '
       +   'en avez un en tête (cartoon, vintage, minimaliste, manga…) — sinon on vous le demandera.</div>'
 
-      // La question du style, posée seulement si la description n'en parle
-      // pas. Dans le studio c'est une fenêtre par-dessus la page ; ici elle
-      // reste dans le tiroir — poser un calque plein écran sur la boutique
-      // d'un marchand pour une question facultative serait disproportionné.
-      + '<div class="tsle-sousbloc" data-r="blocStyle" style="margin-top:12px">'
+      // Les précisions que l'IA réclame avant de générer. Elles ne sont pas
+      // écrites d'avance : le modèle lit la demande et ne pose que ce qui
+      // manque vraiment. C'est tout l'écart avec la question de style, qui
+      // était la même pour tout le monde et tombait souvent à côté.
+      + '<div class="tsle-sousbloc" data-r="blocQuestions" style="margin-top:12px">'
       +   '<div class="tsle-f" style="grid-column:1/-1">'
-      +     '<span class="tsle-lab">Quel style visuel ?</span>'
-      +     '<input class="tsle-input" data-r="style" placeholder="Style facultatif — cartoon, vintage, manga…">'
-      +     '<div class="tsle-chips" style="margin-top:10px">'
-      +       '<button type="button" class="tsle-chip" data-r="styleSans" style="flex:1">'
-      +         'Sans style particulier</button>'
-      +       '<button type="button" class="tsle-chip" data-r="styleOk" style="flex:1">Générer</button>'
+      +     '<span class="tsle-lab">Deux précisions et c\'est parti</span>'
+      +     '<div data-r="questions"></div>'
+      +     '<div class="tsle-chips" style="margin-top:12px">'
+      +       '<button type="button" class="tsle-chip" data-r="qPasser" style="flex:1">'
+      +         'Laisser l\'IA décider</button>'
+      +       '<button type="button" class="tsle-chip" data-r="qValider" style="flex:1">Générer</button>'
       +     '</div>'
       +   '</div>'
       + '</div>'
@@ -1658,38 +1679,97 @@
     });
 
     hote.querySelector('[data-r="generer"]').addEventListener('click', function () {
-      self.demanderStylePuisGenerer(hote);
+      self.preparerGeneration(hote);
     });
-    hote.querySelector('[data-r="styleSans"]').addEventListener('click', function () {
-      hote.querySelector('[data-r="style"]').value = '';
-      self.genererIA(hote, '');
+    hote.querySelector('[data-r="qPasser"]').addEventListener('click', function () {
+      self.genererIA(hote, []);
     });
-    hote.querySelector('[data-r="styleOk"]').addEventListener('click', function () {
-      self.genererIA(hote, (hote.querySelector('[data-r="style"]').value || '').trim());
+    hote.querySelector('[data-r="qValider"]').addEventListener('click', function () {
+      self.genererIA(hote, self.lireReponses(hote));
     });
-    hote.querySelector('[data-r="style"]').addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') { e.preventDefault(); self.genererIA(hote, (this.value || '').trim()); }
+    // Une suggestion remplit le champ de sa question, elle ne génère pas :
+    // le client doit pouvoir répondre aux deux avant de lancer.
+    hote.querySelector('[data-r="questions"]').addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('[data-suggestion]') : null;
+      if (!b) return;
+      var champ = b.closest('[data-question]').querySelector('input');
+      champ.value = b.getAttribute('data-suggestion');
+      b.closest('.tsle-chips').querySelectorAll('[data-suggestion]').forEach(function (x) {
+        x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+      });
+    });
+    // Nouvelle description : les précisions d'avant ne valent plus rien.
+    hote.querySelector('[data-r="prompt"]').addEventListener('input', function () {
+      hote.querySelector('[data-r="blocQuestions"]').classList.remove('on');
     });
 
     this.majQuotaIA(hote);
   };
 
   /**
-   * Génère — en demandant d'abord le style si la description n'en nomme pas.
-   * Avec une photo de départ, la consigne du client EST le style : on ne lui
-   * redemande rien.
+   * Demande au modèle ce qui manque, puis génère.
+   *
+   * Avec une photo de départ, la consigne du client EST la précision : on ne
+   * lui redemande rien. Et si le service ne répond pas, on génère quand
+   * même — des questions sont un confort, pas une condition.
    */
-  Editeur.prototype.demanderStylePuisGenerer = function (hote) {
+  Editeur.prototype.preparerGeneration = function (hote) {
+    var self = this;
     var champTexte = hote.querySelector('[data-r="prompt"]');
     var demande = (champTexte.value || '').trim();
     if (!demande) { champTexte.focus(); return; }
 
-    var bloc = hote.querySelector('[data-r="blocStyle"]');
-    if (this._photoIA || MOTS_STYLE.test(demande) || bloc.classList.contains('on')) {
-      return this.genererIA(hote, (hote.querySelector('[data-r="style"]').value || '').trim());
+    var bloc = hote.querySelector('[data-r="blocQuestions"]');
+    if (this._photoIA || bloc.classList.contains('on')) {
+      return this.genererIA(hote, this.lireReponses(hote));
     }
-    bloc.classList.add('on');
-    try { hote.querySelector('[data-r="style"]').focus(); } catch (e) {}
+
+    var btn = hote.querySelector('[data-r="generer"]');
+    btn.disabled = true;
+    btn.textContent = 'Un instant…';
+    var rendre = function () { btn.disabled = false; btn.textContent = 'Générer le design'; };
+
+    jetonClient().then(function (jeton) {
+      return api('/api/ai/questions', {
+        method: 'POST', headers: enTetesIA(jeton),
+        body: JSON.stringify({ prompt: demande }),
+      });
+    }).then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        var liste = (d && d.questions) || [];
+        rendre();
+        if (!liste.length) return self.genererIA(hote, []);
+        self.afficherQuestions(hote, liste);
+      })
+      .catch(function () { rendre(); self.genererIA(hote, []); });
+  };
+
+  Editeur.prototype.afficherQuestions = function (hote, liste) {
+    hote.querySelector('[data-r="questions"]').innerHTML = liste.map(function (q, i) {
+      return '<div data-question="' + esc(q.id) + '"' + (i ? ' style="margin-top:14px"' : '') + '>'
+           +   '<span class="tsle-lab">' + esc(q.label) + '</span>'
+           +   '<input class="tsle-input" placeholder="Votre réponse">'
+           +   (q.suggestions.length
+                 ? '<div class="tsle-chips" style="margin-top:8px">'
+                   + q.suggestions.map(function (v) {
+                       return '<button type="button" class="tsle-chip" data-suggestion="'
+                            + esc(v) + '" aria-pressed="false">' + esc(v) + '</button>';
+                     }).join('') + '</div>'
+                 : '')
+           + '</div>';
+    }).join('');
+    hote.querySelector('[data-r="blocQuestions"]').classList.add('on');
+    try { hote.querySelector('[data-r="questions"] input').focus(); } catch (e) {}
+  };
+
+  /** Les précisions saisies, dans l'ordre des questions. */
+  Editeur.prototype.lireReponses = function (hote) {
+    var out = [];
+    hote.querySelectorAll('[data-question]').forEach(function (d) {
+      var v = (d.querySelector('input').value || '').trim();
+      if (v) out.push({ label: d.querySelector('.tsle-lab').textContent, valeur: v });
+    });
+    return out;
   };
 
   Editeur.prototype.recevoirPhotoIA = function (hote, f) {
@@ -1735,13 +1815,14 @@
       .then(montrer).catch(function () {});
   };
 
-  Editeur.prototype.genererIA = function (hote, style) {
+  Editeur.prototype.genererIA = function (hote, reponses) {
     var self = this;
     var champTexte = hote.querySelector('[data-r="prompt"]');
     var demande = (champTexte.value || '').trim();
     if (!demande) { champTexte.focus(); return; }
 
-    hote.querySelector('[data-r="blocStyle"]').classList.remove('on');
+    reponses = reponses || [];
+    hote.querySelector('[data-r="blocQuestions"]').classList.remove('on');
 
     var btn = hote.querySelector('[data-r="generer"]');
     if (btn.disabled) return;
@@ -1757,13 +1838,17 @@
     } else {
       chemin = '/api/ai/dalle';
       // Même enrobage que le studio : la même description doit donner le
-      // même visuel, d'où qu'elle parte.
-      corps = {
-        prompt: 'T-shirt print design' + (style ? ', ' + style + ' style' : '') + ': ' + demande
-              + '. White background, transparent-ready, bold graphic, print-ready, '
-              + 'no text unless explicitly requested.',
-        size: '1024x1024',
-      };
+      // même visuel, d'où qu'elle parte. Les précisions sont AJOUTÉES à la
+      // fin, elles ne remplacent rien — c'est ce qui permet de les comparer
+      // à une génération sans elles.
+      var texte = 'T-shirt print design: ' + demande
+                + '. White background, transparent-ready, bold graphic, print-ready, '
+                + 'no text unless explicitly requested.';
+      if (reponses.length) {
+        texte += '\n\nAdditional requirements:\n'
+               + reponses.map(function (r) { return '- ' + r.label + ' ' + r.valeur; }).join('\n');
+      }
+      corps = { prompt: texte, size: '1024x1024' };
     }
 
     jetonClient().then(function (jeton) {
@@ -1784,7 +1869,11 @@
       jetonClient().then(function (jeton) {
         api('/api/ai/creations', {
           method: 'POST', headers: enTetesIA(jeton),
-          body: JSON.stringify({ image_base64: src, prompt: demande + (style ? ' — ' + style : '') }),
+          body: JSON.stringify({
+            image_base64: src,
+            prompt: demande + (reponses.length
+              ? ' — ' + reponses.map(function (r) { return r.valeur; }).join(', ') : ''),
+          }),
         }).catch(function () {});
       });
       if (res.d.quota) self.majQuotaIA(hote, res.d.quota);
@@ -2269,11 +2358,15 @@
     var self = this;
     if (this._scenePrete) return this._scenePrete;
 
+    var zone = this.zoneCalibree
+      ? Promise.resolve(this.zoneCalibree)
+      : api('/api/products/' + this.produit + '/display-zone')
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .catch(function () { return null; });
+
     this._scenePrete = Promise.all([
       charger(FABRIC).then(function () { return charger(BACKEND + '/tsl-engine.js'); }),
-      api('/api/products/' + this.produit + '/display-zone')
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .catch(function () { return null; }),
+      zone,
     ]).then(function (res) {
       self.zoneCalibree = res[1] && res[1].exists ? res[1] : null;
       return self._monterCanvas();

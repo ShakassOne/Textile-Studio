@@ -4,18 +4,34 @@
   Barre d'outils + tiroir de personnalisation, directement sur la fiche
   produit : le client compose sans ouvrir le configurateur plein écran.
 
-  PLACEMENT : ce bloc doit être posé JUSTE AVANT le sélecteur de couleurs.
-  Ce n'est pas une préférence esthétique — c'est ce placement qui définit la
-  zone que le tiroir recouvre. Le tiroir s'ouvre vers le HAUT depuis le bloc
-  et s'arrête au sommet de la colonne d'infos ; tout ce qui est en dessous
-  du bloc (couleurs, quantité, bouton panier) reste visible et cliquable.
+  PLACEMENT : indifférent. La barre d'outils est déplacée sous la photo et
+  le panneau occupe la colonne d'informations, quel que soit l'endroit où ce
+  bloc est déclaré. Il ne sert plus qu'à transporter les réglages.
+
+  PRODUITS CONCERNÉS : un produit vendu tel quel, déjà imprimé, ne doit pas
+  proposer de personnalisation. Deux filtres, du plus explicite au plus
+  automatique : un tag d'exclusion, et l'exigence d'une zone d'impression
+  calibrée dans TSL — un support non calibré ne saurait de toute façon pas
+  où poser un visuel.
 
   Les variantes sont sérialisées en JSON ici plutôt que lues dans le DOM :
   le balisage d'un sélecteur de variantes change d'un thème à l'autre, alors
   que `product.variants` est stable.
 {% endcomment %}
 
-{%- if product -%}
+{%- liquid
+  assign tsle_affiche = true
+  assign tsle_exclu = block.settings.tag_exclusion | strip
+  if product and tsle_exclu != blank
+    for t in product.tags
+      if t == tsle_exclu
+        assign tsle_affiche = false
+      endif
+    endfor
+  endif
+-%}
+
+{%- if product and tsle_affiche -%}
   {%- assign tsle_id = 'tsle-' | append: product.id -%}
 
   <div
@@ -26,6 +42,7 @@
     data-tsl-tools="{% if block.settings.tool_text %}text,{% endif %}{% if block.settings.tool_image %}image,{% endif %}{% if block.settings.tool_ai %}ai,{% endif %}{% if block.settings.tool_qr %}qr,{% endif %}{% if block.settings.tool_layers %}layers,{% endif %}"
     data-tsl-default-tool="{{ block.settings.default_tool }}"
     data-tsl-cart-label="{{ block.settings.cart_label | escape }}"
+    data-tsl-exiger-zone="{% if block.settings.exiger_zone %}1{% else %}0{% endif %}"
     {{ block.shopify_attributes }}
   >
     <noscript>
@@ -66,7 +83,24 @@
   "settings": [
     {
       "type": "paragraph",
-      "content": "À placer juste avant le sélecteur de couleurs : c'est ce placement qui définit la zone recouverte par le tiroir."
+      "content": "L'emplacement du bloc n'a pas d'importance : la barre se place sous la photo et le panneau remplace la colonne d'informations."
+    },
+    {
+      "type": "header",
+      "content": "Sur quels produits"
+    },
+    {
+      "type": "checkbox",
+      "id": "exiger_zone",
+      "label": "Seulement si le produit a une zone calibrée dans TSL",
+      "default": true,
+      "info": "Un produit vendu tel quel, déjà imprimé, n'a pas de zone calibrée : la personnalisation ne s'y affiche donc pas."
+    },
+    {
+      "type": "text",
+      "id": "tag_exclusion",
+      "label": "Tag qui désactive la personnalisation",
+      "info": "Laissez vide pour n'exclure aucun produit par tag."
     },
     {
       "type": "text",
