@@ -337,6 +337,26 @@
     + '.tsle-alerte{animation:tsle-pulse 1.1s ease 2}'
     + '@keyframes tsle-pulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,0)}50%{box-shadow:0 0 0 4px rgba(220,38,38,.35)}}'
 
+    // ── Mobile ─────────────────────────────────────────────────────────
+    // Les libellés disparaissent : sur 375 px de large, cinq pastilles
+    // texte prennent deux lignes et mangent la hauteur de la photo, qui est
+    // précisément ce qu'on vient chercher. L'icône seule tient sur une
+    // ligne, et la cible de 48 px reste confortable au doigt.
+    + '@media (max-width:767px){'
+    +   '.tsle-bar{gap:10px;padding:10px 0 2px}'
+    +   '.tsle-tool{width:48px;height:48px;padding:0;justify-content:center;border-radius:14px}'
+    +   '.tsle-tool span{display:none}'
+    +   '.tsle-tool svg{width:21px;height:21px}'
+    +   '.tsle-faces{gap:10px;margin-bottom:10px}'
+    +   '.tsle-face{padding:9px 20px;font-size:.85rem}'
+    // Le panneau occupe la colonne : sur mobile elle est pleine largeur,
+    // donc une seule colonne de réglages, plus aérée.
+    +   '.tsle-body{padding:4px 14px 16px}'
+    +   '.tsle-grid{grid-template-columns:1fr;gap:12px}'
+    +   '.tsle-polices{max-height:240px}'
+    +   '.tsle-cb{min-width:38px;height:38px}'
+    +   '.tsle-cc{width:34px;height:34px}'
+    + '}'
     + '@media (prefers-reduced-motion:reduce){.tsle-vue,.tsle-panel{transition:none!important}}';
 
   function styles() {
@@ -932,8 +952,10 @@
       hote.style.removeProperty('--tsle-origine');
       poser(this.imageProduit, '', '');
       poser(this.scene, '', '');
+      this.majTaillePoignees(1);
       this.definitionCanevas(1);
       this.affinerPhoto(0);
+      hote.style.minHeight = this._hauteurHote || '';
       var self = this;
       // Après la transition : le conteneur a retrouvé sa taille.
       setTimeout(function () { self.calerBarre(); }, SOBRE ? 0 : 420);
@@ -944,11 +966,25 @@
     var d = this._dimensions();
     var z = d.zone;
     if (!z.w || !z.h) return;
-    // Viser 90 % de la photo, sans jamais dézoomer ni dépasser 3×. On peut
-    // serrer d'autant plus que la définition du canevas et celle de la photo
-    // suivent désormais le facteur : ce n'est plus le zoom qui limite la
-    // netteté, mais la source.
-    var k = Math.min(3, Math.max(1, Math.min(d.largeur * 0.9 / z.w, d.hauteur * 0.9 / z.h)));
+
+    // Sur mobile, la photo fait toute la largeur mais guère plus de 290 px
+    // de haut : la zone d'impression, même remplie à ras bord, reste
+    // minuscule. On donne donc de la hauteur au conteneur — il rogne déjà —
+    // et le zoom vise cette boîte-là plutôt que la photo.
+    if (this._hauteurHote === undefined) this._hauteurHote = hote.style.minHeight || '';
+    if (window.innerWidth < 768) hote.style.minHeight = '46vh';
+
+    var boite = {
+      w: Math.max(1, hote.clientWidth || d.largeur),
+      h: Math.max(1, hote.clientHeight || d.hauteur),
+    };
+    // Viser 96 % de la photo. Le plafond monte à 4,5 sur mobile, où la
+    // surface d'affichage est le vrai facteur limitant — et où un visuel
+    // trop petit ne se place pas au doigt. La netteté suit : canevas et
+    // photo demandent leur définition en fonction du facteur.
+    var plafond = window.innerWidth < 768 ? 4.5 : 3.5;
+    var k = Math.min(plafond, Math.max(1,
+      Math.min(boite.w * 0.96 / z.w, boite.h * 0.96 / z.h)));
     var ox = (z.x + z.w / 2) / d.largeur * 100;
     var oy = (z.y + z.h / 2) / d.hauteur * 100;
 
@@ -966,6 +1002,7 @@
     hote.style.setProperty('--tsle-zoom', echelle);
     poser(this.imageProduit, echelle, origine);
     poser(this.scene, echelle, origine);
+    this.majTaillePoignees(k);
     this.definitionCanevas(k);
     this.affinerPhoto(k);
     this.calerBarre();
@@ -2547,28 +2584,40 @@
   // redimensionner. Posés une seule fois sur le prototype Fabric, donc
   // valables pour tous les objets, textes compris.
 
-  var RAYON = ('ontouchstart' in window) ? 20 : 16;
+  var TACTILE = ('ontouchstart' in window);
+  // Rayon DESSINÉ, en pixels d'écran. Les poignées vivent sur un canevas
+  // agrandi par le zoom : à taille fixe en unités de canevas, elles
+  // doublaient ou triplaient à l'écran. On divise donc par le zoom courant.
+  var RAYON_ECRAN = TACTILE ? 13 : 11;
+  // Surface CLIQUABLE : plus large que le dessin sur un écran tactile, où
+  // un doigt ne vise pas au pixel près.
+  var CIBLE_ECRAN = TACTILE ? 44 : 30;
+  var RAYON = RAYON_ECRAN;          // compatibilité : écart de la barre contextuelle
   var _controlesPoses = false;
+  var _zoomPoignees = 1;
 
   function poignee(ctx, couleur, icone) {
+    var r = RAYON_ECRAN / (_zoomPoignees || 1);
+    var k = r / RAYON_ECRAN;        // les icônes suivent le même facteur
     ctx.save();
     ctx.shadowColor = couleur;
-    ctx.shadowBlur = 14;
+    ctx.shadowBlur = 10 * k;
     ctx.beginPath();
-    ctx.arc(0, 0, RAYON, 0, Math.PI * 2);
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.fillStyle = couleur;
     ctx.fill();
     ctx.shadowBlur = 0;
     ctx.shadowColor = 'transparent';
     ctx.beginPath();
-    ctx.arc(0, 0, RAYON - 2.5, 0, Math.PI * 2);
+    ctx.arc(0, 0, r - 2 * k, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(6,6,10,.92)';
     ctx.fill();
     ctx.strokeStyle = '#fff';
     ctx.fillStyle = '#fff';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1.7 * k;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+    ctx.scale(k, k);
     icone(ctx);
     ctx.restore();
   }
@@ -2628,7 +2677,7 @@
 
     F.Object.prototype.controls = {
       tl: new F.Control({
-        x: -0.5, y: -0.5, cursorStyle: 'pointer', cornerSize: RAYON * 2,
+        x: -0.5, y: -0.5, cursorStyle: 'pointer', cornerSize: CIBLE_ECRAN,
         render: rendu('#ef4444', ICONES_P.supprimer),
         mouseUpHandler: surObjet(function (ed, o) {
           ed.moteur.canvas.discardActiveObject();
@@ -2638,18 +2687,18 @@
       }),
       tr: new F.Control({
         x: 0.5, y: -0.5, cursorStyle: 'crosshair', actionName: 'rotate',
-        cornerSize: RAYON * 2,
+        cornerSize: CIBLE_ECRAN,
         actionHandler: u.rotationWithSnapping || u.rotationHandler || function () {},
         render: rendu('#60a5fa', ICONES_P.pivoter),
       }),
       bl: new F.Control({
-        x: -0.5, y: 0.5, cursorStyle: 'copy', cornerSize: RAYON * 2,
+        x: -0.5, y: 0.5, cursorStyle: 'copy', cornerSize: CIBLE_ECRAN,
         render: rendu('#a78bfa', ICONES_P.dupliquer),
         mouseUpHandler: surObjet(function (ed, o) { ed.dupliquerCalque(o.__tslId); }),
       }),
       br: new F.Control({
         x: 0.5, y: 0.5, cursorStyle: 'nwse-resize', actionName: 'scale',
-        cornerSize: RAYON * 2,
+        cornerSize: CIBLE_ECRAN,
         actionHandler: u.scalingEqually || u.scaleEqually || function () {},
         render: rendu('#f59e0b', ICONES_P.agrandir),
       }),
@@ -2668,6 +2717,24 @@
       hasRotatingPoint: false,
     });
     if (F.IText) F.IText.prototype.controls = F.Object.prototype.controls;
+    this.majTaillePoignees(1);
+  };
+
+  /**
+   * Accorde les poignées au zoom.
+   *
+   * Dessin ET surface cliquable sont exprimés en pixels d'ÉCRAN : sans
+   * cette division, une poignée de 30 px devenait un disque de 70 px dès
+   * qu'on zoomait, au point de recouvrir le visuel.
+   */
+  Editeur.prototype.majTaillePoignees = function (zoom) {
+    if (!window.fabric) return;
+    _zoomPoignees = Math.max(0.2, zoom || 1);
+    var taille = CIBLE_ECRAN / _zoomPoignees;
+    var c = window.fabric.Object.prototype.controls || {};
+    Object.keys(c).forEach(function (k) { c[k].cornerSize = taille; });
+    window.fabric.Object.prototype.cornerSize = taille;
+    if (this.moteur) this.moteur.canvas.requestRenderAll();
   };
 
   /**
@@ -2780,7 +2847,14 @@
     var img = imageProduit();
     if (!img || !window.fabric || !window.TSLEngine) return null;
 
+    // Le conteneur retenu doit être une BOÎTE : beaucoup de galeries
+    // enveloppent leur image dans un <picture>, qui est en ligne — on ne
+    // peut ni le positionner, ni lui donner une hauteur, ni y rogner quoi
+    // que ce soit. On remonte jusqu'au premier élément de bloc.
     var hote = img.parentElement;
+    while (hote && hote.parentElement && getComputedStyle(hote).display === 'inline') {
+      hote = hote.parentElement;
+    }
     if (getComputedStyle(hote).position === 'static') hote.style.position = 'relative';
 
     var scene = document.createElement('div');
