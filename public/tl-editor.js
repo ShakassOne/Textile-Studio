@@ -1179,6 +1179,27 @@
   }
 
   /**
+   * Appel au backend — la boutique voyage dans l'EN-TÊTE, jamais en
+   * paramètre d'URL.
+   *
+   * Le serveur redirige vers sa page d'abonnement toute requête portant
+   * `?shop=` venant d'une boutique sans souscription active. Le client
+   * final, lui, ne souscrit pas : il recevait donc du HTML de facturation
+   * à la place du JSON attendu, et la génération IA comme l'ajout au
+   * panier échouaient sans rien dire d'utile. Le studio y échappait déjà
+   * en passant par l'en-tête ; on fait pareil.
+   */
+  function api(chemin, options) {
+    options = options || {};
+    var h = options.headers || {};
+    h['X-Shop-Domain'] = boutique();
+    options.headers = h;
+    options.credentials = 'omit';
+    options.mode = 'cors';
+    return fetch(BACKEND + chemin, options);
+  }
+
+  /**
    * Réduit une image trop grande avant de la poser sur le canevas.
    *
    * Une photo de téléphone fait 4000 px de large : conservée telle quelle
@@ -1444,8 +1465,7 @@
     var grille = hote.querySelector('[data-r="biblio"]');
     var cats = hote.querySelector('[data-r="categories"]');
 
-    fetch(BACKEND + '/api/products/' + this.produit + '/designs?shop='
-          + encodeURIComponent(boutique()), { credentials: 'omit', mode: 'cors' })
+    api('/api/products/' + this.produit + '/designs')
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
         var liste = (d && d.designs) || [];
@@ -1668,8 +1688,7 @@
     };
     if (etat) return montrer(etat);
     jetonClient().then(function (jeton) {
-      return fetch(BACKEND + '/api/ai/quota?shop=' + encodeURIComponent(boutique()),
-                   { headers: enTetesIA(jeton), credentials: 'omit', mode: 'cors' });
+      return api('/api/ai/quota', { headers: enTetesIA(jeton) });
     }).then(function (r) { return r.ok ? r.json() : null; })
       .then(montrer).catch(function () {});
   };
@@ -1706,10 +1725,7 @@
     }
 
     jetonClient().then(function (jeton) {
-      return fetch(BACKEND + chemin + '?shop=' + encodeURIComponent(boutique()), {
-        method: 'POST', headers: enTetesIA(jeton), credentials: 'omit', mode: 'cors',
-        body: JSON.stringify(corps),
-      });
+      return api(chemin, { method: 'POST', headers: enTetesIA(jeton), body: JSON.stringify(corps) });
     }).then(function (r) {
       return r.json().then(function (d) { return { ok: r.ok, d: d }; });
     }).then(function (res) {
@@ -1724,8 +1740,8 @@
       // Le pool « Vos créations IA » du back-office : même soumission que
       // depuis le studio, sinon les générations faites ici n'y remontent pas.
       jetonClient().then(function (jeton) {
-        fetch(BACKEND + '/api/ai/creations?shop=' + encodeURIComponent(boutique()), {
-          method: 'POST', headers: enTetesIA(jeton), credentials: 'omit', mode: 'cors',
+        api('/api/ai/creations', {
+          method: 'POST', headers: enTetesIA(jeton),
           body: JSON.stringify({ image_base64: src, prompt: demande + (style ? ' — ' + style : '') }),
         }).catch(function () {});
       });
@@ -1924,8 +1940,7 @@
 
   Editeur.prototype.chargerCadresQR = function (hote) {
     var self = this;
-    fetch(BACKEND + '/api/qr-frames/public?shop=' + encodeURIComponent(boutique()),
-          { credentials: 'omit', mode: 'cors' })
+    api('/api/qr-frames/public')
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
         var liste = (d && d.frames) || [];
@@ -2214,8 +2229,7 @@
 
     this._scenePrete = Promise.all([
       charger(FABRIC).then(function () { return charger(BACKEND + '/tsl-engine.js'); }),
-      fetch(BACKEND + '/api/products/' + this.produit + '/display-zone?shop='
-            + encodeURIComponent(boutique()), { credentials: 'omit', mode: 'cors' })
+      api('/api/products/' + this.produit + '/display-zone')
         .then(function (r) { return r.ok ? r.json() : null; })
         .catch(function () { return null; }),
     ]).then(function (res) {
@@ -2736,7 +2750,6 @@
     this._envoiEnCours = true;
     this.occuperBoutons(true);
 
-    var shop = encodeURIComponent(boutique());
     var comp = this.moteur.exporterComposition();
     var vignette = '';
     try { vignette = this.moteur.exporterImpression(500); } catch (e) { /* canevas teinté */ }
@@ -2744,8 +2757,8 @@
     var v = this.variantCourant() || {};
     var couleur = (this.iCouleur >= 0 && v.options) ? v.options[this.iCouleur] : '';
 
-    fetch(BACKEND + '/api/designs?shop=' + shop, {
-      method: 'POST', credentials: 'omit', mode: 'cors',
+    api('/api/designs', {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: (this.donnees.handle || 'personnalisation') + ' — ' + (v.title || ''),
@@ -2760,8 +2773,8 @@
     }).then(function (design) {
       if (!design || !design.id) throw new Error('design sans identifiant');
       self._design = design;
-      return fetch(BACKEND + '/api/render/from-composition/' + design.id + '?shop=' + shop, {
-        method: 'POST', credentials: 'omit', mode: 'cors',
+      return api('/api/render/from-composition/' + design.id, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Design-Token': design.edit_token || '' },
         body: JSON.stringify({ design_token: design.edit_token || '' }),
       }).then(function (r) {
@@ -2803,12 +2816,11 @@
     if (!design || !design.id) return Promise.resolve('');
     var photo = imageProduit();
     var media = photo ? (photo.currentSrc || photo.src || '') : '';
-    var url = BACKEND + '/api/products/' + this.produit + '/composition-preview'
+    var url = '/api/products/' + this.produit + '/composition-preview'
             + '?design=' + encodeURIComponent(design.id)
             + '&token=' + encodeURIComponent(design.edit_token || '')
-            + '&media=' + encodeURIComponent(media)
-            + '&shop=' + encodeURIComponent(boutique());
-    return fetch(url, { credentials: 'omit', mode: 'cors' })
+            + '&media=' + encodeURIComponent(media);
+    return api(url)
       .then(function (r) {
         // La route redirige vers le fichier produit : c'est l'URL d'arrivée
         // qui nous intéresse, pas celle qu'on a demandée.
