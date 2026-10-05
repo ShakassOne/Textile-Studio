@@ -132,8 +132,13 @@
     // d'édition c'est intenable : l'image bouge sous le curseur pendant
     // qu'on place un texte. On neutralise le survol, pas le clic — le zoom
     // en plein écran reste accessible.
+
+    // Au SURVOL seulement, on impose notre propre agrandissement — celui du
+    // thème ferait bouger le vêtement sous le curseur pendant qu'on y place
+    // un texte. La variable reprend exactement la valeur posée en ligne.
     + '.tsle-sanszoom img:hover,.tsle-sanszoom:hover img,.tsle-sanszoom *:hover > img{'
-    +   'transform:none!important;scale:none!important}'
+    +   'transform:var(--tsle-zoom,none)!important;scale:none!important;'
+    +   'transform-origin:var(--tsle-origine,50% 50%)!important}'
     + '.tsle-sanszoom [style*="background-image"]:hover{transform:none!important}'
 
     // Panneau Textes
@@ -280,6 +285,28 @@
     + '.tsle-sousbloc{display:none;grid-column:1/-1}'
     + '.tsle-sousbloc.on{display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:15px 18px;align-items:end}'
 
+    // Barre contextuelle : posée sur le corps du document, au-dessus de
+    // l'élément sélectionné. Hors de la colonne et hors du calque zoomé —
+    // sinon elle grossirait avec la photo.
+    + '.tsle-ctx{position:absolute;z-index:2147483001;display:none;align-items:center;gap:3px;'
+    +   'padding:5px;border-radius:12px;background:var(--tsle-surface,#fff);'
+    +   'border:1px solid rgba(128,128,128,.25);box-shadow:0 6px 24px rgba(0,0,0,.18);'
+    +   'transform:translateX(-50%);white-space:nowrap}'
+    + '.tsle-ctx.on{display:flex}'
+    + '.tsle-cb{min-width:32px;height:32px;padding:0 7px;border:0;border-radius:8px;background:transparent;'
+    +   'color:inherit;font:inherit;font-size:.85rem;cursor:pointer;display:inline-flex;'
+    +   'align-items:center;justify-content:center;opacity:.8}'
+    + '.tsle-cb:hover{opacity:1;background:rgba(128,128,128,.14)}'
+    + '.tsle-cb[aria-pressed="true"]{background:var(--tsle-accent,#111114);color:var(--tsle-on-accent,#fff);opacity:1}'
+    + '.tsle-cb.danger{color:#dc2626}'
+    + '.tsle-cb.danger:hover{background:rgba(220,38,38,.14)}'
+    + '.tsle-cb svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;'
+    +   'stroke-linecap:round;stroke-linejoin:round}'
+    + '.tsle-cc{width:30px;height:30px;padding:0;border:1px solid rgba(128,128,128,.4);'
+    +   'border-radius:50%;background:transparent;cursor:pointer;overflow:hidden}'
+    + '.tsle-cc::-webkit-color-swatch-wrapper{padding:0}'
+    + '.tsle-cc::-webkit-color-swatch{border:0;border-radius:50%}'
+    + '.tsle-cs{width:1px;height:20px;background:rgba(128,128,128,.3);margin:0 3px}'
     + '.tsle-alerte{animation:tsle-pulse 1.1s ease 2}'
     + '@keyframes tsle-pulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,0)}50%{box-shadow:0 0 0 4px rgba(220,38,38,.35)}}'
 
@@ -624,6 +651,8 @@
     // tactiles et le client ne peut plus faire défiler la fiche produit.
     if (this.scene) this.scene.classList.remove('actif');
     if (this.moteur) this.moteur.canvas.discardActiveObject().requestRenderAll();
+    this.zoomerSurLaZone(false);
+    this.cacherCtx();
     this.barre.querySelectorAll('.tsle-tool').forEach(function (b) {
       b.setAttribute('aria-expanded', 'false');
     });
@@ -737,29 +766,95 @@
     var batisseur = BATISSEURS[cle];
     if (!hote || !batisseur) {
       if (this.scene) this.scene.classList.remove('actif');
-      return;
+      return Promise.resolve(null);
     }
 
     if (hote.__rempli) {
       if (this.scene) this.scene.classList.add('actif');
+      this.zoomerSurLaZone(true);
       // Certains panneaux reflètent l'état du canevas (les calques) : ils se
       // remettent à jour à chaque ouverture, sans être reconstruits — ça
       // perdrait la saisie en cours dans les autres.
       if (hote.__maj) hote.__maj();
-      return;
+      return Promise.resolve(hote);
     }
 
     hote.__rempli = true;
     hote.innerHTML = '<div class="tsle-chargement">Préparation de l\'éditeur…</div>';
-    this.prepareScene().then(function () {
+    return this.prepareScene().then(function () {
       self[batisseur](hote);
       if (self.outil === cle && self.scene) self.scene.classList.add('actif');
+      self.zoomerSurLaZone(true);
+      return hote;
     }).catch(function () {
       // Rouvrir doit pouvoir réessayer : une coupure réseau passagère ne
       // doit pas condamner l'outil pour le reste de la visite.
       hote.__rempli = false;
       hote.innerHTML = '<div class="tsle-vide">Éditeur indisponible — rechargez la page.</div>';
+      return null;
     });
+  };
+
+  /**
+   * Rapproche la photo de la zone d'impression pendant l'édition.
+   *
+   * On agrandit la PHOTO et le calque ensemble, autour du centre de la zone.
+   * Le facteur vient de la zone elle-même : une poitrine de t-shirt n'occupe
+   * qu'un sixième du cliché, un tote bag presque la moitié — un grossissement
+   * fixe serait ridicule dans un cas et illisible dans l'autre.
+   *
+   * Le zoom passe par deux variables CSS posées sur le conteneur de la photo,
+   * et non par un style en ligne : c'est ce qui permet à la règle qui
+   * neutralise le survol du thème de le respecter au lieu de l'écraser.
+   */
+  Editeur.prototype.zoomerSurLaZone = function (actif) {
+    var hote = this.scene && this.scene.parentElement;
+    if (!hote || !this.moteur) return;
+
+    // La transition est posée EN LIGNE au moment du changement, et pas
+    // dans la feuille de styles. Déclarée à l'avance, elle démarrait avant
+    // que la valeur soit lue et restait figée sur son point de départ —
+    // or une transition l'emporte sur toute déclaration, `!important`
+    // compris : l'image ne grossissait jamais, sans la moindre erreur.
+    var poser = function (el, t, o) {
+      if (!el) return;
+      el.style.transition = SOBRE ? 'none' : 'transform .4s ' + COURBE;
+      el.style.transformOrigin = o;
+      el.style.transform = t;
+    };
+
+    if (!actif) {
+      hote.style.removeProperty('--tsle-zoom');
+      hote.style.removeProperty('--tsle-origine');
+      poser(this.imageProduit, '', '');
+      poser(this.scene, '', '');
+      if (this._surplusHote !== undefined) hote.style.overflow = this._surplusHote;
+      return;
+    }
+
+    var d = this._dimensions();
+    var z = d.zone;
+    if (!z.w || !z.h) return;
+    // Viser 78 % de la photo, sans jamais dézoomer ni dépasser 2,4×, au-delà
+    // duquel un cliché de catalogue devient flou.
+    var k = Math.min(2.4, Math.max(1, Math.min(d.largeur * 0.78 / z.w, d.hauteur * 0.78 / z.h)));
+    var ox = (z.x + z.w / 2) / d.largeur * 100;
+    var oy = (z.y + z.h / 2) / d.hauteur * 100;
+
+    if (this._surplusHote === undefined) this._surplusHote = hote.style.overflow;
+    hote.style.overflow = 'hidden';
+
+    var origine = ox.toFixed(2) + '% ' + oy.toFixed(2) + '%';
+    var echelle = 'scale(' + k.toFixed(3) + ')';
+    // Le style EN LIGNE porte l'agrandissement, la variable ne sert qu'à la
+    // règle de survol. Piloter la transformation depuis une variable posée
+    // sur le parent laissait la transition figée à son point de départ :
+    // une transition l'emporte sur toute déclaration, même `!important`,
+    // et l'image restait à sa taille initiale sans un mot.
+    hote.style.setProperty('--tsle-origine', origine);
+    hote.style.setProperty('--tsle-zoom', echelle);
+    poser(this.imageProduit, echelle, origine);
+    poser(this.scene, echelle, origine);
   };
 
   // ── Panneau Textes ────────────────────────────────────────────────────────
@@ -943,6 +1038,10 @@
       self.moteur._centrer(obj);
       self.moteur.canvas.requestRenderAll();
       self.chargerPolice(r.police);
+      // Le moteur sélectionne l'objet dès qu'il l'ajoute, donc AVANT que le
+      // style soit posé : le panneau se recopiait sur un texte encore brut
+      // et affichait un alignement à gauche pour un texte centré.
+      self.recopierTexte(obj);
     });
   };
 
@@ -2156,8 +2255,17 @@
     // La photo change de taille (chargement, redimensionnement, variante) :
     // le canevas et la zone doivent suivre, sinon le design dérive.
     var self = this;
+    var c = this.moteur.canvas;
+    c.on('selection:created', function () { self.surSelection(); });
+    c.on('selection:updated', function () { self.surSelection(); });
+    c.on('selection:cleared', function () { self.cacherCtx(); });
+    ['object:moving', 'object:scaling', 'object:rotating', 'object:modified']
+      .forEach(function (ev) { c.on(ev, function () { self.placerCtx(); }); });
+    window.addEventListener('scroll', function () { self.placerCtx(); }, { passive: true });
+
     var suivre = function () {
       self._placerScene();
+      self.placerCtx();
       var d = self._dimensions();
       self.moteur.canvas.setDimensions({ width: d.largeur, height: d.hauteur });
       self.moteur.definirZone(d.zone);
@@ -2166,6 +2274,66 @@
     window.addEventListener('resize', suivre);
     if (window.ResizeObserver) new ResizeObserver(suivre).observe(img);
     return this.moteur;
+  };
+
+  /**
+   * Un élément vient d'être sélectionné sur le vêtement.
+   *
+   * Un texte ouvre le panneau Textes, avec ses propres réglages chargés —
+   * sans cette recopie, le premier caractère tapé écraserait sa police, sa
+   * taille et sa couleur par celles du panneau, qui dataient du texte
+   * précédent. Une image n'ouvre rien : le panneau Images sert à importer,
+   * il n'a rien à dire sur un visuel déjà posé. Elle a sa barre flottante.
+   */
+  Editeur.prototype.surSelection = function () {
+    var o = this.moteur && this.moteur.canvas.getActiveObject();
+    if (!o) return this.cacherCtx();
+    if (o.__tslType === 'text' && this.outil !== 'text') this.ouvrir('text');
+    if (o.__tslType === 'text') this.recopierTexte(o);
+    this.montrerCtx(o);
+  };
+
+  /** Recopie les propriétés d'un texte sélectionné dans le panneau. */
+  Editeur.prototype.recopierTexte = function (o) {
+    var h = this.vue.querySelector('.tsle-panel[data-panneau="text"]');
+    if (!h || !h.__rempli || !this._t) return;
+    var q = function (r) { return h.querySelector('[data-r="' + r + '"]'); };
+    var poser = function (r, v) { var e = q(r); if (e) e.value = v; };
+    var presser = function (r, v) { var e = q(r); if (e) e.setAttribute('aria-pressed', v ? 'true' : 'false'); };
+
+    poser('texte', o.text || '');
+    var c = q('compteur');
+    if (c) c.textContent = (o.text || '').length + '/' + MAX_CARACTERES;
+    poser('police', o.fontFamily || 'Montserrat');
+    poser('couleur', typeof o.fill === 'string' && o.fill.charAt(0) === '#' ? o.fill : '#111114');
+    presser('gras', o.fontWeight === 'bold' || o.fontWeight === 700);
+    presser('italique', o.fontStyle === 'italic');
+    presser('souligne', !!o.underline);
+    h.querySelectorAll('[data-r="al"]').forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-v') === (o.textAlign || 'center') ? 'true' : 'false');
+    });
+
+    // La taille du panneau est une part de la hauteur de zone, pas des pixels.
+    var zone = this.moteur.zone;
+    var pct = Math.round((o.fontSize || 40) / (zone.h || 1) * 100);
+    poser('taille', Math.min(100, Math.max(5, pct)));
+    poser('tailleVal', Math.min(100, Math.max(5, pct)));
+    poser('espacement', Math.round(o.charSpacing || 0));
+    poser('espacementVal', Math.round(o.charSpacing || 0));
+    var op = Math.round((typeof o.opacity === 'number' ? o.opacity : 1) * 100);
+    poser('opacite', op); poser('opaciteVal', op);
+    presser('contour', !!(o.stroke && o.strokeWidth));
+    if (o.stroke && String(o.stroke).charAt(0) === '#') poser('contourCouleur', o.stroke);
+    if (o.strokeWidth) { poser('contourEpaisseur', Math.round(o.strokeWidth)); poser('contourEpaisseurVal', Math.round(o.strokeWidth)); }
+    presser('ombre', !!o.shadow);
+    var bloc = q('blocContour');
+    if (bloc) bloc.classList.toggle('on', !!(o.stroke && o.strokeWidth));
+
+    // Le bouton d'ajout change de sens : tant qu'un texte est sélectionné,
+    // la saisie le MODIFIE. Sans ce changement, taper puis « Ajouter »
+    // renommait l'existant et en créait un second avec le même contenu.
+    var b = q('ajouter');
+    if (b) b.textContent = 'Ajouter un autre texte';
   };
 
   /** Cale le calque d'édition sur la photo, à l'intérieur de son conteneur. */
@@ -2209,6 +2377,131 @@
     this.cadre.style.top = z.y + 'px';
     this.cadre.style.width = z.w + 'px';
     this.cadre.style.height = z.h + 'px';
+  };
+
+  // ── Barre contextuelle ────────────────────────────────────────────────────
+  //
+  // Les mêmes gestes que dans le studio, posés au-dessus de l'élément
+  // sélectionné : les actions les plus fréquentes ne doivent pas obliger à
+  // aller les chercher dans un panneau.
+
+  var ICO_CTX = {
+    copier:  '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
+    monter:  '<path d="M12 19V5m0 0-6 6m6-6 6 6"/>',
+    baisser: '<path d="M12 5v14m0 0 6-6m-6 6-6-6"/>',
+    jeter:   '<path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13"/>',
+    fond:    '<circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M8.1 7.9 20 20M8.1 16.1 20 4"/>',
+  };
+
+  Editeur.prototype.creerCtx = function () {
+    if (this.ctx) return this.ctx;
+    var self = this;
+    var d = document.createElement('div');
+    d.className = 'tsle-ctx';
+    document.body.appendChild(d);
+    d.addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('[data-ctx]') : null;
+      if (b) { e.preventDefault(); self.actionCtx(b.getAttribute('data-ctx')); }
+    });
+    d.addEventListener('input', function (e) {
+      if (e.target.getAttribute('data-ctx') === 'couleur') self.actionCtx('couleur', e.target.value);
+    });
+    this.ctx = d;
+    return d;
+  };
+
+  Editeur.prototype.cacherCtx = function () {
+    if (this.ctx) this.ctx.classList.remove('on');
+  };
+
+  Editeur.prototype.montrerCtx = function (o) {
+    var d = this.creerCtx();
+    var texte = o.__tslType === 'text';
+    var bouton = function (act, forme, titre, danger) {
+      return '<button type="button" class="tsle-cb' + (danger ? ' danger' : '') + '" data-ctx="' + act + '" '
+           +   'title="' + esc(titre) + '" aria-label="' + esc(titre) + '">'
+           +   '<svg viewBox="0 0 24 24" aria-hidden="true">' + forme + '</svg></button>';
+    };
+    var html = '';
+    if (texte) {
+      html += '<button type="button" class="tsle-cb" data-ctx="gras" title="Gras"'
+            + (o.fontWeight === 'bold' ? ' aria-pressed="true"' : '') + '><b>B</b></button>'
+            + '<button type="button" class="tsle-cb" data-ctx="italique" title="Italique"'
+            + (o.fontStyle === 'italic' ? ' aria-pressed="true"' : '') + '><i>I</i></button>'
+            + '<span class="tsle-cs"></span>'
+            + '<button type="button" class="tsle-cb" data-ctx="moins" title="Réduire">A−</button>'
+            + '<button type="button" class="tsle-cb" data-ctx="plus" title="Agrandir">A+</button>'
+            + '<input type="color" class="tsle-cc" data-ctx="couleur" title="Couleur du texte" value="'
+            + esc(typeof o.fill === 'string' && o.fill.charAt(0) === '#' ? o.fill : '#111114') + '">'
+            + '<span class="tsle-cs"></span>';
+    } else {
+      html += bouton('fond', ICO_CTX.fond, 'Détourer le fond') + '<span class="tsle-cs"></span>';
+    }
+    html += bouton('copier', ICO_CTX.copier, 'Dupliquer')
+          + bouton('monter', ICO_CTX.monter, 'Vers l\'avant')
+          + bouton('baisser', ICO_CTX.baisser, 'Vers l\'arrière')
+          + '<span class="tsle-cs"></span>'
+          + bouton('jeter', ICO_CTX.jeter, 'Supprimer', true);
+    d.innerHTML = html;
+    d.classList.add('on');
+    this.placerCtx();
+  };
+
+  /**
+   * Place la barre au-dessus de l'élément.
+   *
+   * Les coordonnées passent par le rectangle du canevas À L'ÉCRAN, pas par
+   * sa taille interne : la photo est agrandie en CSS pendant l'édition, et
+   * le rapport entre les deux est précisément ce zoom.
+   */
+  Editeur.prototype.placerCtx = function () {
+    if (!this.ctx || !this.ctx.classList.contains('on') || !this.moteur) return;
+    var o = this.moteur.canvas.getActiveObject();
+    if (!o) return this.cacherCtx();
+    var el = this.moteur.canvas.upperCanvasEl;
+    var rc = el.getBoundingClientRect();
+    var e = rc.width / (this.moteur.canvas.getWidth() || 1);
+    var br = o.getBoundingRect(true);
+    var x = rc.left + window.scrollX + (br.left + br.width / 2) * e;
+    var y = rc.top + window.scrollY + br.top * e - 10;
+    this.ctx.style.left = Math.round(x) + 'px';
+    this.ctx.style.top = Math.round(Math.max(window.scrollY + 6, y - this.ctx.offsetHeight)) + 'px';
+  };
+
+  Editeur.prototype.actionCtx = function (act, valeur) {
+    var self = this;
+    var c = this.moteur && this.moteur.canvas;
+    var o = c && c.getActiveObject();
+    if (!o) return;
+    var id = o.__tslId;
+
+    if (act === 'jeter') { this.moteur.supprimer(id); return this.cacherCtx(); }
+    if (act === 'copier') return this.dupliquerCalque(id);
+    if (act === 'monter' || act === 'baisser') {
+      this.deplacerCalque(id, act === 'monter' ? 1 : -1);
+      c.setActiveObject(o).requestRenderAll();
+      return;
+    }
+    if (act === 'fond') {
+      // Le détourage vit dans le panneau Images : on l'ouvre, et on attend
+      // qu'il soit réellement construit plutôt que de parier sur un délai.
+      this.ouvrir('image');
+      return Promise.resolve(this.remplirPanneau('image')).then(function (hote) {
+        if (hote) { c.setActiveObject(o); self.ouvrirDetourage(hote); }
+      });
+    }
+
+    if (act === 'gras') o.set('fontWeight', o.fontWeight === 'bold' ? 'normal' : 'bold');
+    else if (act === 'italique') o.set('fontStyle', o.fontStyle === 'italic' ? 'normal' : 'italic');
+    else if (act === 'moins' || act === 'plus') {
+      var pas = Math.max(1, Math.round((o.fontSize || 40) * 0.08));
+      o.set('fontSize', Math.max(6, (o.fontSize || 40) + (act === 'plus' ? pas : -pas)));
+      o.set({ scaleX: 1, scaleY: 1 });
+    } else if (act === 'couleur') o.set('fill', valeur);
+
+    c.requestRenderAll();
+    this.recopierTexte(o);
+    this.montrerCtx(o);
   };
 
   // ── Coloris ───────────────────────────────────────────────────────────────
