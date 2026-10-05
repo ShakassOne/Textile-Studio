@@ -683,3 +683,38 @@ module.exports.purgerRendusProduit   = purgerRendusProduit;
 module.exports.resoudreFormatProduit = resoudreFormatProduit;
 module.exports.octetsDuVisuel        = _octetsDuVisuel;
 module.exports.photosDuProduit       = _photosDuProduit;
+
+/**
+ * Largeur physique de la zone d'impression, par vue du mockup lié.
+ * ──────────────────────────────────────────────────────────────────────────
+ * C'est l'unique échelle qui transforme des pixels en millimètres, donc en
+ * format A6/A5/A4/A3, donc en prix. Le studio s'en sert déjà
+ * (`_getPxPerMm`) ; la fiche produit doit lire la même, sans quoi le même
+ * visuel serait facturé différemment selon l'endroit où on le compose.
+ *
+ * Le repli à 420 mm (côté long d'un A3) est celui du studio : un visuel qui
+ * remplit la zone vaut alors un A3 plein cadre.
+ */
+function largeursDeVue(db, shopId, productId, nbFaces) {
+  const DEFAUT = 420;
+  const sortie = { front: DEFAUT, back: DEFAUT };
+  const lien = db.prepare(
+    `SELECT mockup_id FROM product_mockup_links
+     WHERE shop_id=? AND (shopify_product_id=? OR shopify_product_id=?)`
+  ).get(shopId, productId, `gid://shopify/Product/${productId}`);
+  if (!lien?.mockup_id) return sortie;
+
+  const m = db.prepare('SELECT views_json FROM mockups WHERE id=? AND shop_id=?')
+              .get(lien.mockup_id, shopId);
+  let vues = [];
+  try { vues = JSON.parse(m?.views_json || '[]'); } catch { vues = []; }
+
+  ['front', 'back'].forEach((face, i) => {
+    const v = vues[i];
+    if (v && typeof v.printWidthMm === 'number' && v.printWidthMm > 0) sortie[face] = v.printWidthMm;
+    else if (i > 0) sortie[face] = sortie.front;   // une seule vue calibrée vaut pour les deux
+  });
+  return sortie;
+}
+
+module.exports.largeursDeVue = largeursDeVue;

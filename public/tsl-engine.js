@@ -305,7 +305,10 @@
     });
     t.__tslType = 'text';
     t.__tslId = 'c' + Math.random().toString(36).slice(2, 9);
-    this._centrer(t);
+    // Centré SANS redimensionner : l'appelant a fixé le corps, l'étirer à la
+    // zone rendrait le réglage de taille sans effet — et ferait facturer
+    // tout texte au plus grand format.
+    this.centrerSeul(t);
     this.canvas.add(t).setActiveObject(t);
     this.canvas.requestRenderAll();
     return t;
@@ -322,6 +325,15 @@
       self.canvas.requestRenderAll();
       if (pret) pret(img);
     }, { crossOrigin: 'anonymous' });
+  };
+
+  /** Place un objet au centre de la zone SANS toucher à sa taille. */
+  Moteur.prototype.centrerSeul = function (obj) {
+    var z = this.zone;
+    var l = (obj.width || 1) * (obj.scaleX || 1);
+    var h = (obj.height || 1) * (obj.scaleY || 1);
+    obj.set({ left: z.x + (z.w - l) / 2, top: z.y + (z.h - h) / 2 });
+    obj.setCoords();
   };
 
   /** Centre un objet dans la zone, contenu à 90 % — même marge que le studio. */

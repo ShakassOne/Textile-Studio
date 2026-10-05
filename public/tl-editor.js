@@ -389,7 +389,12 @@
       api('/api/products/' + this.produit + '/display-zone')
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (d) {
-          if (d && d.exists) { self.zoneCalibree = d; self.construire(); }
+          if (d && d.exists) {
+            self.zoneCalibree = d;
+            self.faces = d.faces || [];
+            self.tarif = d.tarif || null;
+            self.construire();
+          }
           else {
             console.info('[TSL] Produit sans zone d\'impression calibrée : '
               + 'personnalisation non proposée. Calibrez-le dans Zones produit '
@@ -1256,7 +1261,11 @@
       });
         self._appliquerStyle(obj, r);
       self._appliquerDeformation(obj, r);
-      self.moteur._centrer(obj);
+      // On garde la taille demandée au lieu d'étirer le texte à la zone :
+      // tout texte ajouté se retrouvait sinon à la dimension maximale, donc
+      // facturé au plus grand format quelle que soit la valeur du curseur.
+      self.ajusterDansLaZone(obj);
+      self.moteur.centrerSeul(obj);
       self.moteur.canvas.requestRenderAll();
       self.chargerPolice(r.police);
       // Le moteur sélectionne l'objet dès qu'il l'ajoute, donc AVANT que le
@@ -1319,21 +1328,33 @@
     // juste ce qu'il faut pour rester dans la zone. Sans ce garde-fou,
     // toucher n'importe quel réglage faisait ressortir le texte du cadre
     // d'impression — il avait été ajusté à l'ajout, jamais aux retouches.
-    // La mesure se fait sur la BOÎTE ENGLOBANTE et non sur width/height :
-    // un cisaillement élargit l'encombrement sans toucher à la largeur
-    // propre du texte, et « Penché » ressortait de la zone de quelques
-    // pour cent.
+    this.ajusterDansLaZone(o);
+
+    this.moteur.canvas.requestRenderAll();
+    // Le format d'impression vient de la taille : le prix doit suivre le
+    // curseur, pas attendre qu'on relâche un objet sur le canevas.
+    this.majPrix();
+    this.chargerPolice(r.police);
+  };
+
+  /**
+   * Réduit un objet juste ce qu'il faut pour tenir dans la zone.
+   *
+   * La mesure se fait sur la BOÎTE ENGLOBANTE et non sur width/height : un
+   * cisaillement élargit l'encombrement sans toucher à la largeur propre du
+   * texte, et « Penché » ressortait de la zone de quelques pour cent.
+   * N'agrandit jamais — la taille choisie reste la taille choisie.
+   */
+  Editeur.prototype.ajusterDansLaZone = function (o) {
+    if (!this.moteur) return;
     var z = this.moteur.zone;
     o.setCoords();
     var b = o.getBoundingRect(true, true);
     var tenir = Math.min(1,
       (z.w * 0.98) / Math.max(1, b.width),
       (z.h * 0.98) / Math.max(1, b.height));
-    if (tenir < 1) o.set({ scaleX: tenir, scaleY: tenir });
+    if (tenir < 1) o.set({ scaleX: (o.scaleX || 1) * tenir, scaleY: (o.scaleY || 1) * tenir });
     o.setCoords();
-
-    this.moteur.canvas.requestRenderAll();
-    this.chargerPolice(r.police);
   };
 
   /**
@@ -2729,6 +2750,7 @@
     ]).then(function (res) {
       self.zoneCalibree = res[1] && res[1].exists ? res[1] : null;
       self.faces = (res[1] && res[1].faces) || [];
+      self.tarif = (res[1] && res[1].tarif) || null;
       return self._monterCanvas();
     });
     return this._scenePrete;
@@ -2782,6 +2804,10 @@
     c.on('selection:created', function () { self.surSelection(); });
     c.on('selection:updated', function () { self.surSelection(); });
     c.on('selection:cleared', function () { self.cacherCtx(); });
+    // Le prix dépend de la taille imprimée : tout geste qui la change doit
+    // le mettre à jour, sinon le client découvre le surcoût au panier.
+    ['object:added', 'object:removed', 'object:modified']
+      .forEach(function (ev) { c.on(ev, function () { self.majPrix(); }); });
     ['object:moving', 'object:scaling', 'object:rotating', 'object:modified']
       .forEach(function (ev) { c.on(ev, function () { self.placerCtx(); }); });
     // Écouteurs liés à CE canevas : ils sont retenus pour être retirés au
@@ -3367,6 +3393,7 @@
     c.requestRenderAll();
     this.recopierTexte(o);
     this.montrerCtx(o);
+    this.majPrix();
   };
 
   // ── Coloris ───────────────────────────────────────────────────────────────
@@ -3384,6 +3411,80 @@
       if (/couleur|colou?r/i.test(n)) iCouleur = i;
     });
     this.iCouleur = iCouleur;
+  };
+
+  // ── Tarification ──────────────────────────────────────────────────────────
+  //
+  // Calquée sur le studio, au millimètre près et avec les mêmes montants :
+  // un même visuel doit coûter la même chose qu'on le compose ici ou là-bas.
+  //
+  // L'échelle vient d'une seule donnée, `printWidthMm` — la largeur physique
+  // de la zone d'impression du mockup, calibrée en admin. Elle suffit, parce
+  // que les calques sont enregistrés en FRACTIONS de zone : une largeur de
+  // 0,5 vaut la moitié de la zone, donc la moitié de sa largeur réelle. Le
+  // fait que la photo soit en perspective ne change rien — la zone désigne
+  // la même surface physique dans les deux cas.
+
+  var SEUILS_MM = [['A3', 297], ['A4', 210], ['A5', 148], ['A6', 0]];
+
+  Editeur.prototype.surchargeImpression = function () {
+    if (!this.moteur || !this.tarif) return { total: 0, detail: [] };
+    var bareme = this.tarif.formats || {};
+    var largeurs = this.tarif.largeurMm || {};
+    var comp = this.moteur.exporterComposition();
+    var detail = [], total = 0;
+
+    Object.keys(comp.faces).forEach(function (face) {
+      var calques = (comp.faces[face] && comp.faces[face].layers) || [];
+      if (!calques.length) return;
+
+      var Lmm = Number(largeurs[face]) || 420;
+      var rapport = (comp.faces[face].zone && comp.faces[face].zone.ratio) || 1;
+      var Hmm = Lmm / (rapport || 1);
+
+      // Boîte englobant TOUS les visuels de la face : deux petits logos
+      // éloignés demandent un grand format d'impression, pas deux petits.
+      var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      calques.forEach(function (c) {
+        var l = (c.w || 0) * Lmm;
+        var h = l * (c.ratio || 1);
+        var cx = (c.x || 0) * Lmm, cy = (c.y || 0) * Hmm;
+        x0 = Math.min(x0, cx - l / 2); x1 = Math.max(x1, cx + l / 2);
+        y0 = Math.min(y0, cy - h / 2); y1 = Math.max(y1, cy + h / 2);
+      });
+
+      // Classement par la plus grande dimension, comme le studio : un visuel
+      // long et étroit occupe quand même un grand format sur la table.
+      var mm = Math.max(x1 - x0, y1 - y0);
+      var fmt = 'A6';
+      for (var i = 0; i < SEUILS_MM.length; i++) {
+        if (mm >= SEUILS_MM[i][1]) { fmt = SEUILS_MM[i][0]; break; }
+      }
+      var extra = Number(bareme[fmt]) || 0;
+      total += extra;
+      detail.push({ face: face, format: fmt, mm: Math.round(mm), extra: extra });
+    });
+
+    return { total: Math.round(total * 100) / 100, detail: detail };
+  };
+
+  /**
+   * Variante pré-tarifée correspondant à la surcharge.
+   *
+   * Le coût d'impression est porté par une variante Shopify dont l'option
+   * « Impression » vaut le montant — une seule ligne de panier, pas de
+   * produit de frais à côté. C'est le modèle déjà en place pour le studio.
+   */
+  Editeur.prototype.varianteTarifee = function (montant) {
+    var v = this.variantCourant();
+    if (!v) return Promise.resolve(null);
+    if (!montant) return Promise.resolve({ ok: true, variant_id: String(v.id), amount: 0 });
+
+    return api('/api/shopify/resolve-variant?base_variant_id=' + encodeURIComponent(v.id)
+             + '&product_id=' + encodeURIComponent(this.produit)
+             + '&amount=' + encodeURIComponent(montant))
+      .then(function (r) { return r.json().catch(function () { return null; }); })
+      .catch(function () { return null; });
   };
 
   // ── Prix dynamique ────────────────────────────────────────────────────────
@@ -3464,9 +3565,11 @@
     var champ = document.querySelector('form[action*="/cart/add"] [name="quantity"]');
     if (champ && Number(champ.value) > 0) qte = Number(champ.value);
 
-    var montant = prix(v.price * qte, this.donnees.moneyFormat);
+    var sur = this.surchargeImpression();
+    var montant = prix((v.price + Math.round(sur.total * 100)) * qte, this.donnees.moneyFormat);
     var base = this.racine.getAttribute('data-tsl-cart-label') || 'Ajouter au panier';
     var libelle = base + ' — ' + montant;
+    this._surcharge = sur;
 
     if (this.boutonTheme) {
       var el = this.boutonTheme.querySelector('span') || this.boutonTheme;
@@ -3635,6 +3738,20 @@
         });
       });
     }).then(function (rendu) {
+      // La variante pré-tarifée est résolue AVANT d'ajouter : c'est elle qui
+      // porte le coût d'impression, et une ligne ajoutée sur la variante de
+      // base vendrait l'impression gratuitement.
+      var sur = self.surchargeImpression();
+      return self.varianteTarifee(sur.total).then(function (v) {
+        if (sur.total > 0 && (!v || !v.ok || !v.variant_id)) {
+          var pourquoi = (v && v.error) || 'variante d\'impression introuvable';
+          throw new Error(pourquoi);
+        }
+        rendu.varianteId = v && v.variant_id;
+        rendu.surcharge = sur;
+        return rendu;
+      });
+    }).then(function (rendu) {
       var props = rendu.properties;
       var impression = (rendu.faces && rendu.faces.front && rendu.faces.front.url)
                     || (rendu.faces && rendu.faces.back && rendu.faces.back.url) || '';
@@ -3642,8 +3759,16 @@
       // fichier d'impression seul — un visuel sur fond transparent, hors
       // contexte — ne ressemble pas à ce qu'on vient d'acheter. On retombe
       // dessus si le produit n'a pas de zone calibrée.
-      return self.apercuSurLaPhoto(self._design).then(function (sur) {
-        self.poserDansLePanier(props, sur || impression);
+      // Le détail du calcul part avec la commande : sans lui, impossible de
+      // savoir plus tard pourquoi telle ligne a été facturée tel montant.
+      if (rendu.surcharge && rendu.surcharge.detail.length) {
+        props._impression = rendu.surcharge.detail
+          .map(function (d) { return d.face + ':' + d.format + ':' + d.mm + 'mm'; }).join(' ');
+        props.Impression = rendu.surcharge.detail
+          .map(function (d) { return d.format; }).join(' + ');
+      }
+      return self.apercuSurLaPhoto(self._design).then(function (apercu) {
+        self.poserDansLePanier(props, apercu || impression, rendu.varianteId);
       });
     }).catch(function (err) {
       self._envoiEnCours = false;
@@ -3680,9 +3805,10 @@
       .catch(function () { return ''; });
   };
 
-  Editeur.prototype.poserDansLePanier = function (props, apercu) {
+  Editeur.prototype.poserDansLePanier = function (props, apercu, varianteId) {
     var self = this;
     var v = this.variantCourant();
+    var idLigne = varianteId || (v && v.id);
     var qte = 1;
     var champ = document.querySelector('form[action*="/cart/add"] [name="quantity"]');
     if (champ && Number(champ.value) > 0) qte = Number(champ.value);
@@ -3694,7 +3820,7 @@
     if (window.__TLModalInitialized) {
       window.postMessage({
         type: 'tl-add-to-cart',
-        variantId: v && v.id, quantity: qte,
+        variantId: idLigne, quantity: qte,
         properties: props, previewUrl: apercu,
       }, '*');
       setTimeout(function () {
@@ -3709,7 +3835,7 @@
     if (apercu) props._preview_img = apercu;
     fetch('/cart/add.js', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: v && v.id, quantity: qte, properties: props }),
+      body: JSON.stringify({ id: idLigne, quantity: qte, properties: props }),
     }).then(function (r) {
       if (!r.ok) throw new Error('panier ' + r.status);
       window.location.href = '/cart';

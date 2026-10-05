@@ -340,7 +340,25 @@ router.get('/products/:productId/display-zone', attachShopId, async (req, res) =
     console.warn('display-zone faces :', e.message);
   }
 
-  res.json({ exists: true, ...zone, faces });
+  // ── De quoi tarifer, exactement comme le studio ───────────────────────
+  //
+  // Le studio classe un visuel en A6/A5/A4/A3 à partir de sa taille RÉELLE,
+  // déduite d'une seule échelle : la largeur physique de la zone
+  // d'impression du mockup (`printWidthMm`). La vitrine doit s'appuyer sur
+  // la même donnée, sinon les deux ne factureront pas pareil.
+  let tarif = null;
+  try {
+    const { largeursDeVue } = require('./product-designs');
+    const { lireBaremeFormats } = require('../routes/pricing');
+    tarif = {
+      largeurMm: largeursDeVue(db, req.shopId, productId, faces.length || 1),
+      formats: lireBaremeFormats(req.shopId),
+    };
+  } catch (e) {
+    console.warn('display-zone tarif :', e.message);
+  }
+
+  res.json({ exists: true, ...zone, faces, tarif });
 });
 
 /**
