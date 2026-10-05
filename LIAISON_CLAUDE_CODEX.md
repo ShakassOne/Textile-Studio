@@ -5,15 +5,11 @@
 > du projet TextileLab. Il est dans le repo et **doit être mis à jour à chaque push**
 > par celui qui pousse (Claude ou Codex).
 
-**Dernière mise à jour :** 2026-06-24 — par **Claude** (Option A : auto-création variantes pré-tarifées + option masquée — POUSSÉ)
-**Branche :** `main` · **Dernier commit poussé connu :** *(voir ligne du haut du journal)*
+**Dernière mise à jour :** 2026-10-05 — par **Claude** (Routine « Option du jour » — remise à jour de contexte après 3 mois et demi d'écart, voir §3/§4/§6 ; aucun nouveau code ce passage)
+**Branche :** `dev` · **Dernier commit poussé connu :** *(voir `docs/ROADMAP-DEV.md` §1 « Options livrées » et §4 « Journal des routines » pour le détail complet depuis fin juin)*
 
-> ✅ **Codex : variantes pré-tarifées EN PROD** (`fcfb1ce`), testé OK sur WinShirt.
-> Évolution **modèle MONTANT** (commit suivant, EN LOCAL non poussé) : le palier n'est plus
-> un format mais le **montant total de surcharge** (recto/verso = cumul des deux faces).
-> Valeurs d'option « Impression » = « Sans impression », « +1,50 € » … « +8,00 € ».
-> Le **T-Shirt Monster Édition Homme** (WinShirt) a été reconstruit via l'API : 108 variantes
-> (9 tailles × 12 paliers). Détail §1.
+> ⚠️ Ce fichier était figé au 2026-06-24. Le détail de tout ce qui a été livré depuis (tarification résolue, multi-tenant, gating bouton, templates, IA Photo→Illustration + quota, réassurance, preuve sociale, upsell étape 1, etc.) vit désormais dans `docs/ROADMAP-DEV.md` (créé le 2026-09-29, mis à jour quotidiennement par des routines automatisées) — ce fichier ne le duplique plus, voir §3.
+> Un chantier séparé et manuel est aussi en cours sur `dev` : **« Bibliothèque de designs »** (journal dans `docs/CHANTIER-BIBLIOTHEQUE-DESIGNS.md`) — sélecteur de design sur la fiche produit, moteur de rendu Fabric.js partagé en cours d'extraction, éditeur `public/tl-editor.js`. À ne pas confondre avec le studio de personnalisation (`public/textilelab-studio.html`) décrit ci-dessous.
 
 ---
 
@@ -65,19 +61,20 @@
 
 ---
 
-## 3. État courant (vérifié dans le code au 2026-06-15)
+## 3. État courant (vérifié dans le code/journal au 2026-10-04)
+
+> Détail complet de chaque option livrée depuis juin : `docs/ROADMAP-DEV.md` §1 (« Options livrées »). Section volontairement résumée ici pour éviter la duplication.
 
 **Ce qui marche (vérifié) :**
-- Install OAuth + token exchange multi-marchand ; admin embed par session token.
-- Storefront : bouton « Personnaliser » (app block) → studio en **modal** → ajout au panier → **aperçu du design dans le drawer** (général, tous thèmes). ✅ confirmé par Alan.
-- Migration du contenu dev → WinShirt (bibliothèque, mockups, catégories, styles IA, QR).
-- Studio : resize manuel == bouton format (échelle mm↔px unifiée).
+- Install OAuth + token exchange multi-marchand ; admin embed par session token ; 2 déploiements Railway (app publique en review App Store + app Custom WinShirt en prod immédiate via `shopify.app.winshirt.toml`).
+- Storefront : bouton « Personnaliser » gaté par liaison produit↔mockup en admin (fail-open si l'API échoue) → studio en modal → ajout au panier → aperçu du design dans le drawer.
+- **Tarification impression : résolue et en prod** (modèle montant cumulé recto/verso, variantes pré-tarifées auto-créées côté Shopify) — voir §6 ; T4/T5 ci-dessous et l'« OUVERT — tarification » historique sont désormais **clos**.
+- Templates produit (metafield Shopify), IA Photo→Illustration (styles activables par boutique + quota par identité + généralisation du prompt pour les photos sans visage le 04/10), rate-limit IPv6-safe (01/10), bandeau de réassurance + barre de prix sticky mobile (01/10, flag désactivé par défaut pour la barre), preuve sociale visuelle « Ils l'ont fait » (03/10, flag désactivé par défaut), Upsell V2 étape 1 — table + CRUD `upsell_candidates` (02/10, backend-only), webhook `orders/paid` corrigé (03/10). Détail de chaque point : `docs/ROADMAP-DEV.md` §1.
 
-**Ce qui est CASSÉ ou douteux (à traiter) :**
-- 🔴 **Tarification surcharge** : approche « ligne Frais d'impression 0,50 € × N » jugée *marchand de tapis* par Alan → **à remplacer** (voir `PROPOSITION_TARIFICATION.md` et §6).
-- 🔴 **Cumul des faces** : le surcoût ne somme pas recto + verso ; il prend la **dernière face visible** (recto seul → +4, verso seul → +2, jamais +6). Cause probable : recto/verso = **mockups séparés**, pas des `views` d'un même mockup → `_computeSurcharge()` ne scanne qu'une face. **À confirmer dans l'audit avant de recoder.**
-- 🟠 **Surcharge multi-éléments même face** : 3 visuels A4 sur une face = 1 surcharge (par design). Règle exacte à confirmer avec Alan (format de la face = manuel ? = plus grand élément ? = bounding box ?).
-- 🟠 Scope `write_products` ajouté à `winshirt.toml` mais **re-consentement non confirmé** → la création auto du produit de frais peut échouer (needs_setup).
+**Ce qui reste ouvert :**
+- Plan WinShirt Plus ou non (T6 ci-dessous, aussi backlog item 15 de `ROADMAP-DEV.md`) — point ouvert de longue date, toujours sans réponse d'Alan.
+- Upsell V2 étape 2 (extraction du rendu headless Fabric.js) **en pause** : le chantier manuel parallèle « Bibliothèque de designs » (voir ci-dessus, `docs/CHANTIER-BIBLIOTHEQUE-DESIGNS.md`) construit un moteur de rendu partagé (`tsl-engine.js`/`utils/composition.js`) sur le même terrain, pas encore raccordé au studio — attaquer l'extraction maintenant risquerait un double travail/conflit de fusion. À trancher avec Alan (détail dans `docs/ROADMAP-DEV.md` §2).
+- Le trou « paiement commencé → commande » (6 → 0 en France sur 30 j, backlog P0 de `ROADMAP-DEV.md`) — diagnostic pas encore fait, nécessite une lecture des logs Railway (hors de portée de cette routine, pas d'accès Railway dans cet environnement).
 
 ---
 
@@ -91,9 +88,9 @@
 | T1 | Reconstruire + faire VALIDER le CDC (`CDC_TEXTILELAB.md`) | Claude | 🔄 (rédigé, à valider par Alan) |
 | T2 | Audit profond vs CDC (`AUDIT_TSL_2026-06-15.md`) | Claude | 🔄 (1ʳᵉ passe) |
 | T3 | Analyse fonction par fonction (`ANALYSE_FONCTIONS.md`) | Claude+Codex | 🔄 (backend fait, studio à finir) |
-| T4 | Choisir l'approche tarifaire (`PROPOSITION_TARIFICATION.md`) | Alan décide | ⏸ |
-| T5 | Corriger le cumul recto+verso (après T4 + audit) | — | ⬜ |
-| T6 | Confirmer le plan WinShirt (Plus ou non) + re-consent write_products | Alan | ⬜ |
+| T4 | Choisir l'approche tarifaire (`PROPOSITION_TARIFICATION.md`) | Alan décide | ✅ fait (modèle montant cumulé recto/verso, variantes pré-tarifées en prod — voir §1 `ROADMAP-DEV.md`) |
+| T5 | Corriger le cumul recto+verso (après T4 + audit) | — | ✅ fait (résolu par le même modèle montant) |
+| T6 | Confirmer le plan WinShirt (Plus ou non) + re-consent write_products | Alan | ⬜ (toujours ouvert, voir aussi backlog item 15 de `ROADMAP-DEV.md`) |
 
 ---
 
@@ -107,9 +104,10 @@
 
 ## 6. Décisions & points ouverts
 
-- **DÉCIDÉ (2026-06-15) :** stop au codage tant que CDC + audit + analyse fonctions ne sont pas posés (demande d'Alan).
-- **OUVERT — tarification :** la ligne « Frais d'impression » est rejetée. Voir 3 options dans `PROPOSITION_TARIFICATION.md`. **Alan doit trancher.** Recommandation Claude : produit « Personnalisation » à variantes par paliers (1 ligne propre, prix exact).
-- **OUVERT — plan WinShirt :** Plus ou non ? Détermine si on peut un jour fondre la surcharge dans la ligne produit (Cart Transform = Plus only).
+- **DÉCIDÉ (2026-06-15) :** stop au codage tant que CDC + audit + analyse fonctions ne sont pas posés (demande d'Alan). *(levé depuis : le codage a repris sur `dev`, voir §1 et `docs/ROADMAP-DEV.md`.)*
+- **DÉCIDÉ ET LIVRÉ — tarification :** modèle montant cumulé recto/verso, variantes pré-tarifées auto-créées, en prod. Voir §3 et `docs/ROADMAP-DEV.md` §1.
+- **DÉCIDÉ ET LIVRÉ — cumul recto/verso :** résolu par le même modèle montant. Voir §3.
+- **OUVERT — plan WinShirt :** Plus ou non ? Détermine si on peut un jour fondre la surcharge dans la ligne produit (Cart Transform = Plus only). Seul point encore ouvert parmi les décisions tarifaires de cette section.
 - **OUVERT — CDC :** Alan doit confirmer/corriger `CDC_TEXTILELAB.md` (reconstruit de mémoire, pas le document d'origine).
 
 ---
