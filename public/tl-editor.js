@@ -972,7 +972,7 @@
     // minuscule. On donne donc de la hauteur au conteneur — il rogne déjà —
     // et le zoom vise cette boîte-là plutôt que la photo.
     if (this._hauteurHote === undefined) this._hauteurHote = hote.style.minHeight || '';
-    if (window.innerWidth < 768) hote.style.minHeight = '46vh';
+    if (window.innerWidth < 768) hote.style.minHeight = '52vh';
 
     var boite = {
       w: Math.max(1, hote.clientWidth || d.largeur),
@@ -991,8 +991,20 @@
     if (this._surplusHote === undefined) this._surplusHote = hote.style.overflow;
     hote.style.overflow = 'hidden';
 
+    // Recentrage. Avec une origine posée sur le centre de la zone, ce point
+    // reste là où il était : si la zone est basse ou décalée sur la photo,
+    // l'agrandissement la pousse hors du cadre et il « manque un bout ».
+    // On translate donc ce point jusqu'au centre de la boîte visible.
+    var ri = this.imageProduit.getBoundingClientRect();
+    var rh = hote.getBoundingClientRect();
+    var dansHote = decalageDans(this.imageProduit, hote);
+    var centreZoneX = dansHote.x + (z.x + z.w / 2);
+    var centreZoneY = dansHote.y + (z.y + z.h / 2);
+    var tx = Math.round(boite.w / 2 - centreZoneX);
+    var ty = Math.round(boite.h / 2 - centreZoneY);
+
     var origine = ox.toFixed(2) + '% ' + oy.toFixed(2) + '%';
-    var echelle = 'scale(' + k.toFixed(3) + ')';
+    var echelle = 'translate(' + tx + 'px,' + ty + 'px) scale(' + k.toFixed(3) + ')';
     // Le style EN LIGNE porte l'agrandissement, la variable ne sert qu'à la
     // règle de survol. Piloter la transformation depuis une variable posée
     // sur le parent laissait la transition figée à son point de départ :
@@ -2878,12 +2890,18 @@
     // c'est le carrousel qui partait à la photo suivante. On laisse Fabric
     // traiter l'évènement — il est plus bas, donc servi en premier — puis
     // on l'arrête avant qu'il ne remonte jusqu'au thème.
-    ['pointerdown', 'mousedown', 'touchstart', 'touchmove', 'pointermove', 'dragstart']
-      .forEach(function (ev) {
-        scene.addEventListener(ev, function (e) {
-          if (scene.classList.contains('actif')) e.stopPropagation();
-        });
+    // SEULEMENT l'appui initial. Arrêter aussi les mouvements était une
+    // faute : dès qu'un glissement commence, Fabric écoute `pointermove` et
+    // `touchmove` sur le DOCUMENT. Les bloquer ici revenait à lui couper la
+    // main — on pouvait appuyer, jamais déplacer ni redimensionner. Invisible
+    // sur bureau, où la souris passe par d'autres évènements ; bloquant au
+    // doigt. Couper l'appui suffit de toute façon : une galerie qui n'a pas
+    // vu le début d'un geste ne le suivra pas.
+    ['pointerdown', 'mousedown', 'touchstart', 'dragstart'].forEach(function (ev) {
+      scene.addEventListener(ev, function (e) {
+        if (scene.classList.contains('actif')) e.stopPropagation();
       });
+    });
 
     this._placerScene();
     var dims = this._dimensions();
