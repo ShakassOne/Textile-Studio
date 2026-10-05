@@ -175,7 +175,8 @@
     // de hauteurs différentes font grimper les étiquettes en escalier.
     + '.tsle-grid .tsle-input,.tsle-grid .tsle-select,.tsle-grid .tsle-val,'
     +   '.tsle-grid .tsle-mini,.tsle-grid .tsle-chip,.tsle-grid .tsle-duo,'
-    +   '.tsle-grid .tsle-seg,.tsle-grid .tsle-chips{height:42px}'
+    +   '.tsle-grid .tsle-seg{height:42px}'
+    + '.tsle-grid .tsle-chips{min-height:42px;height:auto;align-items:center}'
     + '.tsle-grid .tsle-pastille{width:42px;height:42px;flex:0 0 42px}'
     + '.tsle-grid .tsle-val{padding:0}'
     + '.tsle-grid .tsle-pastille,.tsle-grid .tsle-mini,.tsle-grid .tsle-chip{box-sizing:border-box}'
@@ -2844,7 +2845,7 @@
       if (absolu(img.getAttribute('src')) !== absolu(base)) imposerSource(img, base);
       return;
     }
-    var vise = Math.min(4000, Math.ceil(img.getBoundingClientRect().width
+    var vise = Math.min(4000, Math.ceil(img.offsetWidth
                                         * facteur * (window.devicePixelRatio || 1)));
     // Les sources du thème sont écrasées le temps du zoom : laissées en
     // place, le navigateur retomberait aussitôt sur une image étroite et
@@ -2922,22 +2923,38 @@
   };
 
   /** Cale le calque d'édition sur la photo, à l'intérieur de son conteneur. */
+  /**
+   * Position d'un élément dans un de ses ancêtres, en pixels de MISE EN PAGE.
+   *
+   * `offsetLeft` ignore les transformations, contrairement au rectangle
+   * d'affichage. C'est tout l'enjeu ici : la photo est agrandie pendant
+   * l'édition, et la mesurer telle qu'elle apparaît revenait à réappliquer
+   * le zoom à chaque recalcul. Le facteur se multipliait par lui-même, le
+   * visuel grossissait sans fin et le vêtement semblait bouger tout seul.
+   */
+  function decalageDans(el, hote) {
+    var x = 0, y = 0, n = el;
+    while (n && n !== hote) { x += n.offsetLeft; y += n.offsetTop; n = n.offsetParent; }
+    return { x: x, y: y };
+  }
+
   Editeur.prototype._placerScene = function () {
     var hote = this.scene && this.scene.parentElement;
-    if (!hote || !this.imageProduit) return;
-    var ri = this.imageProduit.getBoundingClientRect();
-    var rh = hote.getBoundingClientRect();
-    this.scene.style.left = Math.round(ri.left - rh.left) + 'px';
-    this.scene.style.top = Math.round(ri.top - rh.top) + 'px';
-    this.scene.style.width = Math.round(ri.width) + 'px';
-    this.scene.style.height = Math.round(ri.height) + 'px';
+    var img = this.imageProduit;
+    if (!hote || !img) return;
+    var d = decalageDans(img, hote);
+    this.scene.style.left = Math.round(d.x) + 'px';
+    this.scene.style.top = Math.round(d.y) + 'px';
+    this.scene.style.width = Math.round(img.offsetWidth) + 'px';
+    this.scene.style.height = Math.round(img.offsetHeight) + 'px';
   };
 
   /** Taille du canevas et zone d'édition, en pixels de la photo affichée. */
   Editeur.prototype._dimensions = function () {
-    var r = this.imageProduit.getBoundingClientRect();
-    var largeur = Math.max(1, Math.round(r.width));
-    var hauteur = Math.max(1, Math.round(r.height));
+    // Dimensions de MISE EN PAGE, jamais celles affichées : le zoom est une
+    // transformation, et la reprendre dans la mesure la rendrait cumulative.
+    var largeur = Math.max(1, Math.round(this.imageProduit.offsetWidth));
+    var hauteur = Math.max(1, Math.round(this.imageProduit.offsetHeight));
 
     var coins = this.zoneCalibree && this.zoneCalibree.corners;
     if (!coins || coins.length !== 4) {
