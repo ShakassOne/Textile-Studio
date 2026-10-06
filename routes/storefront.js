@@ -569,6 +569,28 @@ async function fetchAdminVariantById(shopRecord, variantId) {
   return j.variant || null;
 }
 
+/**
+ * Cette variante existe-t-elle encore chez Shopify ?
+ *
+ * Distingue « supprimée » (404, certitude) de « invérifiable » (réseau, jeton,
+ * 5xx) : on ne jette une entrée de mapping que sur une certitude, sinon une
+ * coupure passagère ferait créer des variantes en double.
+ */
+async function adminVariantExiste(shopRecord, variantId) {
+  try {
+    const r = await fetch(
+      `https://${shopRecord.shop_domain}/admin/api/2024-01/variants/${encodeURIComponent(variantId)}.json`,
+      { headers: { 'X-Shopify-Access-Token': shopRecord.access_token } }
+    );
+    if (r.status === 404) return { existe: false, variant: null };
+    if (!r.ok) return { existe: null, variant: null };
+    const j = await r.json().catch(() => null);
+    return { existe: !!(j && j.variant), variant: (j && j.variant) || null };
+  } catch (_) {
+    return { existe: null, variant: null };
+  }
+}
+
 // Admin GraphQL (2025-01) — utilisé pour ajouter l'option « Impression » à un
 // produit (productOptionsCreate, indispo en REST 2024-01). Lance en cas d'erreur.
 async function adminGraphQL(shopRecord, query, variables) {
@@ -715,13 +737,26 @@ async function resolveVariantForCustomization(p) {
   const mapped = mapping[key];
   if (mapped) {
     const finalId = _numId(mapped);
-    let price = null;
-    try {
-      const inProd = product && (product.variants || []).find(v => String(v.id) === finalId);
-      if (inProd) price = Number(inProd.price);
-      else { const v = await fetchAdminVariantById(shopRecord, finalId); price = v ? Number(v.price) : null; }
-    } catch (_) {}
-    return { ok: true, variant_id: finalId, price, source: 'mapping', amount };
+    const inProd = product && (product.variants || []).find(v => String(v.id) === finalId);
+    if (inProd) {
+      return { ok: true, variant_id: finalId, price: Number(inProd.price), source: 'mapping', amount };
+    }
+    // La variante n'est plus dans le produit : supprimée, ou simplement pas
+    // encore propagée. On tranche avant de la renvoyer — une entrée morte
+    // renvoyée telle quelle faisait répondre 422 au panier, sans un mot
+    // d'explication, à CHAQUE tentative, jusqu'à vider le mapping à la main.
+    const etat = (shopRecord && shopRecord.access_token)
+      ? await adminVariantExiste(shopRecord, finalId)
+      : { existe: null, variant: null };
+    if (etat.existe !== false) {
+      return { ok: true, variant_id: finalId,
+               price: etat.variant ? Number(etat.variant.price) : null,
+               source: 'mapping', amount };
+    }
+    delete mapping[key];
+    writeVariantMapping(shopId, mapping);
+    console.warn('[resolve-variant] mapping périmé oublié, variante recréée :',
+      JSON.stringify({ key, variant_id: finalId }));
   }
 
   // ── STRATÉGIE C : AUTO-CRÉATION de la variante pré-tarifée (additif) ────────

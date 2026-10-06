@@ -753,7 +753,10 @@
             // Et surtout : on VÉRIFIE la réponse. Le code se contentait de
             // r.json() ; un refus 422 passait donc pour un succès, le modal se
             // fermait et le tiroir s'ouvrait vide, sans un mot d'explication.
-            var _essais = [0, 900, 2000];
+            // Une 4e tentative plus tardive : une variante que le backend
+            // vient de créer met parfois plus de deux secondes à devenir
+            // achetable, et l'échec retombait alors sur le client.
+            var _essais = [0, 900, 2000, 4000];
             var _tenterAjout = function (n) {
               return fetch('/cart/add.json', {
                 method:  'POST',
@@ -761,7 +764,12 @@
                 body: JSON.stringify(_addBody),
               })
               .then(function (r) {
-                return r.json().catch(function () { return null; }).then(function (data) {
+                // On lit le corps en TEXTE d'abord : un refus n'est pas
+                // toujours du JSON, et `r.json()` le jetait — il ne restait
+                // qu'un « HTTP 422 » muet, impossible à diagnostiquer.
+                return r.text().then(function (txt) {
+                  var data = null;
+                  try { data = txt ? JSON.parse(txt) : null; } catch (e) { /* pas du JSON */ }
                   // Shopify renvoie {status, message, description} en cas de refus.
                   var echec = !r.ok || !data || data.status >= 400;
                   if (!echec) return data;
@@ -769,7 +777,11 @@
                     return new Promise(function (ok) { setTimeout(ok, _essais[n + 1]); })
                       .then(function () { return _tenterAjout(n + 1); });
                   }
-                  var err = new Error((data && (data.description || data.message)) || ('HTTP ' + r.status));
+                  var raison = (data && (data.description || data.message))
+                    || String(txt || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)
+                    || ('HTTP ' + r.status);
+                  console.error('[TSL] /cart/add.json refusé', r.status, { variante: _vid, corps: txt });
+                  var err = new Error(raison);
                   err.panierRefuse = true;
                   throw err;
                 });
