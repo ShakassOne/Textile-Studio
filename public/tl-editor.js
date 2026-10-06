@@ -648,13 +648,19 @@
     var media = this.media;
     var img = imageProduit();
     if (!media || !img || this.barre.classList.contains('tsle-flottante')) return;
-    // Position de MISE EN PAGE, pas d'affichage : la photo agrandie déborde
-    // de son conteneur, qui la rogne, et c'est le bord de ce conteneur —
-    // donc la boîte non zoomée — que la barre doit suivre. La mesurer à
-    // l'écran la faisait descendre sous le visuel à chaque changement
-    // d'outil, d'autant que la transition n'est pas finie quand on mesure.
+    // Sous la zone d'aperçu, qui n'est pas toujours la photo : pendant
+    // l'édition on donne de la hauteur au conteneur pour agrandir le visuel,
+    // et la barre doit descendre d'autant — sinon ses boutons se retrouvent
+    // au milieu du vêtement, par-dessus la zone d'impression. On ne se fie
+    // pas pour autant à la hauteur du conteneur, qu'un thème peut étirer
+    // bien au-delà de la photo : on prend celle qu'on a demandée.
+    //
+    // Position de MISE EN PAGE et non d'affichage : la photo agrandie
+    // déborde, et la mesurer à l'écran ferait descendre la barre à chaque
+    // changement d'outil, d'autant que la transition n'est pas finie.
     var d = decalageDans(img, media);
-    this.barre.style.top = Math.round(d.y + img.offsetHeight + 10) + 'px';
+    var hauteur = Math.max(img.offsetHeight, this.outil ? (this._hauteurVue || 0) : 0);
+    this.barre.style.top = Math.round(d.y + hauteur + 10) + 'px';
   };
 
   /**
@@ -931,6 +937,48 @@
    * et non par un style en ligne : c'est ce qui permet à la règle qui
    * neutralise le survol du thème de le respecter au lieu de l'écraser.
    */
+  /**
+   * Aperçu en pleine largeur pendant l'édition, sur mobile.
+   *
+   * La photo tient dans la colonne du thème, marges comprises, et la zone
+   * d'impression ne peut pas dépasser cette largeur : c'est elle qui plafonne
+   * l'agrandissement, pas la hauteur. On va donc chercher les marges — en
+   * vérifiant que le bord gagné est bien visible, car un parent qui rogne
+   * couperait la zone au lieu de l'élargir, et il « manquerait un bout ».
+   *
+   * Renvoie vrai si la largeur a changé : la scène, le canevas et la zone
+   * doivent alors être recalés, ce que `definirZone` fait en conservant la
+   * composition — elle est mémorisée en fractions de zone, pas en pixels.
+   */
+  Editeur.prototype.elargirApercu = function (hote, actif) {
+    var remettre = function (self) {
+      hote.style.marginLeft = self._margesHote[0];
+      hote.style.marginRight = self._margesHote[1];
+      self._margesHote = null;
+    };
+    if (!actif) {
+      if (!this._margesHote) return false;
+      remettre(this);
+      return true;
+    }
+    if (this._margesHote || window.innerWidth >= 768) return false;
+    var avant = Math.round(hote.getBoundingClientRect().width);
+    if (avant >= window.innerWidth - 8) return false;
+
+    this._margesHote = [hote.style.marginLeft, hote.style.marginRight];
+    hote.style.marginLeft = 'calc(50% - 50vw)';
+    hote.style.marginRight = 'calc(50% - 50vw)';
+
+    var r = hote.getBoundingClientRect();
+    var y = Math.min(Math.max(r.top + 8, 8), window.innerHeight - 8);
+    var bord = document.elementFromPoint(Math.round(r.left + 3), Math.round(y));
+    if (Math.round(r.width) <= avant + 8 || !bord || !hote.contains(bord)) {
+      remettre(this);
+      return false;
+    }
+    return true;
+  };
+
   Editeur.prototype.zoomerSurLaZone = function (actif) {
     var hote = this.scene && this.scene.parentElement;
     if (!hote || !this.moteur) return;
@@ -956,12 +1004,18 @@
       this.definitionCanevas(1);
       this.affinerPhoto(0);
       hote.style.minHeight = this._hauteurHote || '';
+      this._hauteurVue = 0;
+      if (this.elargirApercu(hote, false)) this.recalerScene();
       var self = this;
       // Après la transition : le conteneur a retrouvé sa taille.
       setTimeout(function () { self.calerBarre(); }, SOBRE ? 0 : 420);
       if (this._surplusHote !== undefined) hote.style.overflow = this._surplusHote;
       return;
     }
+
+    // Avant toute mesure : la largeur de l'aperçu peut changer, et tout en
+    // dépend — échelle, canevas, zone.
+    if (this.elargirApercu(hote, true)) this.recalerScene();
 
     var d = this._dimensions();
     var z = d.zone;
@@ -970,21 +1024,32 @@
     // Sur mobile, la photo fait toute la largeur mais guère plus de 290 px
     // de haut : la zone d'impression, même remplie à ras bord, reste
     // minuscule. On donne donc de la hauteur au conteneur — il rogne déjà —
-    // et le zoom vise cette boîte-là plutôt que la photo.
+    // et le zoom vise cette boîte-là, agrandie, plutôt que la photo seule.
     if (this._hauteurHote === undefined) this._hauteurHote = hote.style.minHeight || '';
-    if (window.innerWidth < 768) hote.style.minHeight = '52vh';
 
-    var boite = {
-      w: Math.max(1, hote.clientWidth || d.largeur),
-      h: Math.max(1, hote.clientHeight || d.hauteur),
-    };
-    // Viser 96 % de la photo. Le plafond monte à 4,5 sur mobile, où la
-    // surface d'affichage est le vrai facteur limitant — et où un visuel
-    // trop petit ne se place pas au doigt. La netteté suit : canevas et
-    // photo demandent leur définition en fonction du facteur.
-    var plafond = window.innerWidth < 768 ? 4.5 : 3.5;
+    var large = d.largeur;
+    // Le plafond monte sur mobile, où la surface d'affichage est le vrai
+    // facteur limitant — et où un visuel trop petit ne se place pas au
+    // doigt. La netteté suit : canevas et photo demandent leur définition
+    // en fonction du facteur.
+    var plafond = window.innerWidth < 768 ? 6 : 4;
+    // Part d'écran qu'on s'autorise pour l'aperçu pendant l'édition.
+    var hMax = Math.round(window.innerHeight * (window.innerWidth < 768 ? 0.68 : 0.74));
+    // 0,98 en largeur, 0,86 en hauteur : un filet au-dessus et en dessous
+    // de la zone, pour qu'elle se lise comme posée sur le vêtement et que
+    // ses poignées restent attrapables.
     var k = Math.min(plafond, Math.max(1,
-      Math.min(boite.w * 0.96 / z.w, boite.h * 0.96 / z.h)));
+      Math.min(large * 0.98 / z.w, hMax * 0.86 / z.h)));
+
+    // La boîte prend juste la hauteur de la zone agrandie, marges comprises.
+    // Une hauteur fixe laissait un grand vide sous le cadre — et comme les
+    // boutons se posent dessous, ils tombaient au milieu de l'écran. On ne
+    // fait que l'agrandir : jamais rogner l'aperçu d'origine.
+    var voulue = Math.max(d.hauteur, Math.min(hMax, Math.round((z.h * k) / 0.86)));
+    this._hauteurVue = voulue;
+    if (voulue > d.hauteur) hote.style.minHeight = voulue + 'px';
+
+    var boite = { w: large, h: voulue };
     var ox = (z.x + z.w / 2) / d.largeur * 100;
     var oy = (z.y + z.h / 2) / d.hauteur * 100;
 
@@ -994,14 +1059,16 @@
     // Recentrage. Avec une origine posée sur le centre de la zone, ce point
     // reste là où il était : si la zone est basse ou décalée sur la photo,
     // l'agrandissement la pousse hors du cadre et il « manque un bout ».
-    // On translate donc ce point jusqu'au centre de la boîte visible.
-    var ri = this.imageProduit.getBoundingClientRect();
-    var rh = hote.getBoundingClientRect();
-    var dansHote = decalageDans(this.imageProduit, hote);
-    var centreZoneX = dansHote.x + (z.x + z.w / 2);
-    var centreZoneY = dansHote.y + (z.y + z.h / 2);
-    var tx = Math.round(boite.w / 2 - centreZoneX);
-    var ty = Math.round(boite.h / 2 - centreZoneY);
+    // On translate donc ce point jusqu'où on veut le voir. Le repère est la
+    // photo et non son conteneur : un thème peut étirer celui-ci bien
+    // au-delà, et la zone partait alors se centrer dans du vide.
+    //
+    // Centrée horizontalement, posée HAUT verticalement : la zone est ce
+    // qu'on vient regarder, le vêtement autour n'est qu'un repère. Centrer
+    // en hauteur la laissait flotter au milieu, avec du vide dessous.
+    var tx = Math.round(boite.w / 2 - (z.x + z.w / 2));
+    var ty = Math.round(Math.min(boite.h / 2, boite.h * 0.07 + (z.h * k) / 2)
+                        - (z.y + z.h / 2));
 
     var origine = ox.toFixed(2) + '% ' + oy.toFixed(2) + '%';
     var echelle = 'translate(' + tx + 'px,' + ty + 'px) scale(' + k.toFixed(3) + ')';
