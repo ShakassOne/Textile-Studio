@@ -4147,8 +4147,11 @@
         properties: props, previewUrl: apercu,
         // Le produit, pour les suggestions curées par le marchand : la page
         // peut en contenir plusieurs, et la ligne de panier ne porte que la
-        // variante.
+        // variante. Le design va avec : il sert à poser la création du client
+        // sur les produits suggérés.
         productId: self.produit,
+        designId: self._design && self._design.id,
+        designToken: self._design && self._design.edit_token,
       }, '*');
       setTimeout(function () {
         self._envoiEnCours = false;

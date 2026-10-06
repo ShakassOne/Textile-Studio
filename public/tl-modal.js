@@ -1166,6 +1166,45 @@
     } catch (e) { return ''; }
   }
 
+  /**
+   * Ne remplace une image que si la nouvelle charge vraiment.
+   *
+   * L'aperçu composé est rendu à la demande par le serveur : il peut
+   * manquer (produit non calibré), tarder, ou échouer. On part donc de la
+   * photo nue, et on ne la remplace qu'une fois l'autre prête — jamais de
+   * case vide en attendant.
+   */
+  function _tlImageSiChargeable(url, surSucces) {
+    var img = new Image();
+    var fini = false;
+    var minuteur = setTimeout(function () { fini = true; img.src = ''; }, 8000);
+    img.onload = function () {
+      if (fini) return;
+      clearTimeout(minuteur);
+      surSucces(url);
+    };
+    img.onerror = function () { clearTimeout(minuteur); };
+    img.src = url;
+  }
+
+  /**
+   * La création du client, posée sur le produit suggéré.
+   *
+   * Sans elle, on propose un vêtement vierge à quelqu'un qui vient justement
+   * de dessiner : il doit imaginer le résultat. La photo de référence du
+   * produit cible est utilisée — c'est celle sur laquelle le marchand a
+   * calibré sa zone, donc la seule où le placement est juste. Produit non
+   * calibré : le serveur répond 404 et on garde la photo nue.
+   */
+  function _tlUpsellApercuCompose(c, design, shop) {
+    var cible = String((c && c.product_id) || '').replace(/\D/g, '');
+    if (!cible || !design || !design.id) return '';
+    return TSL_BACKEND_ORIGIN + '/api/products/' + cible + '/composition-preview'
+         + '?design=' + encodeURIComponent(design.id)
+         + '&token=' + encodeURIComponent(design.token || '')
+         + '&shop=' + encodeURIComponent(shop);
+  }
+
   function _tlFermerUpsell() {
     var vieux = document.querySelector('.tl-upsell');
     if (vieux && vieux.parentNode) vieux.parentNode.removeChild(vieux);
@@ -1200,6 +1239,7 @@
       .then(function (p) {
         if (!p) return c;
         return {
+          product_id: c.product_id,
           handle: c.handle,
           title:  p.title || c.title,
           image:  p.featured_image || (p.images && p.images[0]) || '',
@@ -1209,7 +1249,7 @@
       .catch(function () { return c; });
   }
 
-  function _tlAfficherUpsell(fiches) {
+  function _tlAfficherUpsell(fiches, design, shop) {
     _tlFermerUpsell();
     var el = document.createElement('div');
     el.className = 'tl-upsell';
@@ -1238,8 +1278,15 @@
       // de fichier cassé.
       var vignette = document.createElement('span');
       vignette.className = 'tl-upsell-i';
-      if (f.image) vignette.style.backgroundImage = 'url("' + String(f.image).replace(/"/g, '%22') + '")';
+      var poser = function (u) {
+        vignette.style.backgroundImage = 'url("' + String(u).replace(/"/g, '%22') + '")';
+      };
+      if (f.image) poser(f.image);
       a.appendChild(vignette);
+
+      // Puis, si elle arrive, la même création posée sur CE produit.
+      var compose = _tlUpsellApercuCompose(f, design, shop);
+      if (compose) _tlImageSiChargeable(compose, poser);
       var nom = document.createElement('span');
       nom.className = 'tl-upsell-n';
       nom.textContent = f.title || f.handle;
@@ -1289,9 +1336,10 @@
       })
       .then(function (fiches) {
         if (!fiches || !fiches.length) return;
+        var design = { id: (data && data.designId) || '', token: (data && data.designToken) || '' };
         // Après l'ouverture du tiroir : l'encart doit arriver sur un panier
         // déjà affiché, sinon il se fait recouvrir sans avoir été lu.
-        setTimeout(function () { _tlAfficherUpsell(fiches); }, 900);
+        setTimeout(function () { _tlAfficherUpsell(fiches, design, shop); }, 900);
       })
       .catch(function () { /* suggestions absentes : jamais bloquant */ });
   }

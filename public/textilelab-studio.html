@@ -7918,6 +7918,9 @@ async function _checkoutShopifyDirect() {
           quantity:   1,
           properties: propsObj,
           previewUrl: _previewImgUrl || null,
+          // Pour poser la création du client sur les produits suggérés.
+          designId:    _currentDesignId || null,
+          designToken: _currentDesignToken || null,
         }, '*');
       }, 800);
     } else {
@@ -8194,7 +8197,7 @@ async function checkout() {
         closeCart();
         if (window.self !== window.top) {
           // tl-modal.js appelle /cart/add.json puis ouvre le drawer
-          setTimeout(() => { window.parent.postMessage({ type: 'tl-add-to-cart', variantId: String(_variant.id), quantity: 1, properties: _propsObj }, '*'); }, 500);
+          setTimeout(() => { window.parent.postMessage({ type: 'tl-add-to-cart', variantId: String(_variant.id), quantity: 1, properties: _propsObj, designId: _currentDesignId || null, designToken: _currentDesignToken || null }, '*'); }, 500);
         } else {
           // Hors iframe : form POST vers /cart/add (les query params properties[] sont invalides avec Shopify)
           setTimeout(() => {
