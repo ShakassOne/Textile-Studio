@@ -7,6 +7,7 @@
  * ni de flag à ce stade — zéro impact sur le flux client.
  * Logique pure dans utils/upsell-candidates.js (voir ce fichier pour les tests).
  *
+ *  GET    /api/upsell-candidates/public       → suggestions pour la vitrine
  *  GET    /api/upsell-candidates?source=<id>  → candidats pour ce produit source
  *  GET    /api/upsell-candidates              → tout, groupé par source
  *  POST   /api/upsell-candidates              → upsert (scopé shop)
@@ -18,6 +19,26 @@ const { getDB }        = require('../db/database');
 const { requireAuth }  = require('./auth');
 const { attachShopId } = require('./_shop-context');
 const upsell = require('../utils/upsell-candidates');
+
+// ── GET /public — suggestions lues par la vitrine ─────────────────────
+// PUBLIC + CORS large : appelé en cross-origin depuis tl-modal.js juste
+// après l'ajout au panier, comme /api/product-links/public.
+// no-store : une curation changée en admin doit se voir au rechargement
+// suivant, pas au bon vouloir d'un cache.
+// Déclarée AVANT les routes authentifiées : elles ne se chevauchent pas,
+// mais un lecteur doit voir du premier coup d'œil ce qui est ouvert.
+router.options('/public', (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  res.sendStatus(204);
+});
+router.get('/public', attachShopId, (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.set('Cache-Control', 'no-store');
+  res.json(upsell.listPublicForSource(getDB(), req.shopId, req.query.source));
+});
 
 // ── GET / — ?source=<id> pour un produit, sinon tout groupé ────────────
 router.get('/', requireAuth, attachShopId, (req, res) => {

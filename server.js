@@ -510,6 +510,7 @@ app.use((req, res, next) => {
     '/api/products/',
     '/api/shop-settings/style/public',
     '/api/social-proof/public',
+    '/api/upsell-candidates/public', // ← suggestions après ajout au panier : un CLIENT ne souscrit pas
     '/textilelab-studio.html',
     '/tl-modal.js',
     '/tl-designs.js',

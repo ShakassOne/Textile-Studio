@@ -170,6 +170,70 @@
     '}',
   ].join('\n');
 
+  var TL_UPSELL_CSS = '\
+    .tl-upsell {\
+      position: fixed;\
+      left: 50%;\
+      bottom: 16px;\
+      transform: translateX(-50%) translateY(12px);\
+      z-index: 2147483000;\
+      width: calc(100vw - 24px);\
+      max-width: 520px;\
+      box-sizing: border-box;\
+      padding: 12px 14px 14px;\
+      border-radius: 16px;\
+      background: #fff;\
+      color: #16161a;\
+      box-shadow: 0 10px 40px rgba(0,0,0,.22);\
+      font: 400 14px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\
+      opacity: 0;\
+      transition: opacity .25s ease, transform .25s ease;\
+    }\
+    .tl-upsell.tl-on { opacity: 1; transform: translateX(-50%) translateY(0); }\
+    .tl-upsell-t { font-weight: 600; font-size: 14px; margin: 0 28px 10px 2px; }\
+    .tl-upsell-x {\
+      position: absolute; top: 8px; right: 8px;\
+      width: 30px; height: 30px; padding: 0;\
+      border: 0; border-radius: 50%;\
+      background: rgba(0,0,0,.06); color: #16161a;\
+      font-size: 18px; line-height: 1; cursor: pointer;\
+    }\
+    .tl-upsell-g {\
+      display: grid;\
+      grid-template-columns: repeat(auto-fit, minmax(0, 1fr));\
+      gap: 10px;\
+    }\
+    .tl-upsell-c {\
+      display: block;\
+      text-decoration: none;\
+      color: inherit;\
+      min-width: 0;\
+    }\
+    .tl-upsell-c img {\
+      display: block;\
+      width: 100%;\
+      aspect-ratio: 1 / 1;\
+      object-fit: cover;\
+      border-radius: 10px;\
+      background: #f2f2f4;\
+      margin-bottom: 6px;\
+    }\
+    .tl-upsell-n {\
+      display: block;\
+      font-size: 12px;\
+      line-height: 1.25;\
+      overflow: hidden;\
+      display: -webkit-box;\
+      -webkit-line-clamp: 2;\
+      -webkit-box-orient: vertical;\
+    }\
+    .tl-upsell-p { display: block; font-size: 12px; opacity: .6; margin-top: 2px; }\
+    @media (max-width: 480px) {\
+      .tl-upsell { bottom: 8px; padding: 10px 12px 12px; }\
+      .tl-upsell-n { font-size: 11px; }\
+    }\
+  ';
+
   // NOTE : ne pas nommer cette variable "CSS" — cela écraserait window.CSS
   // (l'API globale) dans le scope de l'IIFE et ferait planter CSS.escape().
   var TL_STYLES = '\
@@ -189,7 +253,7 @@
       border: none;\
       display: block;\
     }\
-  ' + CART_FIX_CSS;
+  ' + CART_FIX_CSS + TL_UPSELL_CSS;
 
   // ── Injection des éléments DOM ──────────────────────────────────────────────
   function injectDOM() {
@@ -755,6 +819,9 @@
               setTimeout(function() {
                 document.body.classList.remove('tl-cart-loading');
               }, 1800);
+
+              // 5. Suggestions curées par le marchand pour ce produit.
+              _tlProposerUpsell(e.data);
             })
             .catch(function(err) {
               document.body.classList.remove('tl-cart-loading');
@@ -1039,6 +1106,166 @@
         }
       })
       .catch(function() { _tlRevealCtas(btns); }); // fail-open
+  }
+
+  // ── Suggestions après l'ajout au panier (Upsell V2) ────────────────────────
+  //
+  // Le marchand associe en admin 2 à 4 produits à proposer une fois un
+  // produit ajouté au panier. On les montre dans NOTRE encart, pas dans le
+  // tiroir du thème : son balisage change d'un thème à l'autre, et une
+  // injection dedans casserait au premier changement de thème — on a déjà
+  // assez à faire pour y remettre la bonne vignette.
+  //
+  // Jamais bloquant : pas de suggestion, pas d'identifiant produit, API
+  // muette, réseau coupé → on ne montre rien et le client continue.
+
+
+  /**
+   * Produit dont on vient d'ajouter une personnalisation.
+   *
+   * L'éditeur de fiche le passe dans le message ; le studio, lui, ne le
+   * connaît pas toujours — on retombe alors sur ce que la page sait d'elle
+   * même, et en dernier recours sur le bloc du bouton.
+   */
+  function _tlUpsellSource(data) {
+    var id = (data && data.productId) || '';
+    if (!id) {
+      try {
+        id = (window.ShopifyAnalytics && window.ShopifyAnalytics.meta
+           && window.ShopifyAnalytics.meta.product
+           && window.ShopifyAnalytics.meta.product.id) || '';
+      } catch (e) { /* meta absent sur une page hors fiche produit */ }
+    }
+    if (!id) {
+      var box = document.querySelector('[data-tl-product-id]');
+      if (box) id = box.getAttribute('data-tl-product-id') || '';
+    }
+    return String(id || '').trim();
+  }
+
+  /** Prix formaté dans la devise de la boutique, ou rien si on ne sait pas. */
+  function _tlUpsellPrix(centimes) {
+    if (typeof centimes !== 'number' || !isFinite(centimes)) return '';
+    try {
+      var devise = (window.Shopify && window.Shopify.currency
+                 && window.Shopify.currency.active) || 'EUR';
+      return new Intl.NumberFormat(document.documentElement.lang || 'fr', {
+        style: 'currency', currency: devise,
+      }).format(centimes / 100);
+    } catch (e) { return ''; }
+  }
+
+  function _tlFermerUpsell() {
+    var vieux = document.querySelector('.tl-upsell');
+    if (vieux && vieux.parentNode) vieux.parentNode.removeChild(vieux);
+  }
+
+  /**
+   * Visuel, titre et prix d'un produit, lus sur la boutique elle-même.
+   *
+   * Le backend ne stocke que l'identifiant et le handle : une image ou un
+   * prix recopiés chez nous seraient faux au premier changement en admin.
+   */
+  function _tlUpsellFiche(c) {
+    return fetch('/products/' + encodeURIComponent(c.handle) + '.js', { credentials: 'omit' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (p) {
+        if (!p) return c;
+        return {
+          handle: c.handle,
+          title:  p.title || c.title,
+          image:  p.featured_image || (p.images && p.images[0]) || '',
+          prix:   _tlUpsellPrix(p.price),
+        };
+      })
+      .catch(function () { return c; });
+  }
+
+  function _tlAfficherUpsell(fiches) {
+    _tlFermerUpsell();
+    var el = document.createElement('div');
+    el.className = 'tl-upsell';
+    el.setAttribute('role', 'complementary');
+    el.setAttribute('aria-label', 'Suggestions');
+
+    var fermer = document.createElement('button');
+    fermer.type = 'button';
+    fermer.className = 'tl-upsell-x';
+    fermer.setAttribute('aria-label', 'Fermer les suggestions');
+    fermer.textContent = '\u00d7';
+    fermer.addEventListener('click', _tlFermerUpsell);
+
+    var titre = document.createElement('div');
+    titre.className = 'tl-upsell-t';
+    titre.textContent = 'Vous aimeriez aussi';
+
+    var grille = document.createElement('div');
+    grille.className = 'tl-upsell-g';
+    fiches.forEach(function (f) {
+      var a = document.createElement('a');
+      a.className = 'tl-upsell-c';
+      a.href = '/products/' + f.handle;
+      if (f.image) {
+        var img = document.createElement('img');
+        img.src = f.image;
+        img.alt = '';
+        img.loading = 'lazy';
+        a.appendChild(img);
+      }
+      var nom = document.createElement('span');
+      nom.className = 'tl-upsell-n';
+      nom.textContent = f.title || f.handle;
+      a.appendChild(nom);
+      if (f.prix) {
+        var p = document.createElement('span');
+        p.className = 'tl-upsell-p';
+        p.textContent = f.prix;
+        a.appendChild(p);
+      }
+      grille.appendChild(a);
+    });
+
+    el.appendChild(fermer);
+    el.appendChild(titre);
+    el.appendChild(grille);
+    document.body.appendChild(el);
+    // Deux images consécutives : la seconde enclenche la transition, posée
+    // en ligne la classe arriverait dans la même passe de style et rien ne
+    // s'animerait.
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { el.classList.add('tl-on'); });
+    });
+
+    var auClavier = function (ev) {
+      if (ev.key !== 'Escape') return;
+      _tlFermerUpsell();
+      document.removeEventListener('keydown', auClavier);
+    };
+    document.addEventListener('keydown', auClavier);
+  }
+
+  function _tlProposerUpsell(data) {
+    var source = _tlUpsellSource(data);
+    if (!source) return;
+    var shop = (window.Shopify && window.Shopify.shop)
+            || window._TL_SHOP
+            || window.location.hostname;
+    var url = TSL_BACKEND_ORIGIN
+            + '/api/upsell-candidates/public?shop=' + encodeURIComponent(shop)
+            + '&source=' + encodeURIComponent(source);
+    fetch(url, { credentials: 'omit', mode: 'cors' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (liste) {
+        if (!Array.isArray(liste) || !liste.length) return null;
+        return Promise.all(liste.map(_tlUpsellFiche));
+      })
+      .then(function (fiches) {
+        if (!fiches || !fiches.length) return;
+        // Après l'ouverture du tiroir : l'encart doit arriver sur un panier
+        // déjà affiché, sinon il se fait recouvrir sans avoir été lu.
+        setTimeout(function () { _tlAfficherUpsell(fiches); }, 900);
+      })
+      .catch(function () { /* suggestions absentes : jamais bloquant */ });
   }
 
   // ── Masquage de l'option « Impression » sur la fiche produit ────────────────

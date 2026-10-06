@@ -4145,6 +4145,10 @@
         type: 'tl-add-to-cart',
         variantId: idLigne, quantity: qte,
         properties: props, previewUrl: apercu,
+        // Le produit, pour les suggestions curées par le marchand : la page
+        // peut en contenir plusieurs, et la ligne de panier ne porte que la
+        // variante.
+        productId: self.produit,
       }, '*');
       setTimeout(function () {
         self._envoiEnCours = false;

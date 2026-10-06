@@ -71,10 +71,62 @@ function upsertCandidate(db, shopId, body) {
   return { ok: true };
 }
 
+/**
+ * Les écritures d'un même produit, telles qu'on peut les croiser.
+ *
+ * L'admin enregistre les paires avec l'identifiant global de Shopify
+ * (`gid://shopify/Product/123`), la vitrine ne connaît que le nombre que
+ * rend `{{ product.id }}`. Sans ce rapprochement, une suggestion curée en
+ * admin ne ressortirait jamais côté client — et le silence serait total.
+ */
+function formesId(id) {
+  const brut = String(id == null ? '' : id).trim();
+  if (!brut) return [];
+  const num = (brut.match(/(\d+)\s*$/) || [])[1];
+  const formes = [brut];
+  if (num) {
+    if (formes.indexOf(num) < 0) formes.push(num);
+    const gid = 'gid://shopify/Product/' + num;
+    if (formes.indexOf(gid) < 0) formes.push(gid);
+  }
+  return formes;
+}
+
+/**
+ * Suggestions affichables par la vitrine, pour un produit source.
+ *
+ * Deux différences avec la vue admin : on accepte les deux écritures de
+ * l'identifiant source, et on écarte les cibles qui ne sont PLUS liées à un
+ * mockup — proposer un produit qu'on ne sait plus personnaliser mènerait le
+ * client sur une fiche sans bouton.
+ */
+function listPublicForSource(db, shopId, sourceId, max) {
+  const formes = formesId(sourceId);
+  if (!formes.length) return [];
+  const trous = formes.map(() => '?').join(', ');
+  const rows = db.prepare(`
+    ${SELECT_WITH_TARGET}
+    WHERE uc.shop_id = ?
+      AND uc.source_shopify_product_id IN (${trous})
+      AND pl.shopify_product_handle IS NOT NULL
+      AND pl.shopify_product_handle <> ''
+    ORDER BY uc.sort_order ASC, uc.id ASC
+  `).all(shopId, ...formes);
+  const plafond = Number.isFinite(Number(max)) && Number(max) > 0 ? Number(max) : 4;
+  return rows.slice(0, plafond).map((r) => ({
+    product_id: r.target_shopify_product_id,
+    handle:     r.target_handle,
+    title:      r.target_title || '',
+  }));
+}
+
 /** Suppression scopée shop : vérifie shop_id dans le WHERE, pas seulement l'id. */
 function deleteCandidate(db, shopId, id) {
   const info = db.prepare('DELETE FROM upsell_candidates WHERE id = ? AND shop_id = ?').run(id, shopId);
   return { ok: true, deleted: info.changes > 0 };
 }
 
-module.exports = { listForSource, listGrouped, upsertCandidate, deleteCandidate };
+module.exports = {
+  listForSource, listGrouped, listPublicForSource, formesId,
+  upsertCandidate, deleteCandidate,
+};
