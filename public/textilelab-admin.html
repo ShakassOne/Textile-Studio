@@ -1235,6 +1235,23 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
   </div>
 </div>
 
+<div class="modal-overlay" id="upsell-modal" onclick="if(event.target===this)closeModal('upsell-modal')">
+  <div class="modal-box" style="width:min(480px,94vw)">
+    <div class="modal-header">
+      <div class="modal-title">🔗 Produits suggérés</div>
+      <button class="modal-close" onclick="closeModal('upsell-modal')">×</button>
+    </div>
+    <div class="modal-body" style="display:flex;flex-direction:column;gap:10px">
+      <div style="font-size:11px;color:var(--text3)">Sélectionnez jusqu'à 4 produits à proposer après l'ajout au panier de <strong id="upsell-modal-source-title"></strong>.</div>
+      <div id="upsell-modal-list" style="display:flex;flex-direction:column;gap:4px;max-height:360px;overflow-y:auto"></div>
+    </div>
+    <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn" onclick="closeModal('upsell-modal')">Annuler</button>
+      <button class="btn btn-primary" onclick="_plSaveUpsellCandidates()">💾 Enregistrer</button>
+    </div>
+  </div>
+</div>
+
 <input type="file" id="global-view-file-input" accept="image/*" style="display:none" onchange="handleViewImage(event)">
 <input type="file" id="lib-upload-file-input" accept="image/*,image/svg+xml" multiple style="display:none">
 <input type="file" id="lib-upload-folder-input" accept="image/*,image/svg+xml" multiple webkitdirectory style="display:none">
@@ -3465,13 +3482,16 @@ async function deleteMockup(id) {
 let _plMockups    = [];   // cache mockups
 let _plProducts   = [];   // cache produits Shopify
 let _plLinks      = {};   // { shopify_product_id: mockup_id }
+let _plUpsellGrouped = {}; // { source_shopify_product_id: [{id, target_shopify_product_id, ...}] } — Upsell V2
+let _plUpsellSourcePid = null; // produit source en cours d'édition dans le modal upsell
 
 async function loadProductLinks() {
-  // Charger mockups + produits Shopify + liaisons existantes en parallèle
-  const [mockupsRaw, shopifyResult, linksRaw] = await Promise.all([
+  // Charger mockups + produits Shopify + liaisons existantes + candidats upsell en parallèle
+  const [mockupsRaw, shopifyResult, linksRaw, upsellGrouped] = await Promise.all([
     api('/api/mockups'),
     _fetchShopifyProducts(),
     api('/api/product-links'),
+    api('/api/upsell-candidates'),
   ]);
 
   _plMockups  = Array.isArray(mockupsRaw) ? mockupsRaw : [];
@@ -3480,6 +3500,7 @@ async function loadProductLinks() {
   if (Array.isArray(linksRaw)) {
     linksRaw.forEach(l => { _plLinks[l.shopify_product_id] = l.mockup_id; });
   }
+  _plUpsellGrouped = (upsellGrouped && typeof upsellGrouped === 'object' && !Array.isArray(upsellGrouped)) ? upsellGrouped : {};
 
   _renderShopifyStatus(shopifyResult.configured, shopifyResult.error);
   _renderProductLinks();
@@ -3566,6 +3587,11 @@ function _renderProductLinks() {
     const statusHtml = mock
       ? `<span class="pl-linked">✓ Lié</span>`
       : `<span class="pl-unlinked">Non lié</span>`;
+    const upsellCount = (_plUpsellGrouped[pid] || []).length;
+    const upsellBtn = linked
+      ? `<button class="btn btn-sm" id="pl-upsell-btn-${_pid2id(pid)}" title="Produits à proposer après l'ajout au panier"
+           onclick="_plOpenUpsellModal('${_esc(String(pid)).replace(/'/g,"\\'")}')">🔗 Produits suggérés (${upsellCount})</button>`
+      : '';
     return `
       <tr>
         <td>
@@ -3584,10 +3610,11 @@ function _renderProductLinks() {
         </td>
         <td id="pl-status-${_pid2id(pid)}">
           ${statusHtml}
-          <div style="margin-top:6px">
+          <div style="margin-top:6px;display:flex;flex-direction:column;gap:4px">
             <button class="btn btn-sm pl-prep-btn" data-pid="${_esc(String(pid))}"
               title="Ajoute l'option « Impression » (masquée sur la fiche) pour la tarification à la volée"
               onclick="_plPrepareCustomization(this)">✨ Activer perso tarifée</button>
+            ${upsellBtn}
           </div>
         </td>
       </tr>`;
@@ -3665,6 +3692,82 @@ async function _onPlChange(sel) {
   } else {
     showToast('⚠ Erreur lors de la sauvegarde');
   }
+}
+
+// ── Upsell V2 (admin) — « Produits suggérés » ───────────────────────────
+// Associe à un produit source (déjà lié à un mockup) 2-4 autres produits
+// déjà liés à un mockup, proposés après l'ajout au panier. Réutilise le
+// backend existant (routes/upsell-candidates.js, livré le 02/10) : pas de
+// rendu réel ici, juste la curation des paires source→target.
+const UPSELL_MAX_TARGETS = 4;
+
+function _plOpenUpsellModal(pid) {
+  _plUpsellSourcePid = pid;
+  const sourceProduct = _plProducts.find(p => String(p.id) === String(pid));
+  document.getElementById('upsell-modal-source-title').textContent = sourceProduct ? sourceProduct.title : pid;
+
+  const existingIds = new Set((_plUpsellGrouped[pid] || []).map(c => String(c.target_shopify_product_id)));
+  const candidates = _plProducts.filter(p => String(p.id) !== String(pid) && _plLinks[p.id]);
+
+  const list = document.getElementById('upsell-modal-list');
+  if (!candidates.length) {
+    list.innerHTML = `<div style="font-size:12px;color:var(--text3);padding:8px">Aucun autre produit lié à un mockup pour l'instant.</div>`;
+  } else {
+    list.innerHTML = candidates.map(p => `
+      <label style="display:flex;align-items:center;gap:8px;padding:6px 4px;cursor:pointer">
+        <input type="checkbox" class="upsell-target-cb" value="${_esc(String(p.id))}" ${existingIds.has(String(p.id)) ? 'checked' : ''} onchange="_plEnforceUpsellLimit(this)">
+        <span style="font-size:13px">${_esc(p.title)}</span>
+      </label>`).join('');
+  }
+  document.getElementById('upsell-modal').classList.add('open');
+}
+
+function _plEnforceUpsellLimit(changedCb) {
+  const boxes = Array.from(document.querySelectorAll('#upsell-modal-list .upsell-target-cb'));
+  const checkedCount = boxes.filter(cb => cb.checked).length;
+  boxes.forEach(cb => { if (!cb.checked) cb.disabled = checkedCount >= UPSELL_MAX_TARGETS; });
+  if (changedCb && changedCb.checked && checkedCount > UPSELL_MAX_TARGETS) {
+    changedCb.checked = false;
+    showToast(`⚠ Maximum ${UPSELL_MAX_TARGETS} produits suggérés`);
+  }
+}
+
+async function _plSaveUpsellCandidates() {
+  const pid = _plUpsellSourcePid;
+  if (!pid) return;
+  const existing  = _plUpsellGrouped[pid] || [];
+  const existingById = new Map(existing.map(c => [String(c.target_shopify_product_id), c]));
+  const checkedIds = Array.from(document.querySelectorAll('#upsell-modal-list .upsell-target-cb'))
+    .filter(cb => cb.checked).map(cb => cb.value);
+
+  for (const targetId of checkedIds) {
+    if (existingById.has(targetId)) continue;
+    const r = await api('/api/upsell-candidates', {
+      method: 'POST',
+      body: JSON.stringify({ source_shopify_product_id: pid, target_shopify_product_id: targetId }),
+    });
+    if (!r || r.error) {
+      showToast('❌ ' + (window.__TL_LAST_API_ERROR || 'Échec de la sauvegarde'));
+      return;
+    }
+  }
+  const checkedSet = new Set(checkedIds);
+  for (const candidate of existing) {
+    if (checkedSet.has(String(candidate.target_shopify_product_id))) continue;
+    const r = await api('/api/upsell-candidates/' + encodeURIComponent(candidate.id), { method: 'DELETE' });
+    if (!r) {
+      showToast('❌ ' + (window.__TL_LAST_API_ERROR || 'Échec de la sauvegarde'));
+      return;
+    }
+  }
+
+  const refreshed = await api('/api/upsell-candidates?source=' + encodeURIComponent(pid));
+  _plUpsellGrouped[pid] = Array.isArray(refreshed) ? refreshed : [];
+  const btn = document.getElementById('pl-upsell-btn-' + _pid2id(pid));
+  if (btn) btn.textContent = `🔗 Produits suggérés (${_plUpsellGrouped[pid].length})`;
+
+  showToast('✅ Produits suggérés enregistrés');
+  closeModal('upsell-modal');
 }
 
 // ============================================
