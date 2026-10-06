@@ -209,13 +209,12 @@
       color: inherit;\
       min-width: 0;\
     }\
-    .tl-upsell-c img {\
+    .tl-upsell-i {\
       display: block;\
       width: 100%;\
       aspect-ratio: 1 / 1;\
-      object-fit: cover;\
       border-radius: 10px;\
-      background: #f2f2f4;\
+      background: #f2f2f4 center / cover no-repeat;\
       margin-bottom: 6px;\
     }\
     .tl-upsell-n {\
@@ -1179,8 +1178,19 @@
    * prix recopiés chez nous seraient faux au premier changement en admin.
    */
   function _tlUpsellFiche(c) {
-    return fetch('/products/' + encodeURIComponent(c.handle) + '.js', { credentials: 'omit' })
-      .then(function (r) { return r.ok ? r.json() : null; })
+    // Requête de MÊME ORIGINE, donc avec les cookies : sans eux, une boutique
+    // protégée par mot de passe (preview, boutique de dev) renvoie sa page de
+    // garde au lieu du produit — on perdait visuel ET prix, sans la moindre
+    // erreur. Le type de contenu est vérifié pour la même raison : une
+    // redirection suivie rend du HTML avec un 200 tout à fait honnête.
+    return fetch('/products/' + encodeURIComponent(c.handle) + '.js', {
+      credentials: 'same-origin',
+    })
+      .then(function (r) {
+        var type = r.headers.get('content-type') || '';
+        if (!r.ok || type.indexOf('json') < 0) return null;
+        return r.json();
+      })
       .then(function (p) {
         if (!p) return c;
         return {
@@ -1217,13 +1227,13 @@
       var a = document.createElement('a');
       a.className = 'tl-upsell-c';
       a.href = '/products/' + f.handle;
-      if (f.image) {
-        var img = document.createElement('img');
-        img.src = f.image;
-        img.alt = '';
-        img.loading = 'lazy';
-        a.appendChild(img);
-      }
+      // La case est posée même sans visuel : une carte sur deux sans image
+      // désalignerait la grille, et un <img> sans source affiche une icône
+      // de fichier cassé.
+      var vignette = document.createElement('span');
+      vignette.className = 'tl-upsell-i';
+      if (f.image) vignette.style.backgroundImage = 'url("' + String(f.image).replace(/"/g, '%22') + '")';
+      a.appendChild(vignette);
       var nom = document.createElement('span');
       nom.className = 'tl-upsell-n';
       nom.textContent = f.title || f.handle;
