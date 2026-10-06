@@ -204,7 +204,7 @@ test('listPublicForSource trouve la curation faite avec l\'identifiant global', 
   // La vitrine n'envoie que le nombre : sans rapprochement, zéro suggestion.
   const vus = listPublic(shopId, '111');
   assert.equal(vus.length, 1);
-  assert.equal(vus[0].handle, 'gid-shopify-product-222');
+  assert.equal(vus[0].handle, 'sweat');
   assert.equal(vus[0].title, 'Sweat');
 });
 
