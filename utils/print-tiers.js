@@ -129,6 +129,60 @@ function computeTemplatePrintAmount(template, faceSurcharges = FACE_SURCHARGES) 
   return Math.round(total * 100) / 100;
 }
 
+// Seuils de classement, du plus grand au plus petit. En dessous : A6.
+const SEUILS_MM = [['A3', 297], ['A4', 210], ['A5', 148]];
+
+/**
+ * Surcharge d'une composition posée sur une zone de largeur donnée.
+ * ──────────────────────────────────────────────────────────────────────────
+ * Même règle que le configurateur, à la virgule près : par face, la boîte
+ * englobant TOUS les visuels donne un format (deux petits logos éloignés
+ * demandent un grand format d'impression, pas deux petits), classé par sa
+ * plus grande dimension ; les faces s'additionnent.
+ *
+ * Les calques sont mémorisés en FRACTIONS de zone : la même création coûte
+ * donc plus cher sur une zone physiquement plus large. C'est voulu — on
+ * facture la taille imprimée, pas un nombre de pixels. C'est aussi ce qui
+ * permet de tarifer un dessin sur un produit où il n'a jamais été posé.
+ *
+ * Fonction PURE : aucun accès DB, réseau ou DOM.
+ *
+ * @param {object} composition  { faces: { front: { layers, zone }, … } }
+ * @param {object} largeurMm    largeur physique de la zone, par face
+ * @param {object} [formats]    barème de la boutique, par format
+ * @returns {number} montant en €
+ */
+function montantComposition(composition, largeurMm = {}, formats = FACE_SURCHARGES) {
+  const faces = (composition && composition.faces) || {};
+  let total = 0;
+
+  for (const face of Object.keys(faces)) {
+    const calques = (faces[face] && faces[face].layers) || [];
+    if (!Array.isArray(calques) || !calques.length) continue; // face vide → non facturée
+
+    const Lmm = Number(largeurMm[face]) || 420;
+    const rapport = Number(faces[face].zone && faces[face].zone.ratio) || 1;
+    const Hmm = Lmm / (rapport || 1);
+
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const c of calques) {
+      const l  = (Number(c.w) || 0) * Lmm;
+      const h  = l * (Number(c.ratio) || 1);
+      const cx = (Number(c.x) || 0) * Lmm;
+      const cy = (Number(c.y) || 0) * Hmm;
+      x0 = Math.min(x0, cx - l / 2); x1 = Math.max(x1, cx + l / 2);
+      y0 = Math.min(y0, cy - h / 2); y1 = Math.max(y1, cy + h / 2);
+    }
+    if (!Number.isFinite(x0) || !Number.isFinite(y0)) continue;
+
+    const mm = Math.max(x1 - x0, y1 - y0);
+    let fmt = 'A6';
+    for (const [nom, seuil] of SEUILS_MM) { if (mm >= seuil) { fmt = nom; break; } }
+    total += Number(formats[fmt]) || 0;
+  }
+  return Math.round(total * 100) / 100;
+}
+
 /**
  * Surcoût réellement dû par le client :  max(0, final - référence).
  * Le prix Shopify du produit n'est JAMAIS réduit — un design plus léger que
@@ -151,7 +205,9 @@ function amountFromOptionValue(value) {
 
 module.exports = {
   FACE_SURCHARGES,
+  SEUILS_MM,
   computeTemplatePrintAmount,
+  montantComposition,
   extraDue,
   norm,
   fmtAmount,

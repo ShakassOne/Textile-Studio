@@ -1238,12 +1238,17 @@
       })
       .then(function (p) {
         if (!p) return c;
+        // Le prix annoncé est celui que le client PAIERA : base du produit
+        // + impression de sa création sur CE support. Afficher le prix nu
+        // lui ferait découvrir l'écart après le clic.
+        var sup = Number(c.surcharge) || 0;
         return {
           product_id: c.product_id,
           handle: c.handle,
           title:  p.title || c.title,
           image:  p.featured_image || (p.images && p.images[0]) || '',
-          prix:   _tlUpsellPrix(p.price),
+          prix:   _tlUpsellPrix(p.price + Math.round(sup * 100)),
+          avecImpression: sup > 0,
         };
       })
       .catch(function () { return c; });
@@ -1294,7 +1299,7 @@
       if (f.prix) {
         var p = document.createElement('span');
         p.className = 'tl-upsell-p';
-        p.textContent = f.prix;
+        p.textContent = f.avecImpression ? f.prix + ' impression comprise' : f.prix;
         a.appendChild(p);
       }
       grille.appendChild(a);
@@ -1325,9 +1330,13 @@
     var shop = (window.Shopify && window.Shopify.shop)
             || window._TL_SHOP
             || window.location.hostname;
+    // Le design sert deux fois : à tarifer l'impression sur chaque support,
+    // et à poser la création sur leurs vignettes.
     var url = TSL_BACKEND_ORIGIN
             + '/api/upsell-candidates/public?shop=' + encodeURIComponent(shop)
-            + '&source=' + encodeURIComponent(source);
+            + '&source=' + encodeURIComponent(source)
+            + '&design=' + encodeURIComponent((data && data.designId) || '')
+            + '&token=' + encodeURIComponent((data && data.designToken) || '');
     fetch(url, { credentials: 'omit', mode: 'cors' })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (liste) {
