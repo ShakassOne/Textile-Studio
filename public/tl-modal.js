@@ -1181,15 +1181,21 @@
     // Requête de MÊME ORIGINE, donc avec les cookies : sans eux, une boutique
     // protégée par mot de passe (preview, boutique de dev) renvoie sa page de
     // garde au lieu du produit — on perdait visuel ET prix, sans la moindre
-    // erreur. Le type de contenu est vérifié pour la même raison : une
-    // redirection suivie rend du HTML avec un 200 tout à fait honnête.
+    // erreur, et un 200 tout à fait honnête.
+    //
+    // On juge la réponse sur son CONTENU et non sur son type : Shopify sert
+    // cette API en `text/javascript`, pas en `application/json`. Exiger du
+    // JSON dans l'en-tête rejetait toutes les bonnes réponses ; une page de
+    // garde, elle, ne se parse pas.
     return fetch('/products/' + encodeURIComponent(c.handle) + '.js', {
       credentials: 'same-origin',
     })
-      .then(function (r) {
-        var type = r.headers.get('content-type') || '';
-        if (!r.ok || type.indexOf('json') < 0) return null;
-        return r.json();
+      .then(function (r) { return r.ok ? r.text() : ''; })
+      .then(function (txt) {
+        try {
+          var p = JSON.parse(txt);
+          return (p && typeof p === 'object' && p.title) ? p : null;
+        } catch (e) { return null; }
       })
       .then(function (p) {
         if (!p) return c;
