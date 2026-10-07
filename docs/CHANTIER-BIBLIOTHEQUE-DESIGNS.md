@@ -891,6 +891,25 @@ et les tests, comme ici. S'il n'y a plus eu de commit sur ces fichiers depuis
 plusieurs jours, c'est probablement le bon moment pour reprendre le fil et
 mettre ce journal à jour avec ce qui a réellement été fait.
 
+### 2026-10-07 — Repassage le même jour : rien de neuf
+
+Arbre propre, toujours sur `dev`, HEAD toujours sur `80e35e4` (le commit de
+l'entrée précédente) : aucun commit n'est arrivé entre les deux passages,
+d'Alan ou d'un autre agent. Dernier commit sur
+`tl-editor.js`/`tsl-engine.js`/`textilelab-studio.html` toujours le
+2026-10-06 20h31 — moins d'une journée d'écart, pas « plusieurs jours » :
+je n'y touche donc pas, conformément à la note laissée ci-dessus.
+
+`npm test` : 147 tests, 145 passent, 2 ignorés (`social_proof_items` et
+`upsell_candidates`, cause connue, machine). Identique au dernier relevé.
+Aucun fichier de code modifié.
+
+Rien d'indépendant à avancer sur le lot E (bloqué sur la commande de test
+réelle d'Alan) ni sur le lot G (vient après E dans le tableau, pas de raison
+de l'entamer en avance — décision déjà prise le 2026-10-03). Même consigne
+reconduite pour la suite : tant que l'écart sur les trois fichiers de
+l'éditeur reste inférieur à plusieurs jours, se limiter à cette vérification.
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.
