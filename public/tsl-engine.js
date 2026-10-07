@@ -379,11 +379,6 @@
     return true;
   };
 
-  /** Couleur de teinte d'un objet, ou '' s'il garde ses couleurs d'origine. */
-  Moteur.prototype.teinteDe = function (obj) {
-    return (obj && obj.__tslTeinte) || '';
-  };
-
   /** Place un objet au centre de la zone SANS toucher à sa taille. */
   Moteur.prototype.centrerSeul = function (obj) {
     var z = this.zone;

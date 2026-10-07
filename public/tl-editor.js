@@ -334,6 +334,32 @@
     + '.tsle-cs{width:1px;height:20px;background:rgba(128,128,128,.3);margin:0 3px}'
     + '.tsle-cfmt{padding:0 8px;font-size:.76rem;white-space:nowrap;opacity:.8}'
     + '.tsle-cfmt b{font-size:.82rem;opacity:1}'
+    // ── Invitation au configurateur ────────────────────────────────────
+    // Surface opaque : posée sur un voile, elle ne peut pas se contenter des
+    // gris translucides du reste. Sa couleur est lue sur le thème au moment
+    // de l'ouverture, pour suivre un thème sombre comme un thème clair.
+    + '.tsle-invite{position:fixed;inset:0;z-index:2147483000;display:flex;'
+    +   'align-items:center;justify-content:center;padding:18px;'
+    +   'background:rgba(10,10,12,.55);opacity:0;transition:opacity .18s ease}'
+    + '.tsle-invite.on{opacity:1}'
+    + '.tsle-invite-c{width:100%;max-width:380px;box-sizing:border-box;padding:22px 22px 18px;'
+    +   'border-radius:16px;color:inherit;box-shadow:0 18px 60px rgba(0,0,0,.3);'
+    +   'transform:translateY(10px) scale(.98);transition:transform .18s ease;text-align:center}'
+    + '.tsle-invite.on .tsle-invite-c{transform:none}'
+    + '.tsle-invite-ic{width:46px;height:46px;margin:0 auto 12px;border-radius:50%;'
+    +   'display:flex;align-items:center;justify-content:center;background:rgba(128,128,128,.14)}'
+    + '.tsle-invite-ic svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.6;'
+    +   'stroke-linecap:round;stroke-linejoin:round}'
+    + '.tsle-invite-c b{display:block;font-size:1.02rem;margin-bottom:7px}'
+    + '.tsle-invite-c p{margin:0 0 18px;font-size:.84rem;line-height:1.55;opacity:.72}'
+    + '.tsle-invite-b{display:flex;flex-direction:column;gap:8px}'
+    + '.tsle-invite-b button{width:100%;padding:12px 16px;border-radius:9px;font:inherit;'
+    +   'font-size:.86rem;cursor:pointer;border:1px solid transparent}'
+    + '.tsle-invite-b .primaire{background:var(--tsle-accent,#111114);color:#fff;'
+    +   'border-color:var(--tsle-accent,#111114)}'
+    + '.tsle-invite-b .primaire:hover{background:transparent;color:inherit}'
+    + '.tsle-invite-b .discret{background:transparent;color:inherit;opacity:.6}'
+    + '.tsle-invite-b .discret:hover{opacity:1;background:rgba(128,128,128,.12)}'
     + '.tsle-alerte{animation:tsle-pulse 1.1s ease 2}'
     + '@keyframes tsle-pulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,0)}50%{box-shadow:0 0 0 4px rgba(220,38,38,.35)}}'
 
@@ -1801,6 +1827,85 @@
     if (!this.moteur) return null;
     var o = this.moteur.canvas.getActiveObject();
     return (o && o.__tslType === 'image') ? o : null;
+  };
+
+  /**
+   * Invitation au configurateur.
+   *
+   * Certaines finitions — recolorer un visuel monochrome, les effets, les
+   * modèles — vivent dans le configurateur plein écran. Plutôt que d'en
+   * proposer une version au rabais sur la fiche, on y conduit : le bouton
+   * « Personnaliser » est déjà sur la page, le client ne l'a juste pas
+   * forcément remarqué.
+   *
+   * S'il n'y est pas — produit non lié à un mockup, bloc non posé — on ne
+   * promet rien qu'on ne puisse tenir : le message reste, le bouton d'action
+   * disparaît.
+   */
+  Editeur.prototype.inviterStudio = function () {
+    var self = this;
+    var lien = document.querySelector('.tl-personalise-btn');
+    var ancien = document.querySelector('.tsle-invite');
+    if (ancien && ancien.parentNode) ancien.parentNode.removeChild(ancien);
+
+    var voile = document.createElement('div');
+    voile.className = 'tsle-invite';
+    voile.setAttribute('role', 'dialog');
+    voile.setAttribute('aria-modal', 'true');
+    voile.innerHTML =
+      '<div class="tsle-invite-c">'
+      +   '<div class="tsle-invite-ic">'
+      +     '<svg viewBox="0 0 24 24" aria-hidden="true">' + ICO_CTX.palette + '</svg>'
+      +   '</div>'
+      +   '<b>Envie d\'aller plus loin ?</b>'
+      +   '<p>Changer la couleur d\'un visuel, les effets de texte et les modèles '
+      +     'complets vous attendent dans notre configurateur. Tout ce que vous avez '
+      +     'commencé ici reste en place.</p>'
+      +   '<div class="tsle-invite-b">'
+      +     (lien ? '<button type="button" class="primaire" data-i="ouvrir">Ouvrir le configurateur</button>' : '')
+      +     '<button type="button" class="discret" data-i="fermer">'
+      +       (lien ? 'Continuer ici' : 'J\'ai compris') + '</button>'
+      +   '</div>'
+      + '</div>';
+
+    // Surface opaque prise sur le thème : un blanc en dur serait aveuglant
+    // sur une boutique sombre.
+    voile.querySelector('.tsle-invite-c').style.background =
+      fondOpaque(this.colonne || this.racine);
+
+    var fermer = function () {
+      document.removeEventListener('keydown', auClavier);
+      voile.classList.remove('on');
+      setTimeout(function () {
+        if (voile.parentNode) voile.parentNode.removeChild(voile);
+      }, SOBRE ? 0 : 200);
+    };
+    var auClavier = function (e) { if (e.key === 'Escape') fermer(); };
+
+    voile.addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('[data-i]') : null;
+      // Clic dans le vide autour de la carte : on ferme, comme partout.
+      if (!b) { if (e.target === voile) fermer(); return; }
+      if (b.getAttribute('data-i') === 'ouvrir') {
+        fermer();
+        self.fermer();
+        // tl-modal.js intercepte ce clic et ouvre le configurateur par-dessus
+        // la page ; sans lui, le lien reste un lien et la page change.
+        setTimeout(function () { lien.click(); }, SOBRE ? 0 : 260);
+        return;
+      }
+      fermer();
+    });
+    document.addEventListener('keydown', auClavier);
+
+    document.body.appendChild(voile);
+    // Deux images consécutives : posée dans la même passe, la classe
+    // n'animerait rien.
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { voile.classList.add('on'); });
+    });
+    var premier = voile.querySelector('[data-i]');
+    if (premier) premier.focus();
   };
 
   Editeur.prototype.ouvrirDetourage = function (hote) {
@@ -3461,8 +3566,8 @@
     baisser: '<path d="M12 5v14m0 0 6-6m-6 6-6-6"/>',
     jeter:   '<path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13"/>',
     fond:    '<circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M8.1 7.9 20 20M8.1 16.1 20 4"/>',
-    // Gouttes barrées : rendre au visuel ses couleurs d'origine.
-    teinteOff: '<path d="M12 3s5 6 5 10a5 5 0 0 1-10 0c0-4 5-10 5-10z"/><path d="M4 4l16 16"/>',
+    // Palette : la couleur du visuel, qui se règle au configurateur.
+    palette: '<path d="M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.6-1.4-.4-.4-.6-.9-.6-1.4 0-1.1.9-2 2-2H17a4 4 0 0 0 4-4c0-3.9-4-6.2-9-6.2z"/><circle cx="7.5" cy="10.5" r="1.1"/><circle cx="12" cy="7.5" r="1.1"/><circle cx="16.5" cy="10.5" r="1.1"/>',
   };
 
   var DIMS_MM = { A3: '297×420', A4: '210×297', A5: '148×210', A6: '105×148' };
@@ -3498,8 +3603,7 @@
       if (b) { e.preventDefault(); self.actionCtx(b.getAttribute('data-ctx')); }
     });
     d.addEventListener('input', function (e) {
-      var r = e.target.getAttribute('data-ctx');
-      if (r === 'couleur' || r === 'teinte') self.actionCtx(r, e.target.value);
+      if (e.target.getAttribute('data-ctx') === 'couleur') self.actionCtx('couleur', e.target.value);
     });
     this.ctx = d;
     return d;
@@ -3530,17 +3634,11 @@
             + esc(typeof o.fill === 'string' && o.fill.charAt(0) === '#' ? o.fill : '#111114') + '">'
             + '<span class="tsle-cs"></span>';
     } else {
-      // Un visuel d'une seule couleur — pictogramme, logo, code-barres — doit
-      // pouvoir s'accorder au vêtement. La teinte ne garde du dessin que sa
-      // transparence, donc elle n'a de sens que sur du monochrome ; on la
-      // propose quand même sur tout visuel, c'est au client de juger.
-      var teinte = this.moteur.teinteDe(o);
+      // Recolorer un visuel monochrome se fait dans le configurateur, où la
+      // teinte s'accompagne des effets et des modèles. Ici, on ouvre la
+      // porte plutôt que de proposer un réglage à moitié.
       html += bouton('fond', ICO_CTX.fond, 'Détourer le fond')
-            + '<input type="color" class="tsle-cc" data-ctx="teinte"'
-            +   ' title="Couleur du visuel" value="' + esc(teinte || '#111114') + '">'
-            + (teinte
-                ? bouton('teinteOff', ICO_CTX.teinteOff, 'Couleurs d\'origine')
-                : '')
+            + bouton('palette', ICO_CTX.palette, 'Changer la couleur du visuel')
             + '<span class="tsle-cs"></span>';
     }
     var t = this.tailleImprimee(o);
@@ -3617,8 +3715,7 @@
       o.set('fontSize', Math.max(6, (o.fontSize || 40) + (act === 'plus' ? pas : -pas)));
       o.set({ scaleX: 1, scaleY: 1 });
     } else if (act === 'couleur') o.set('fill', valeur);
-    else if (act === 'teinte') this.moteur.teinter(o, valeur);
-    else if (act === 'teinteOff') this.moteur.teinter(o, '');
+    else if (act === 'palette') return this.inviterStudio();
 
     c.requestRenderAll();
     this.recopierTexte(o);
