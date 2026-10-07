@@ -221,3 +221,77 @@ test('le gras se voit, même quand la police ne fournit pas de seconde graisse',
   assert.ok(a > 0, 'du texte est bien rendu');
   assert.ok(b > a * 1.15, `le gras encre nettement plus (${a} → ${b})`);
 });
+
+// ── Teinte d'un visuel monochrome ─────────────────────────────────────────
+//
+// L'écran et le tirage doivent sortir la MÊME couleur : un aperçu rouge et
+// un fichier d'impression noir, c'est une réclamation garantie.
+
+test('le tirage sort de la couleur demandée, pas du noir d\'origine',
+  options,
+  async () => {
+    const { createCanvas, loadImage } = require('@napi-rs/canvas');
+
+    // Un visuel monochrome : disque noir opaque sur fond transparent.
+    const src = createCanvas(200, 200);
+    const g = src.getContext('2d');
+    g.fillStyle = '#000000';
+    g.beginPath(); g.arc(100, 100, 80, 0, Math.PI * 2); g.fill();
+    const source = 'data:image/png;base64,' + src.toBuffer('image/png').toString('base64');
+
+    const calque = (extra) => ({
+      id: 'c1', type: 'image', x: 0.5, y: 0.5, w: 0.6, ratio: 1, angle: 0,
+      opacity: 1, visible: true, fabric: Object.assign({ src: source }, extra),
+    });
+    const composer = (extra) => ({
+      faces: { front: { format: 'A4', zone: { ratio: 0.707 }, layers: [calque(extra)] } },
+    });
+
+    const centre = async (rendu) => {
+      const img = await loadImage(rendu.buffer);
+      const lu = createCanvas(rendu.w, rendu.h).getContext('2d');
+      lu.drawImage(img, 0, 0);
+      const d = lu.getImageData(Math.round(rendu.w / 2), Math.round(rendu.h / 2), 1, 1).data;
+      return [d[0], d[1], d[2], d[3]];
+    };
+
+    // Sans teinte : le visuel garde ses couleurs.
+    assert.deepEqual(await centre(await P.rendreFace(composer({}), 'front', { dpi: 72 })),
+      [0, 0, 0, 255], 'noir d\'origine');
+
+    // Trace posée par le moteur de l'éditeur de fiche.
+    assert.deepEqual(await centre(await P.rendreFace(
+      composer({ __tslTeinte: '#e8114b' }), 'front', { dpi: 72 })),
+      [232, 17, 75, 255], 'teinte du moteur');
+
+    // Écriture du studio : le filtre Fabric, sans la trace. Les deux doivent
+    // donner le même tirage, sinon l'un des deux parcours imprimerait faux.
+    assert.deepEqual(await centre(await P.rendreFace(
+      composer({ filters: [{ type: 'BlendColor', color: '#1d8f3a', mode: 'tint', alpha: 1 }] }),
+      'front', { dpi: 72 })),
+      [29, 143, 58, 255], 'teinte du studio');
+  });
+
+test('la teinte garde la transparence du visuel',
+  options,
+  async () => {
+    const { createCanvas, loadImage } = require('@napi-rs/canvas');
+    const src = createCanvas(200, 200);
+    const g = src.getContext('2d');
+    g.fillStyle = '#000000';
+    g.beginPath(); g.arc(100, 100, 60, 0, Math.PI * 2); g.fill();
+    const source = 'data:image/png;base64,' + src.toBuffer('image/png').toString('base64');
+
+    const rendu = await P.rendreFace({ faces: { front: { format: 'A4', zone: { ratio: 0.707 },
+      layers: [{ id: 'c1', type: 'image', x: 0.5, y: 0.5, w: 0.6, ratio: 1, angle: 0,
+                 opacity: 1, visible: true,
+                 fabric: { src: source, __tslTeinte: '#e8114b' } }] } } },
+      'front', { dpi: 72 });
+
+    const img = await loadImage(rendu.buffer);
+    const lu = createCanvas(rendu.w, rendu.h).getContext('2d');
+    lu.drawImage(img, 0, 0);
+    // Le coin reste transparent : la teinte remplit le dessin, pas le cadre.
+    const coin = lu.getImageData(2, 2, 1, 1).data;
+    assert.equal(coin[3], 0, 'hors du visuel : rien d\'imprimé');
+  });

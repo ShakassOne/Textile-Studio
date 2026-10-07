@@ -4236,8 +4236,15 @@ function _updateCtxToolbar() {
   }
 
   if (isImage) {
+    // Un visuel d'une seule couleur — pictogramme, logo, code-barres — doit
+    // pouvoir s'accorder au vêtement. La teinte ne garde du dessin que sa
+    // transparence : c'est au client de juger si son visuel s'y prête.
+    const teinte = obj.__tslTeinte || '';
     html += `
       <button class="ctx-btn" onclick="removeBg()" title="Supprimer fond">✂ Fond</button>
+      <input type="color" class="ctx-color" value="${teinte || '#000000'}"
+             oninput="_ctxTeinte(this.value)" title="Couleur du visuel">
+      ${teinte ? `<button class="ctx-btn" onclick="_ctxTeinte('')" title="Couleurs d'origine">↺</button>` : ''}
       <div class="ctx-sep"></div>
     `;
   }
@@ -4407,6 +4414,50 @@ function _ctxColorChange(val) {
   if (hexEl && color.startsWith('#')) hexEl.value = color;
   canvas.renderAll(); historySave();
 }
+/**
+ * Teinte le visuel sélectionné, ou lui rend ses couleurs (valeur vide).
+ *
+ * Filtre NATIF `BlendColor` en mode « tint » avec alpha 1 : son calcul se
+ * réduit alors à « remplacer la couleur, garder l'alpha ». Natif veut dire
+ * que `toJSON` l'emporte et que `enlivenObjects` le reconstruit — la teinte
+ * survit donc aux changements de vue et au rechargement d'un design, sans
+ * une ligne de plus.
+ *
+ * La couleur est aussi mémorisée sur l'objet, pour que la pastille montre la
+ * teinte en cours et que le rendu serveur de l'éditeur de fiche la retrouve
+ * (voir Moteur.teinter dans tsl-engine.js).
+ */
+function _ctxTeinte(val) {
+  const obj = canvas.getActiveObject();
+  if (!obj || !obj.applyFilters) return;
+  const avant = obj.filters || [];
+  obj.filters = avant.filter(f => !(f && f.type === 'BlendColor'));
+  if (val) {
+    obj.filters.push(new fabric.Image.filters.BlendColor({ color: val, mode: 'tint', alpha: 1 }));
+    obj.__tslTeinte = val;
+  } else {
+    delete obj.__tslTeinte;
+  }
+  try {
+    obj.applyFilters();
+  } catch (e) {
+    // Visuel d'une autre origine sans en-tête CORS : le navigateur refuse
+    // d'en relire les pixels. On remet l'objet comme il était.
+    console.warn('[TSL] teinte impossible sur ce visuel :', e && e.message);
+    obj.filters = avant;
+    delete obj.__tslTeinte;
+    try { obj.applyFilters(); } catch (e2) { /* déjà signalé */ }
+    showToast('⚠ Ce visuel ne peut pas être recoloré');
+    return;
+  }
+  // Fabric garde une version rendue de l'objet : sans ce drapeau, elle peut
+  // rester affichée alors que l'image filtrée a changé dessous.
+  obj.dirty = true;
+  canvas.renderAll();
+  historySave();
+  _updateCtxToolbar();
+}
+
 function _ctxDeform(type) {
   selectDeform(type);
   _updateCtxToolbar();
@@ -4648,7 +4699,8 @@ function _saveCurrentViewLayers() {
   // Cloner sans clipPath pour éviter les problèmes de sérialisation
   const serialized = userObjs.map(o => {
     const json = o.toJSON(['__isQR','__isAI','__isTicket','__isText',
-      '__isLibrary','__locked','__ticketNum','__ticketIndex','__isText']);
+      '__isLibrary','__locked','__ticketNum','__ticketIndex','__isText',
+      '__tslTeinte']);
     delete json.clipPath; // on reappliquera le clip à la restauration
     return json;
   });

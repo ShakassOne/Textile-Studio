@@ -3461,6 +3461,8 @@
     baisser: '<path d="M12 5v14m0 0 6-6m-6 6-6-6"/>',
     jeter:   '<path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13"/>',
     fond:    '<circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M8.1 7.9 20 20M8.1 16.1 20 4"/>',
+    // Gouttes barrées : rendre au visuel ses couleurs d'origine.
+    teinteOff: '<path d="M12 3s5 6 5 10a5 5 0 0 1-10 0c0-4 5-10 5-10z"/><path d="M4 4l16 16"/>',
   };
 
   var DIMS_MM = { A3: '297×420', A4: '210×297', A5: '148×210', A6: '105×148' };
@@ -3496,7 +3498,8 @@
       if (b) { e.preventDefault(); self.actionCtx(b.getAttribute('data-ctx')); }
     });
     d.addEventListener('input', function (e) {
-      if (e.target.getAttribute('data-ctx') === 'couleur') self.actionCtx('couleur', e.target.value);
+      var r = e.target.getAttribute('data-ctx');
+      if (r === 'couleur' || r === 'teinte') self.actionCtx(r, e.target.value);
     });
     this.ctx = d;
     return d;
@@ -3527,7 +3530,18 @@
             + esc(typeof o.fill === 'string' && o.fill.charAt(0) === '#' ? o.fill : '#111114') + '">'
             + '<span class="tsle-cs"></span>';
     } else {
-      html += bouton('fond', ICO_CTX.fond, 'Détourer le fond') + '<span class="tsle-cs"></span>';
+      // Un visuel d'une seule couleur — pictogramme, logo, code-barres — doit
+      // pouvoir s'accorder au vêtement. La teinte ne garde du dessin que sa
+      // transparence, donc elle n'a de sens que sur du monochrome ; on la
+      // propose quand même sur tout visuel, c'est au client de juger.
+      var teinte = this.moteur.teinteDe(o);
+      html += bouton('fond', ICO_CTX.fond, 'Détourer le fond')
+            + '<input type="color" class="tsle-cc" data-ctx="teinte"'
+            +   ' title="Couleur du visuel" value="' + esc(teinte || '#111114') + '">'
+            + (teinte
+                ? bouton('teinteOff', ICO_CTX.teinteOff, 'Couleurs d\'origine')
+                : '')
+            + '<span class="tsle-cs"></span>';
     }
     var t = this.tailleImprimee(o);
     if (t) {
@@ -3603,6 +3617,8 @@
       o.set('fontSize', Math.max(6, (o.fontSize || 40) + (act === 'plus' ? pas : -pas)));
       o.set({ scaleX: 1, scaleY: 1 });
     } else if (act === 'couleur') o.set('fill', valeur);
+    else if (act === 'teinte') this.moteur.teinter(o, valeur);
+    else if (act === 'teinteOff') this.moteur.teinter(o, '');
 
     c.requestRenderAll();
     this.recopierTexte(o);

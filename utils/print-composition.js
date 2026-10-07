@@ -372,7 +372,9 @@ async function rendreFace(composition, face, opts = {}) {
         const src = calque.fabric && calque.fabric.src;
         if (src) {
           const img = await loadImage(await _octets(src, opts.racineLocale));
-          ctx.drawImage(img, boite.left, boite.top, boite.width, boite.height);
+          const teinte = _teinteDe(calque);
+          if (teinte) _dessinerTeinte(createCanvas, ctx, img, boite, teinte);
+          else ctx.drawImage(img, boite.left, boite.top, boite.width, boite.height);
         }
       }
     } catch (e) {
@@ -392,6 +394,43 @@ async function rendreFace(composition, face, opts = {}) {
     calques: visibles.length,
     manques: opts._manques || [],
   };
+}
+
+/**
+ * Couleur de teinte d'un calque image, ou null.
+ *
+ * Deux sources, parce que deux écritures circulent : la trace posée par le
+ * moteur (`__tslTeinte`), et le filtre Fabric lui-même — une composition
+ * enregistrée par le studio peut n'avoir que le second.
+ */
+function _teinteDe(calque) {
+  const f = calque && calque.fabric;
+  if (!f) return null;
+  if (typeof f.__tslTeinte === 'string' && f.__tslTeinte) return f.__tslTeinte;
+  const filtres = Array.isArray(f.filters) ? f.filters : [];
+  const bc = filtres.find((x) => x && x.type === 'BlendColor' && x.mode === 'tint');
+  return bc && bc.color ? bc.color : null;
+}
+
+/**
+ * Dessine un visuel en ne gardant que sa transparence, rempli de la couleur.
+ *
+ * `source-in` garde l'alpha de ce qui est DÉJÀ sur le calque intermédiaire et
+ * y substitue la couleur : exactement ce que fait le filtre « tint » de
+ * Fabric avec alpha 1, donc le tirage correspond à l'écran. Passer par un
+ * canevas à part est indispensable — appliqué directement, le remplissage
+ * effacerait tout ce qui a été dessiné avant.
+ */
+function _dessinerTeinte(createCanvas, ctx, img, boite, couleur) {
+  const l = Math.max(1, Math.round(boite.width));
+  const h = Math.max(1, Math.round(boite.height));
+  const tampon = createCanvas(l, h);
+  const c2 = tampon.getContext('2d');
+  c2.drawImage(img, 0, 0, l, h);
+  c2.globalCompositeOperation = 'source-in';
+  c2.fillStyle = couleur;
+  c2.fillRect(0, 0, l, h);
+  ctx.drawImage(tampon, boite.left, boite.top, boite.width, boite.height);
 }
 
 /**

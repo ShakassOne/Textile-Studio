@@ -128,7 +128,8 @@
         opacity: typeof o.opacity === 'number' ? o.opacity : 1,
         visible: o.visible !== false,
         locked:  o.selectable === false,
-        fabric:  o.toObject(['__tslId', '__tslType', '__customName', '__tslDeform', '__tslDeformInt']),
+        fabric:  o.toObject(['__tslId', '__tslType', '__customName', '__tslDeform',
+                             '__tslDeformInt', '__tslTeinte']),
       };
     });
   };
@@ -218,6 +219,10 @@
     if (!f.src) { fini(); return; } // image sans source : rien à poser
     global.fabric.Image.fromURL(f.src, function (img) {
       if (!img) { fini(); return; }
+      // Avant la mise à l'échelle : `applyFilters` ne touche pas aux
+      // dimensions naturelles, mais l'ordre reste celui de la déformation —
+      // on rend l'objet complet, puis on le place.
+      if (f.__tslTeinte) self.teinter(img, f.__tslTeinte);
       appliquer(img);
     }, { crossOrigin: 'anonymous' });
   };
@@ -325,6 +330,58 @@
       self.canvas.requestRenderAll();
       if (pret) pret(img);
     }, { crossOrigin: 'anonymous' });
+  };
+
+  /**
+   * Teinte un visuel monochrome : le dessin prend la couleur demandée et ne
+   * garde de lui-même que sa transparence.
+   *
+   * On passe par le filtre NATIF `BlendColor` en mode « tint » avec alpha 1 :
+   * son calcul se réduit alors à « remplacer la couleur, garder l'alpha »
+   * (`rgb = couleur + rgb × (1 − alpha)`), il est accéléré par le GPU quand
+   * c'est possible, et Fabric sait le sérialiser. Un filtre maison aurait
+   * demandé son propre nuanceur et son propre `fromObject`.
+   *
+   * La couleur est AUSSI mémorisée sur l'objet : au changement de face les
+   * images sont rechargées depuis leur source, et `fabric.Image.fromURL` ne
+   * reconstruit aucun filtre. Sans cette trace, la teinte disparaîtrait au
+   * premier aller-retour recto/verso.
+   *
+   * Couleur vide : on rend au visuel ses couleurs d'origine.
+   */
+  Moteur.prototype.teinter = function (obj, couleur) {
+    if (!obj || obj.__tslType === 'text' || !obj.applyFilters) return false;
+    var F = global.fabric.Image.filters;
+    var avant = obj.filters || [];
+    obj.filters = avant.filter(function (f) { return !(f && f.type === 'BlendColor'); });
+    if (couleur) {
+      obj.filters.push(new F.BlendColor({ color: couleur, mode: 'tint', alpha: 1 }));
+      obj.__tslTeinte = couleur;
+    } else {
+      delete obj.__tslTeinte;
+    }
+    try {
+      obj.applyFilters();
+    } catch (e) {
+      // Visuel servi par une autre origine sans en-tête CORS : le navigateur
+      // refuse d'en relire les pixels. On remet l'objet comme il était
+      // plutôt que de le laisser à moitié filtré.
+      console.warn('[TSL] teinte impossible sur ce visuel :', e && e.message);
+      obj.filters = avant;
+      delete obj.__tslTeinte;
+      try { obj.applyFilters(); } catch (e2) { /* déjà signalé */ }
+      return false;
+    }
+    // Fabric garde une version rendue de l'objet : sans ce drapeau, elle
+    // peut rester affichée alors que l'image filtrée a changé dessous.
+    obj.dirty = true;
+    this.canvas.requestRenderAll();
+    return true;
+  };
+
+  /** Couleur de teinte d'un objet, ou '' s'il garde ses couleurs d'origine. */
+  Moteur.prototype.teinteDe = function (obj) {
+    return (obj && obj.__tslTeinte) || '';
   };
 
   /** Place un objet au centre de la zone SANS toucher à sa taille. */
