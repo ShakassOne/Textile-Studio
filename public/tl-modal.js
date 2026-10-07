@@ -1205,6 +1205,31 @@
          + '&shop=' + encodeURIComponent(shop);
   }
 
+  /**
+   * Impression/clic de l'encart, envoyés sans jamais attendre ni bloquer.
+   *
+   * `sendBeacon` survit à la navigation qui suit immédiatement un clic (un
+   * `fetch` classique serait parfois annulé par le changement de page avant
+   * d'avoir pu partir) ; `keepalive` est le filet de secours sur les
+   * navigateurs qui ne l'ont pas. Échec réseau, CORS, shop inconnu : jamais
+   * d'erreur remontée à l'appelant, l'encart continue comme si de rien.
+   */
+  function _tlTrackUpsell(shop, source, target, event) {
+    try {
+      var url = TSL_BACKEND_ORIGIN
+              + '/api/upsell-candidates/track?shop=' + encodeURIComponent(shop);
+      var payload = JSON.stringify({ source: source, target: target, event: event });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
+      } else {
+        fetch(url, {
+          method: 'POST', mode: 'cors', credentials: 'omit', keepalive: true,
+          headers: { 'Content-Type': 'application/json' }, body: payload,
+        }).catch(function () {});
+      }
+    } catch (e) { /* jamais bloquant */ }
+  }
+
   function _tlFermerUpsell() {
     var vieux = document.querySelector('.tl-upsell');
     if (vieux && vieux.parentNode) vieux.parentNode.removeChild(vieux);
@@ -1254,7 +1279,7 @@
       .catch(function () { return c; });
   }
 
-  function _tlAfficherUpsell(fiches, design, shop) {
+  function _tlAfficherUpsell(fiches, design, shop, source) {
     _tlFermerUpsell();
     var el = document.createElement('div');
     el.className = 'tl-upsell';
@@ -1278,6 +1303,11 @@
       var a = document.createElement('a');
       a.className = 'tl-upsell-c';
       a.href = '/products/' + f.handle;
+      // Juste avant de suivre le lien, jamais après : le clic doit partir
+      // même si la navigation qui suit coupe tout le reste.
+      a.addEventListener('click', function () {
+        _tlTrackUpsell(shop, source, f.product_id, 'click');
+      });
       // La case est posée même sans visuel : une carte sur deux sans image
       // désalignerait la grille, et un <img> sans source affiche une icône
       // de fichier cassé.
@@ -1303,6 +1333,12 @@
         a.appendChild(p);
       }
       grille.appendChild(a);
+    });
+
+    // Une impression par fiche réellement montrée, pas par tentative de
+    // chargement d'image (qui peut réessayer en arrière-plan).
+    fiches.forEach(function (f) {
+      _tlTrackUpsell(shop, source, f.product_id, 'impression');
     });
 
     el.appendChild(fermer);
@@ -1348,7 +1384,7 @@
         var design = { id: (data && data.designId) || '', token: (data && data.designToken) || '' };
         // Après l'ouverture du tiroir : l'encart doit arriver sur un panier
         // déjà affiché, sinon il se fait recouvrir sans avoir été lu.
-        setTimeout(function () { _tlAfficherUpsell(fiches, design, shop); }, 900);
+        setTimeout(function () { _tlAfficherUpsell(fiches, design, shop, source); }, 900);
       })
       .catch(function () { /* suggestions absentes : jamais bloquant */ });
   }

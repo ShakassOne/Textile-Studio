@@ -126,7 +126,62 @@ function deleteCandidate(db, shopId, id) {
   return { ok: true, deleted: info.changes > 0 };
 }
 
+const EVENT_TYPES = ['impression', 'click'];
+
+/**
+ * Enregistre une impression ou un clic de l'encart "Vous aimeriez aussi".
+ *
+ * Appelé par un client final sans authentification (sendBeacon depuis
+ * tl-modal.js) : validation stricte plutôt que de faire confiance au body,
+ * et jamais d'erreur bloquante côté appelant (le beacon n'attend pas de
+ * réponse) — on retourne juste un statut, utilisé par la route pour le code
+ * HTTP, mais rien ne casse l'affichage si l'insertion échoue.
+ */
+function logEvent(db, shopId, body) {
+  const source_shopify_product_id = String(body?.source || '').trim();
+  const target_shopify_product_id = String(body?.target || '').trim();
+  const event = String(body?.event || '').trim();
+
+  if (!source_shopify_product_id || !target_shopify_product_id) {
+    return { error: 'source et target sont requis', status: 400 };
+  }
+  if (!EVENT_TYPES.includes(event)) {
+    return { error: `event doit être l'un de : ${EVENT_TYPES.join(', ')}`, status: 400 };
+  }
+
+  db.prepare(`
+    INSERT INTO upsell_events (shop_id, source_shopify_product_id, target_shopify_product_id, event)
+    VALUES (?, ?, ?, ?)
+  `).run(shopId, source_shopify_product_id, target_shopify_product_id, event);
+
+  return { ok: true };
+}
+
+/**
+ * Agrégat impressions/clics des `days` derniers jours pour un produit source.
+ *
+ * Volontairement minimal (pas de taux de conversion réel, qui demanderait de
+ * croiser avec les commandes effectivement passées) — juste assez pour voir
+ * en admin si l'encart est regardé.
+ */
+function eventStats(db, shopId, sourceId, days) {
+  const since = Number.isFinite(Number(days)) && Number(days) > 0 ? Number(days) : 30;
+  const rows = db.prepare(`
+    SELECT event, COUNT(*) AS n
+    FROM upsell_events
+    WHERE shop_id = ? AND source_shopify_product_id = ?
+      AND created_at >= datetime('now', '-' || ? || ' days')
+    GROUP BY event
+  `).all(shopId, String(sourceId || '').trim(), since);
+
+  const stats = { impression: 0, click: 0 };
+  for (const row of rows) {
+    if (row.event in stats) stats[row.event] = row.n;
+  }
+  return stats;
+}
+
 module.exports = {
   listForSource, listGrouped, listPublicForSource, formesId,
-  upsertCandidate, deleteCandidate,
+  upsertCandidate, deleteCandidate, logEvent, eventStats,
 };

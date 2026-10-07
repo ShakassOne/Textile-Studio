@@ -384,6 +384,26 @@ function initDB() {
   `);
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_upsell_candidates_source ON upsell_candidates(shop_id, source_shopify_product_id)"); } catch {}
 
+  // ── Table: upsell_events (tracking impression/clic de l'encart "Vous aimeriez aussi") ──
+  // Backlog item 17, tracking (docs/ROADMAP-DEV.md §2) : l'encart upsell est en
+  // prod depuis le 06/10 (commit 5f06ca1) sans aucune mesure — impossible de
+  // savoir s'il convertit ou si les clients le ferment sans le regarder.
+  // `event` ∈ 'impression'/'click', validé en code (utils/upsell-candidates.js),
+  // pas par une contrainte CHECK SQLite (older better-sqlite3/SQLite builds
+  // n'acceptent pas toujours CHECK dans CREATE TABLE IF NOT EXISTS de façon
+  // homogène ; la validation applicative suffit, la table reste scopée shop).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS upsell_events (
+      id                         INTEGER PRIMARY KEY AUTOINCREMENT,
+      shop_id                    INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+      source_shopify_product_id  TEXT NOT NULL,
+      target_shopify_product_id  TEXT NOT NULL,
+      event                      TEXT NOT NULL,
+      created_at                 TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_upsell_events_source ON upsell_events(shop_id, source_shopify_product_id, created_at)"); } catch {}
+
   // ── Table: social_proof_items (vignettes "Ils l'ont fait" curées par shop) ──
   // Backlog item 18 (docs/ROADMAP-DEV.md §2) : preuve sociale visuelle dans le
   // studio (photos de vraies réalisations clients), en complément du bandeau

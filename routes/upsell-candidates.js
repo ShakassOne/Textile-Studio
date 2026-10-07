@@ -3,11 +3,15 @@
  * routes/upsell-candidates.js — Suggestions "vous aimeriez aussi" (scopé shop)
  * ─────────────────────────────────────────────────────────────────────────
  * Étape 1 de l'Upsell V2 (docs/ROADMAP-DEV.md §2bis) : table + CRUD admin
- * uniquement. Curation manuelle par l'admin (pas d'algorithme), pas d'écran
- * ni de flag à ce stade — zéro impact sur le flux client.
+ * pour les candidats. Curation manuelle par l'admin (pas d'algorithme).
+ * Tracking impression/clic (backlog item 17) : flag `upsell_tracking_enabled`
+ * (pattern readBoolSetting/setSetting dans routes/shop-settings.js, défaut
+ * activé) coupe l'écriture en DB sans rien changer côté client.
  * Logique pure dans utils/upsell-candidates.js (voir ce fichier pour les tests).
  *
  *  GET    /api/upsell-candidates/public       → suggestions pour la vitrine
+ *  POST   /api/upsell-candidates/track        → impression/clic de l'encart (public)
+ *  GET    /api/upsell-candidates/stats?source=<id> → compteur 30j (admin)
  *  GET    /api/upsell-candidates?source=<id>  → candidats pour ce produit source
  *  GET    /api/upsell-candidates              → tout, groupé par source
  *  POST   /api/upsell-candidates              → upsert (scopé shop)
@@ -18,7 +22,15 @@ const router  = express.Router();
 const { getDB }        = require('../db/database');
 const { requireAuth }  = require('./auth');
 const { attachShopId } = require('./_shop-context');
+const { getSetting }   = require('../db/settings');
 const upsell = require('../utils/upsell-candidates');
+
+// Activé par défaut (backlog item 17, §1 ROADMAP) : seule mesure existante
+// de l'encart "Vous aimeriez aussi", désactivable en un clic si besoin.
+function trackingEnabled(shopId) {
+  const v = getSetting(shopId, 'upsell_tracking_enabled');
+  return v === '' || v == null ? true : (v === '1' || v === 'true');
+}
 
 // ── GET /public — suggestions lues par la vitrine ─────────────────────
 // PUBLIC + CORS large : appelé en cross-origin depuis tl-modal.js juste
@@ -40,6 +52,33 @@ router.get('/public', attachShopId, (req, res) => {
   const db = getDB();
   const liste = upsell.listPublicForSource(db, req.shopId, req.query.source);
   res.json(_avecSurcharge(db, req.shopId, liste, req.query.design, req.query.token));
+});
+
+// ── POST /track — impression/clic de l'encart, loggé par le client final ──
+// PUBLIC + CORS large, comme /public : appelé par tl-modal.js via sendBeacon
+// (pas d'attente de réponse côté appelant, jamais bloquant). Body JSON
+// {source, target, event}. Pas d'auth : un visiteur anonyme n'a pas de
+// session admin, et le compteur n'a de sens qu'agrégé, pas par identité.
+router.options('/track', (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  res.sendStatus(204);
+});
+router.post('/track', attachShopId, express.json(), (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  // Coupable en un clic par l'admin (Paramètres) sans toucher au code : on
+  // répond 204 sans écrire, comme si l'appel n'avait jamais eu lieu.
+  if (!trackingEnabled(req.shopId)) return res.sendStatus(204);
+  const result = upsell.logEvent(getDB(), req.shopId, req.body);
+  if (result.error) return res.status(result.status).json({ error: result.error });
+  res.sendStatus(204);
+});
+
+// ── GET /stats — compteur impressions/clics 30j, pour l'écran admin ───────
+router.get('/stats', requireAuth, attachShopId, (req, res) => {
+  res.json(upsell.eventStats(getDB(), req.shopId, req.query.source, req.query.days));
 });
 
 /**

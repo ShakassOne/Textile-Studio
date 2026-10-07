@@ -511,6 +511,7 @@ app.use((req, res, next) => {
     '/api/shop-settings/style/public',
     '/api/social-proof/public',
     '/api/upsell-candidates/public', // ← suggestions après ajout au panier : un CLIENT ne souscrit pas
+    '/api/upsell-candidates/track',  // ← tracking impression/clic de l'encart : même raison
     '/textilelab-studio.html',
     '/tl-modal.js',
     '/tl-designs.js',

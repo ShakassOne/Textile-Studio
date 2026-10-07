@@ -33,6 +33,12 @@
  *      échantillon de photos (portraits ET non-portraits) avant diffusion large.
  *      Comportement 100% serveur (construction du prompt) : pas exposé sur la
  *      route publique, inutile au storefront.
+ *    upsell_tracking_enabled    bool  — enregistrement des impressions/clics de
+ *      l'encart "Vous aimeriez aussi" (POST /api/upsell-candidates/track).
+ *      Activé par défaut : seule mesure existante de cet encart (en prod sans
+ *      tracking depuis le 06/10), coupable en un clic si un souci apparaît.
+ *      Comportement 100% serveur (gate l'écriture en DB) : pas exposé sur la
+ *      route publique, le client appelle /track sans condition.
  *
  *  Cors public : Cross-origin (shop_domain.myshopify.com → textile-studio-production)
  *    → le storefront fait fetch direct, on autorise tout origin sur le GET public.
@@ -85,6 +91,9 @@ const SOCIAL_PROOF_DEFAULT = false;
 // Formulation d'identité générique du prompt IA désactivée par défaut : à
 // comparer sur un échantillon réel avant diffusion large (backlog item 16).
 const AI_GENERIC_IDENTITY_PROMPT_DEFAULT = false;
+// Tracking impression/clic de l'encart upsell activé par défaut : c'est la
+// seule mesure de cette fonctionnalité déjà en prod (backlog item 17).
+const UPSELL_TRACKING_DEFAULT = true;
 
 // ── GET /api/shop-settings/style — lecture admin ────────────────────────────
 router.get('/style', requireAuth, attachShopId, (req, res) => {
@@ -95,6 +104,7 @@ router.get('/style', requireAuth, attachShopId, (req, res) => {
     mobile_price_bar_enabled:   readBoolSetting(req.shopId, 'mobile_price_bar_enabled', MOBILE_PRICE_BAR_DEFAULT),
     social_proof_enabled:       readBoolSetting(req.shopId, 'social_proof_enabled', SOCIAL_PROOF_DEFAULT),
     ai_generic_identity_prompt_enabled: readBoolSetting(req.shopId, 'ai_generic_identity_prompt_enabled', AI_GENERIC_IDENTITY_PROMPT_DEFAULT),
+    upsell_tracking_enabled:    readBoolSetting(req.shopId, 'upsell_tracking_enabled', UPSELL_TRACKING_DEFAULT),
   });
 });
 
@@ -133,6 +143,10 @@ router.post('/style', requireAuth, attachShopId, express.json(), (req, res) => {
     setSetting(req.shopId, 'ai_generic_identity_prompt_enabled', coerceBool(body.ai_generic_identity_prompt_enabled) ? '1' : '0');
   }
 
+  if ('upsell_tracking_enabled' in body) {
+    setSetting(req.shopId, 'upsell_tracking_enabled', coerceBool(body.upsell_tracking_enabled) ? '1' : '0');
+  }
+
   res.json({
     ok: true,
     cart_drawer_bg_color:       getSetting(req.shopId, 'cart_drawer_bg_color') || '',
@@ -141,6 +155,7 @@ router.post('/style', requireAuth, attachShopId, express.json(), (req, res) => {
     mobile_price_bar_enabled:   readBoolSetting(req.shopId, 'mobile_price_bar_enabled', MOBILE_PRICE_BAR_DEFAULT),
     social_proof_enabled:       readBoolSetting(req.shopId, 'social_proof_enabled', SOCIAL_PROOF_DEFAULT),
     ai_generic_identity_prompt_enabled: readBoolSetting(req.shopId, 'ai_generic_identity_prompt_enabled', AI_GENERIC_IDENTITY_PROMPT_DEFAULT),
+    upsell_tracking_enabled:    readBoolSetting(req.shopId, 'upsell_tracking_enabled', UPSELL_TRACKING_DEFAULT),
   });
 });
 
