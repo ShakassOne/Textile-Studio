@@ -855,6 +855,42 @@ Raccorder le configurateur au moteur. Tant que ce n'est pas fait, « un seul
 moteur » reste une intention : deux implémentations coexistent. À faire
 quand Alan peut valider sur le dev store derrière.
 
+### 2026-10-07 — Session automatique : chantier repris en direct par Alan, rien touché
+
+Arbre de travail propre, toujours sur `dev`. Près de 40 commits sont arrivés
+depuis cette dernière entrée (04/10), mais pas via ce journal : Alan a
+visiblement continué le raccordement « configurateur ↔ moteur partagé » en
+direct, sur `public/tl-editor.js` et `public/tsl-engine.js` (nombreux commits
+`feat(editeur)`/`fix(editeur)` les 05 et 06/10 — calibration recto/verso,
+tarification, mobile, cadre d'impression), puis a basculé depuis le 06/10
+après-midi sur un autre sujet (`feat(suggestions)`/`fix(panier)`, upsell et
+un 422 muet sur l'ajout panier). Aucun commit sur ces fichiers depuis le
+06/10 20h36 ; rien de nouveau non plus sur les 3 questions du lot E, déjà
+tranchées le 04/10.
+
+Conséquence pour cette session : le tableau des lots (ligne E : « câblé, à
+valider sur une vraie commande ») et le « Reste à faire » ci-dessus sont déjà
+corrects, mais ce journal ne reflétait plus l'activité réelle sur le lot E
+avant cette entrée. Je n'ai touché ni `tl-editor.js`, ni `tsl-engine.js`, ni
+`textilelab-studio.html` : ce sont exactement les fichiers qu'Alan vient de
+retravailler à la main pendant deux jours, et m'y avancer sans lui aurait un
+risque réel de double travail ou de conflit, pas une simple prudence
+théorique. La validation sur une vraie commande (lot E) reste aussi hors de
+portée ici : elle suppose qu'Alan passe lui-même une commande de test.
+
+`npm test` : 147 tests, 145 passent, 2 ignorés (`social_proof_items` et
+`upsell_candidates`, cause connue — binaire natif better-sqlite3 absent sur
+cette machine, sans lien avec ce chantier). Aucune régression. Aucun fichier
+de code modifié.
+
+**Pour la prochaine session automatique :** si le raccordement
+configurateur ↔ moteur reste non loggé ici mais que les commits montrent
+qu'Alan y travaille encore (fichiers `tl-editor.js`/`tsl-engine.js`/
+`textilelab-studio.html`), ne pas y toucher et se limiter à vérifier l'état
+et les tests, comme ici. S'il n'y a plus eu de commit sur ces fichiers depuis
+plusieurs jours, c'est probablement le bon moment pour reprendre le fil et
+mettre ce journal à jour avec ce qui a réellement été fait.
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.
