@@ -170,6 +170,36 @@
     '}',
   ].join('\n');
 
+  // ── Allure du bouton « Personnaliser » ─────────────────────────────────────
+  //
+  // Le bloc ne donne au bouton que sa mise en page : il hérite donc des
+  // couleurs de `.button` du thème, et se retrouvait violet à gros arrondi,
+  // étranger au reste de la page. On l'habille ici plutôt que dans le bloc,
+  // pour couvrir aussi les boutons posés à la main dans un bloc « Liquid
+  // personnalisé » — ils portent la même classe.
+  //
+  // `!important` partout : la règle du thème est plus spécifique que la
+  // nôtre, et les styles en ligne du bloc l'emporteraient de toute façon.
+  var TL_CTA_CSS = '\
+    .tl-personalise-btn {\
+      background: #000 !important;\
+      background-image: none !important;\
+      color: #fff !important;\
+      border: 1px solid #000 !important;\
+      border-radius: 6px !important;\
+      box-shadow: none !important;\
+      transition: background-color .15s ease, color .15s ease !important;\
+    }\
+    .tl-personalise-btn > * { color: inherit !important; }\
+    .tl-personalise-btn:hover,\
+    .tl-personalise-btn:focus-visible {\
+      background: transparent !important;\
+      background-image: none !important;\
+      color: #000 !important;\
+      border-color: #000 !important;\
+    }\
+  ';
+
   var TL_UPSELL_CSS = '\
     .tl-upsell {\
       position: fixed;\
@@ -252,7 +282,7 @@
       border: none;\
       display: block;\
     }\
-  ' + CART_FIX_CSS + TL_UPSELL_CSS;
+  ' + CART_FIX_CSS + TL_CTA_CSS + TL_UPSELL_CSS;
 
   // ── Injection des éléments DOM ──────────────────────────────────────────────
   function injectDOM() {
