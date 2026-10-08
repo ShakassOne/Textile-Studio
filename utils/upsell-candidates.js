@@ -181,7 +181,31 @@ function eventStats(db, shopId, sourceId, days) {
   return stats;
 }
 
+/**
+ * Même agrégat que eventStats, mais pour tous les produits source du shop en
+ * un seul appel (écran admin « Produits suggérés ») — un source sans aucun
+ * événement sur la période n'apparaît simplement pas dans l'objet retourné.
+ */
+function eventStatsGrouped(db, shopId, days) {
+  const since = Number.isFinite(Number(days)) && Number(days) > 0 ? Number(days) : 30;
+  const rows = db.prepare(`
+    SELECT source_shopify_product_id, event, COUNT(*) AS n
+    FROM upsell_events
+    WHERE shop_id = ?
+      AND created_at >= datetime('now', '-' || ? || ' days')
+    GROUP BY source_shopify_product_id, event
+  `).all(shopId, since);
+
+  const grouped = {};
+  for (const row of rows) {
+    if (!EVENT_TYPES.includes(row.event)) continue;
+    const stats = (grouped[row.source_shopify_product_id] ||= { impression: 0, click: 0 });
+    stats[row.event] = row.n;
+  }
+  return grouped;
+}
+
 module.exports = {
   listForSource, listGrouped, listPublicForSource, formesId,
-  upsertCandidate, deleteCandidate, logEvent, eventStats,
+  upsertCandidate, deleteCandidate, logEvent, eventStats, eventStatsGrouped,
 };

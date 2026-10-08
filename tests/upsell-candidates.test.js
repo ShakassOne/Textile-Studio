@@ -72,16 +72,18 @@ const {
   deleteCandidate: deleteCandidateRaw,
   logEvent: logEventRaw,
   eventStats: eventStatsRaw,
+  eventStatsGrouped: eventStatsGroupedRaw,
 } = require('../utils/upsell-candidates');
 
 // db est fixe pour tout le fichier : on allège les appels en le pré-liant.
-const listForSource   = (shopId, sourceId) => listForSourceRaw(db, shopId, sourceId);
-const listPublic      = (shopId, sourceId, max) => listPublicForSourceRaw(db, shopId, sourceId, max);
-const listGrouped     = (shopId) => listGroupedRaw(db, shopId);
-const upsertCandidate = (shopId, body) => upsertCandidateRaw(db, shopId, body);
-const deleteCandidate = (shopId, id) => deleteCandidateRaw(db, shopId, id);
-const logEvent        = (shopId, body) => logEventRaw(db, shopId, body);
-const eventStats      = (shopId, sourceId, days) => eventStatsRaw(db, shopId, sourceId, days);
+const listForSource    = (shopId, sourceId) => listForSourceRaw(db, shopId, sourceId);
+const listPublic       = (shopId, sourceId, max) => listPublicForSourceRaw(db, shopId, sourceId, max);
+const listGrouped      = (shopId) => listGroupedRaw(db, shopId);
+const upsertCandidate  = (shopId, body) => upsertCandidateRaw(db, shopId, body);
+const deleteCandidate  = (shopId, id) => deleteCandidateRaw(db, shopId, id);
+const logEvent         = (shopId, body) => logEventRaw(db, shopId, body);
+const eventStats       = (shopId, sourceId, days) => eventStatsRaw(db, shopId, sourceId, days);
+const eventStatsGrouped = (shopId, days) => eventStatsGroupedRaw(db, shopId, days);
 
 function makeShop(domain) {
   return db.prepare('INSERT INTO shops (shop_domain) VALUES (?)').run(domain).lastInsertRowid;
@@ -303,4 +305,44 @@ test('eventStats ne traverse pas les boutiques', () => {
 test('eventStats sans aucun événement : zéros, aucune erreur', () => {
   const shopId = makeShop('shop-w.myshopify.com');
   assert.deepEqual(eventStats(shopId, 'produit-jamais-vu'), { impression: 0, click: 0 });
+});
+
+test('eventStatsGrouped mélange plusieurs sources dans un seul appel', () => {
+  const shopId = makeShop('shop-x.myshopify.com');
+  logEvent(shopId, { source: 'src-1', target: 'tgt', event: 'impression' });
+  logEvent(shopId, { source: 'src-1', target: 'tgt', event: 'impression' });
+  logEvent(shopId, { source: 'src-1', target: 'tgt', event: 'click' });
+  logEvent(shopId, { source: 'src-2', target: 'tgt', event: 'click' });
+
+  assert.deepEqual(eventStatsGrouped(shopId), {
+    'src-1': { impression: 2, click: 1 },
+    'src-2': { impression: 0, click: 1 },
+  });
+});
+
+test('eventStatsGrouped ne traverse pas les boutiques', () => {
+  const a = makeShop('shop-y.myshopify.com');
+  const b = makeShop('shop-z.myshopify.com');
+  logEvent(a, { source: 'src', target: 'tgt', event: 'impression' });
+
+  assert.deepEqual(eventStatsGrouped(a), { src: { impression: 1, click: 0 } });
+  assert.deepEqual(eventStatsGrouped(b), {});
+});
+
+test('eventStatsGrouped respecte la fenêtre de jours demandée', () => {
+  const shopId = makeShop('shop-aa.myshopify.com');
+  logEvent(shopId, { source: 'src', target: 'tgt', event: 'impression' });
+
+  db.prepare(`
+    UPDATE upsell_events SET created_at = datetime('now', '-40 days')
+    WHERE shop_id = ? AND source_shopify_product_id = 'src'
+  `).run(shopId);
+
+  assert.deepEqual(eventStatsGrouped(shopId, 30), {});
+  assert.deepEqual(eventStatsGrouped(shopId, 60), { src: { impression: 1, click: 0 } });
+});
+
+test('eventStatsGrouped sans aucun événement : objet vide, aucune erreur', () => {
+  const shopId = makeShop('shop-bb.myshopify.com');
+  assert.deepEqual(eventStatsGrouped(shopId), {});
 });

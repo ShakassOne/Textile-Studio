@@ -77,8 +77,15 @@ router.post('/track', attachShopId, express.json(), (req, res) => {
 });
 
 // ── GET /stats — compteur impressions/clics 30j, pour l'écran admin ───────
+// `source` fourni → un seul produit (comportement historique, inchangé).
+// `source` absent → objet groupé par produit source, pour l'écran entier
+// en un seul appel (même logique que GET / vs GET /?source=).
 router.get('/stats', requireAuth, attachShopId, (req, res) => {
-  res.json(upsell.eventStats(getDB(), req.shopId, req.query.source, req.query.days));
+  if (req.query.source) {
+    res.json(upsell.eventStats(getDB(), req.shopId, req.query.source, req.query.days));
+  } else {
+    res.json(upsell.eventStatsGrouped(getDB(), req.shopId, req.query.days));
+  }
 });
 
 /**

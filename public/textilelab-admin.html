@@ -3484,14 +3484,16 @@ let _plProducts   = [];   // cache produits Shopify
 let _plLinks      = {};   // { shopify_product_id: mockup_id }
 let _plUpsellGrouped = {}; // { source_shopify_product_id: [{id, target_shopify_product_id, ...}] } — Upsell V2
 let _plUpsellSourcePid = null; // produit source en cours d'édition dans le modal upsell
+let _plUpsellStats = {}; // { source_shopify_product_id: {impression, click} } — tracking Upsell V2 (30j)
 
 async function loadProductLinks() {
-  // Charger mockups + produits Shopify + liaisons existantes + candidats upsell en parallèle
-  const [mockupsRaw, shopifyResult, linksRaw, upsellGrouped] = await Promise.all([
+  // Charger mockups + produits Shopify + liaisons existantes + candidats upsell + stats upsell en parallèle
+  const [mockupsRaw, shopifyResult, linksRaw, upsellGrouped, upsellStats] = await Promise.all([
     api('/api/mockups'),
     _fetchShopifyProducts(),
     api('/api/product-links'),
     api('/api/upsell-candidates'),
+    api('/api/upsell-candidates/stats').catch(() => ({})),
   ]);
 
   _plMockups  = Array.isArray(mockupsRaw) ? mockupsRaw : [];
@@ -3501,6 +3503,7 @@ async function loadProductLinks() {
     linksRaw.forEach(l => { _plLinks[l.shopify_product_id] = l.mockup_id; });
   }
   _plUpsellGrouped = (upsellGrouped && typeof upsellGrouped === 'object' && !Array.isArray(upsellGrouped)) ? upsellGrouped : {};
+  _plUpsellStats   = (upsellStats && typeof upsellStats === 'object' && !Array.isArray(upsellStats)) ? upsellStats : {};
 
   _renderShopifyStatus(shopifyResult.configured, shopifyResult.error);
   _renderProductLinks();
@@ -3592,6 +3595,10 @@ function _renderProductLinks() {
       ? `<button class="btn btn-sm" id="pl-upsell-btn-${_pid2id(pid)}" title="Produits à proposer après l'ajout au panier"
            onclick="_plOpenUpsellModal('${_esc(String(pid)).replace(/'/g,"\\'")}')">🔗 Produits suggérés (${upsellCount})</button>`
       : '';
+    const upsellStat = linked ? _plUpsellStats[pid] : null;
+    const upsellStatHtml = (upsellStat && upsellStat.impression > 0)
+      ? `<span style="font-size:11px;color:var(--text3)">👁 ${upsellStat.impression} / 🖱 ${upsellStat.click} (30j)</span>`
+      : '';
     return `
       <tr>
         <td>
@@ -3615,6 +3622,7 @@ function _renderProductLinks() {
               title="Ajoute l'option « Impression » (masquée sur la fiche) pour la tarification à la volée"
               onclick="_plPrepareCustomization(this)">✨ Activer perso tarifée</button>
             ${upsellBtn}
+            ${upsellStatHtml}
           </div>
         </td>
       </tr>`;
