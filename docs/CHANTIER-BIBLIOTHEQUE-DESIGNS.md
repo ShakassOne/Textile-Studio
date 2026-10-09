@@ -938,6 +938,19 @@ l'éditeur (`tl-editor.js`/`tsl-engine.js`/`textilelab-studio.html`) ont encore
 Sinon, c'est le moment de reprendre le fil et de documenter ici ce qu'Alan a
 réellement fait sur le raccordement configurateur ↔ moteur partagé.
 
+### 2026-10-09 — Repassage immédiat : rien de neuf
+
+Arbre propre, toujours sur `dev`, HEAD toujours sur `78cdebf` (le commit de
+l'entrée précédente, committé une minute avant ce passage) : aucun commit
+n'est arrivé entre les deux. Dernier commit sur `tl-editor.js`/
+`tsl-engine.js`/`textilelab-studio.html` toujours le 2026-10-07 10h10 — même
+situation, même consigne : on n'y touche pas.
+
+`npm test` : 149 tests, 147 passent, 2 ignorés (cause machine connue,
+inchangée). Rien d'indépendant à avancer sur le lot E (bloqué sur la
+commande de test réelle) ni sur le lot G (après E). Aucun fichier de code
+modifié.
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.
