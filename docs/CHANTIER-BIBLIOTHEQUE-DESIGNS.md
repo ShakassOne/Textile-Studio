@@ -951,6 +951,20 @@ inchangée). Rien d'indépendant à avancer sur le lot E (bloqué sur la
 commande de test réelle) ni sur le lot G (après E). Aucun fichier de code
 modifié.
 
+### 2026-10-09 — Nouveau repassage : toujours rien de neuf
+
+Arbre propre, toujours sur `dev`, HEAD toujours sur `9c71313` (le commit de
+l'entrée précédente) : aucun commit n'est arrivé entre les deux passages.
+Dernier commit sur `tl-editor.js`/`tsl-engine.js`/`textilelab-studio.html`
+toujours le 2026-10-07 10h10 — moins de deux jours d'écart avec ce passage,
+même consigne reconduite : on n'y touche pas.
+
+`npm test` : 149 tests, 147 passent, 2 ignorés (`social_proof_items` et
+`upsell_candidates`, cause machine connue, inchangée). Aucune régression.
+Rien d'indépendant à avancer sur le lot E (bloqué sur la commande de test
+réelle d'Alan) ni sur le lot G (après E dans le tableau). Aucun fichier de
+code modifié.
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.
