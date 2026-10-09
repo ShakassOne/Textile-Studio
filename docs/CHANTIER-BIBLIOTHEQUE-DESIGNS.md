@@ -910,6 +910,34 @@ de l'entamer en avance — décision déjà prise le 2026-10-03). Même consigne
 reconduite pour la suite : tant que l'écart sur les trois fichiers de
 l'éditeur reste inférieur à plusieurs jours, se limiter à cette vérification.
 
+### 2026-10-09 — Session automatique : Alan toujours actif sur l'éditeur, rien touché
+
+Arbre de travail propre, toujours sur `dev`. Trois commits sont arrivés depuis
+la dernière entrée (07/10 09h07), tous le même jour entre 09h07 et 10h10 :
+`4aa956a` (bouton « Personnaliser » aux couleurs du thème), `b5aaf78`
+(recoloration d'un visuel monochrome, du canevas au fichier d'impression) et
+`1ffc969` (la pastille de couleur sur la fiche produit renvoie au
+configurateur). Les trois touchent `tl-editor.js`, `tsl-engine.js` et/ou
+`textilelab-studio.html` — exactement les fichiers qu'Alan retravaille à la
+main. Dernier commit sur ce trio : **2026-10-07 10h10**, soit moins de deux
+jours d'écart avec ce passage (09/10) : je n'y touche donc pas, même consigne
+que le 07/10.
+
+Rien de neuf sur les 3 questions du lot E (tranchées le 04/10) ni sur le lot
+G (vient après E, pas de raison de l'entamer avant la validation d'Alan sur
+une vraie commande — décision du 03/10). Aucune piste indépendante de ces
+deux points à avancer dans le tableau des lots.
+
+`npm test` : 149 tests, 147 passent, 2 ignorés (`social_proof_items` et
+`upsell_candidates`, cause connue — binaire natif better-sqlite3 absent sur
+cette machine). Aucune régression. Aucun fichier de code modifié.
+
+**Pour la prochaine session automatique :** même règle — si les fichiers de
+l'éditeur (`tl-editor.js`/`tsl-engine.js`/`textilelab-studio.html`) ont encore
+été commités il y a moins de plusieurs jours, se limiter à cette vérification.
+Sinon, c'est le moment de reprendre le fil et de documenter ici ce qu'Alan a
+réellement fait sur le raccordement configurateur ↔ moteur partagé.
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.
