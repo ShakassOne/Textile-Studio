@@ -263,6 +263,40 @@
     }\
   ';
 
+  // Bandeau "Reprendre ma création" (item 24) : discret, posé juste au-dessus
+  // du bouton "Personnaliser" qu'il remplace visuellement en priorité — pas
+  // un popup, pas de fond opaque, pour ne jamais paraître plus intrusif que
+  // le bandeau de réassurance déjà livré dans le studio.
+  var TL_RESUME_CSS = '\
+    .tl-resume {\
+      display: flex;\
+      flex-wrap: wrap;\
+      align-items: center;\
+      justify-content: space-between;\
+      gap: 8px;\
+      margin: 0 0 8px;\
+      padding: 10px 12px;\
+      border-radius: 10px;\
+      border: 1px solid rgba(0,0,0,.12);\
+      background: rgba(0,0,0,.03);\
+      font: 400 13px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\
+      color: inherit;\
+    }\
+    .tl-resume-t { font-weight: 600; }\
+    .tl-resume-a { display: flex; gap: 10px; flex-shrink: 0; }\
+    .tl-resume-r, .tl-resume-z {\
+      border: 0;\
+      background: none;\
+      padding: 0;\
+      font: inherit;\
+      font-weight: 600;\
+      text-decoration: underline;\
+      cursor: pointer;\
+      color: inherit;\
+    }\
+    .tl-resume-z { font-weight: 400; opacity: .7; }\
+  ';
+
   // NOTE : ne pas nommer cette variable "CSS" — cela écraserait window.CSS
   // (l'API globale) dans le scope de l'IIFE et ferait planter CSS.escape().
   var TL_STYLES = '\
@@ -282,7 +316,7 @@
       border: none;\
       display: block;\
     }\
-  ' + CART_FIX_CSS + TL_CTA_CSS + TL_UPSELL_CSS;
+  ' + CART_FIX_CSS + TL_CTA_CSS + TL_UPSELL_CSS + TL_RESUME_CSS;
 
   // ── Injection des éléments DOM ──────────────────────────────────────────────
   function injectDOM() {
@@ -1072,9 +1106,14 @@
         .then(function(data) {
           if (!data) return;
           var bg = String(data.cart_drawer_bg_color || '').trim().toLowerCase();
-          if (!bg || bg === 'transparent') return;
-          _TL_CART_BG = bg;
-          _tlApplyBgToExistingOverlays();
+          if (bg && bg !== 'transparent') {
+            _TL_CART_BG = bg;
+            _tlApplyBgToExistingOverlays();
+          }
+          // Flag item 24 (bandeau "Reprendre ma création") : lu ici plutôt que
+          // sur la route /api/designs/mine elle-même, pour ne faire cet appel
+          // réseau en plus (whoami + designs/mine) que si le marchand l'a activé.
+          if (data.resume_design_enabled) _tlCheckResumeDesign();
         })
         .catch(function() {});
     } catch (e) { /* silencieux */ }
@@ -1147,6 +1186,92 @@
         }
       })
       .catch(function() { _tlRevealCtas(btns); }); // fail-open
+  }
+
+  // ── Reprise de création pour le client connecté (backlog item 24) ─────────
+  //
+  // Un client connecté qui interrompt sa personnalisation avant achat (onglet
+  // fermé, coupure mobile, hésitation) repart aujourd'hui de zéro en revenant
+  // sur le produit. S'il existe une création récente et pas encore commandée,
+  // on le propose discrètement au-dessus du bouton "Personnaliser" plutôt que
+  // d'ouvrir directement un éditeur vierge. V1 lean : client connecté
+  // uniquement (le serveur refuse sans jeton signé), un seul produit (le
+  // premier bouton de perso présent sur la page), pas d'écran "Mes créations".
+  var _TL_RESUME_DONE = false; // un seul essai par chargement de page
+
+  function _tlResumeDismissKey(designId) { return 'tl_resume_dismissed_' + designId; }
+
+  function _tlCheckResumeDesign() {
+    if (_TL_RESUME_DONE) return;
+    _TL_RESUME_DONE = true;
+    var btns = document.querySelectorAll('.tl-personalise-btn');
+    if (!btns.length) return;
+    var btn = null, ref = '';
+    for (var i = 0; i < btns.length; i++) {
+      var p = _tlBtnProduct(btns[i]);
+      if (p.pid || p.ph) { btn = btns[i]; ref = p.pid || p.ph; break; }
+    }
+    if (!btn || !ref) return; // bouton générique (aucun produit ciblé) → rien à reprendre
+
+    _tlFetchCustomerToken().then(function (token) {
+      if (!token) return; // visiteur non connecté : pas de reprise en V1
+
+      var shop = (window.Shopify && window.Shopify.shop) || window._TL_SHOP || window.location.hostname;
+      var url = TSL_BACKEND_ORIGIN
+              + '/api/designs/mine?shop=' + encodeURIComponent(shop)
+              + '&product=' + encodeURIComponent(ref)
+              + '&ct=' + encodeURIComponent(token);
+      fetch(url, { credentials: 'omit', mode: 'cors' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (design) {
+          if (!design || !design.id) return;
+          try { if (sessionStorage.getItem(_tlResumeDismissKey(design.id))) return; } catch (e) { /* stockage indisponible → on propose quand même */ }
+          _tlInjectResumeBanner(btn, ref, design);
+        })
+        .catch(function () {}); // jamais bloquant : pas de design, pas de bandeau
+    });
+  }
+
+  function _tlInjectResumeBanner(btn, ref, design) {
+    var vieux = document.querySelector('.tl-resume');
+    if (vieux && vieux.parentNode) vieux.parentNode.removeChild(vieux);
+
+    var el = document.createElement('div');
+    el.className = 'tl-resume';
+
+    var texte = document.createElement('span');
+    texte.className = 'tl-resume-t';
+    texte.textContent = 'Vous avez une création en cours';
+    el.appendChild(texte);
+
+    var actions = document.createElement('span');
+    actions.className = 'tl-resume-a';
+
+    var reprendre = document.createElement('button');
+    reprendre.type = 'button';
+    reprendre.className = 'tl-resume-r';
+    reprendre.textContent = 'Reprendre';
+    reprendre.addEventListener('click', function () {
+      var studioUrl = new URL(buildStudioUrl(ref));
+      studioUrl.searchParams.set('design', String(design.id));
+      openModal(studioUrl.href);
+    });
+    actions.appendChild(reprendre);
+
+    var zero = document.createElement('button');
+    zero.type = 'button';
+    zero.className = 'tl-resume-z';
+    zero.textContent = 'Repartir de zéro';
+    zero.addEventListener('click', function () {
+      try { sessionStorage.setItem(_tlResumeDismissKey(design.id), '1'); } catch (e) { /* tant pis, pas bloquant */ }
+      if (el.parentNode) el.parentNode.removeChild(el);
+    });
+    actions.appendChild(zero);
+
+    el.appendChild(actions);
+
+    var container = _tlCtaContainer(btn);
+    container.parentNode.insertBefore(el, container);
   }
 
   // ── Suggestions après l'ajout au panier (Upsell V2) ────────────────────────

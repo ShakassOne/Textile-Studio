@@ -512,6 +512,7 @@ app.use((req, res, next) => {
     '/api/social-proof/public',
     '/api/upsell-candidates/public', // ← suggestions après ajout au panier : un CLIENT ne souscrit pas
     '/api/upsell-candidates/track',  // ← tracking impression/clic de l'encart : même raison
+    '/api/designs/mine',    // ← bandeau "Reprendre ma création" : même raison (item 24)
     '/textilelab-studio.html',
     '/tl-modal.js',
     '/tl-designs.js',

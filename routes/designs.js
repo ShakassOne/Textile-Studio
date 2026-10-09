@@ -5,11 +5,31 @@ const router  = express.Router();
 const crypto    = require('crypto');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { requireAuth } = require('./auth');
-const { getDB } = require('../db/database');
+const { getDB, getShopIdByDomain } = require('../db/database');
+const { getSetting } = require('../db/settings');
 const { attachShopIdSoft, attachShopId } = require('./_shop-context');
+const RESUME = require('../utils/design-resume');
 
 // Colonne secret par design (idempotent) — protège les écritures render/* (audit IMPORTANT).
 try { getDB().prepare('ALTER TABLE designs ADD COLUMN edit_token TEXT').run(); } catch { /* déjà présent */ }
+
+// Colonne client (idempotent, backlog item 24) — identifie le propriétaire d'un
+// design pour permettre sa reprise entre deux visites. NULL = design anonyme
+// (comportement historique inchangé, zéro régression).
+try { getDB().prepare('ALTER TABLE designs ADD COLUMN customer_id TEXT').run(); } catch { /* déjà présent */ }
+
+// Résout l'identité client signée (même mécanisme que _resolveIdentity dans
+// routes/ai.js) : un id client n'est JAMAIS accepté en clair depuis le corps
+// de requête, seulement via le jeton signé émis par /proxy/whoami (Shopify
+// l'a lui-même signé en HMAC avant que app-proxy.js ne le reconvertisse).
+function _resolveCustomerId(req, shopDomain) {
+  const token = req.get('X-TL-Customer') || req.body?.customerToken || req.query?.ct || '';
+  if (!token) return null;
+  try {
+    const { verifyCustomerToken } = require('./app-proxy');
+    return verifyCustomerToken(String(token), shopDomain || req.get('X-Shop-Domain') || '');
+  } catch (e) { console.warn('verifyCustomerToken:', e.message); return null; }
+}
 
 // Anti-spam création (DoS/disque) : 40 créations / heure / IP.
 const createDesignLimiter = rateLimit({
@@ -33,6 +53,39 @@ router.get('/', attachShopId, (req, res) => {
     .all(req.shopId);
   rows.forEach(r => { delete r.edit_token; }); // ne jamais exposer le secret
   res.json(rows);
+});
+
+// GET /api/designs/mine — dernière création non convertie du client connecté
+// (backlog item 24). PUBLIC (pas d'auth, comme /api/social-proof/public et
+// /api/upsell-candidates/public) — scopé shop via ?shop=, gated serveur par
+// resume_design_enabled, et par un jeton client signé sans lequel on ne sait
+// identifier personne. Placée AVANT /:id : sinon Express la lirait comme un
+// id de design littéral "mine".
+router.get('/mine', (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.set('Cache-Control', 'no-store'); // donnée personnelle, jamais mise en cache
+
+  const shopDomain = String(req.query.shop || '').toLowerCase().trim();
+  const shopId = shopDomain ? getShopIdByDomain(shopDomain) : null;
+  if (!shopId) return res.json(null);
+
+  const enabledVal = getSetting(shopId, 'resume_design_enabled');
+  const enabled = enabledVal === '1' || enabledVal === 'true';
+  if (!enabled) return res.json(null);
+
+  const customerId = _resolveCustomerId(req, shopDomain);
+  const productRef = String(req.query.product || '').trim();
+  if (!customerId || !productRef) return res.json(null);
+
+  res.json(RESUME.findResumable(getDB(), shopId, customerId, productRef));
+});
+
+router.options('/mine', (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  res.sendStatus(204);
 });
 
 // GET /api/designs/:id — soft scoping (le design ne doit pas appartenir à un autre shop)
@@ -69,6 +122,10 @@ router.post('/', attachShopId, createDesignLimiter, (req, res) => {
 
   const layers = typeof layers_json === 'string' ? layers_json : JSON.stringify(layers_json);
   const editToken = crypto.randomBytes(16).toString('hex');
+  // Optionnel : un design anonyme reste possible (customer_id NULL, comportement
+  // historique inchangé) — seul un client connecté avec jeton signé valide se
+  // voit attribuer son design, pour pouvoir le reprendre plus tard (item 24).
+  const customerId = _resolveCustomerId(req, req.shopDomain);
 
   // Composition au format partagé (bloc fiche produit ou configurateur).
   // Elle passe par le normaliseur plutôt que d'être stockée telle quelle :
@@ -85,11 +142,11 @@ router.post('/', attachShopId, createDesignLimiter, (req, res) => {
     INSERT INTO designs
       (shop_id, name, product, color, format, frame_x, frame_y, frame_w, frame_h,
        layers_json, ticket_on, ticket_start, ticket_prefix, ticket_suffix, thumbnail,
-       edit_token, composition_json)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       edit_token, composition_json, customer_id)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(req.shopId, name, product, color, format, frame_x, frame_y, frame_w, frame_h,
          layers, ticket_on, ticket_start, ticket_prefix, ticket_suffix, thumbnail,
-         editToken, compJson);
+         editToken, compJson, customerId);
 
   // Seul endroit qui renvoie edit_token : le créateur le garde en mémoire pour
   // signer les écritures /api/render/* (save, save-views, cart-set).

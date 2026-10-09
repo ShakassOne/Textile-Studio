@@ -39,6 +39,14 @@
  *      tracking depuis le 06/10), coupable en un clic si un souci apparaît.
  *      Comportement 100% serveur (gate l'écriture en DB) : pas exposé sur la
  *      route publique, le client appelle /track sans condition.
+ *    resume_design_enabled      bool  — bandeau "Vous avez une création en
+ *      cours" sur la fiche produit pour un client connecté qui a interrompu
+ *      sa personnalisation (GET /api/designs/mine, backlog item 24). Exposé
+ *      sur la route publique : tl-modal.js n'appelle /api/designs/mine que si
+ *      ce flag est actif, pour éviter un appel réseau inutile par défaut.
+ *      Désactivé par défaut : nouveau changement visuel sur la fiche produit
+ *      (hors studio), à valider avant diffusion large, même logique prudente
+ *      que mobile_price_bar_enabled/social_proof_enabled.
  *
  *  Cors public : Cross-origin (shop_domain.myshopify.com → textile-studio-production)
  *    → le storefront fait fetch direct, on autorise tout origin sur le GET public.
@@ -94,6 +102,9 @@ const AI_GENERIC_IDENTITY_PROMPT_DEFAULT = false;
 // Tracking impression/clic de l'encart upsell activé par défaut : c'est la
 // seule mesure de cette fonctionnalité déjà en prod (backlog item 17).
 const UPSELL_TRACKING_DEFAULT = true;
+// Bandeau de reprise de création désactivé par défaut : changement visuel
+// sur la fiche produit, à valider avant diffusion large (backlog item 24).
+const RESUME_DESIGN_DEFAULT = false;
 
 // ── GET /api/shop-settings/style — lecture admin ────────────────────────────
 router.get('/style', requireAuth, attachShopId, (req, res) => {
@@ -105,6 +116,7 @@ router.get('/style', requireAuth, attachShopId, (req, res) => {
     social_proof_enabled:       readBoolSetting(req.shopId, 'social_proof_enabled', SOCIAL_PROOF_DEFAULT),
     ai_generic_identity_prompt_enabled: readBoolSetting(req.shopId, 'ai_generic_identity_prompt_enabled', AI_GENERIC_IDENTITY_PROMPT_DEFAULT),
     upsell_tracking_enabled:    readBoolSetting(req.shopId, 'upsell_tracking_enabled', UPSELL_TRACKING_DEFAULT),
+    resume_design_enabled:      readBoolSetting(req.shopId, 'resume_design_enabled', RESUME_DESIGN_DEFAULT),
   });
 });
 
@@ -147,6 +159,10 @@ router.post('/style', requireAuth, attachShopId, express.json(), (req, res) => {
     setSetting(req.shopId, 'upsell_tracking_enabled', coerceBool(body.upsell_tracking_enabled) ? '1' : '0');
   }
 
+  if ('resume_design_enabled' in body) {
+    setSetting(req.shopId, 'resume_design_enabled', coerceBool(body.resume_design_enabled) ? '1' : '0');
+  }
+
   res.json({
     ok: true,
     cart_drawer_bg_color:       getSetting(req.shopId, 'cart_drawer_bg_color') || '',
@@ -156,6 +172,7 @@ router.post('/style', requireAuth, attachShopId, express.json(), (req, res) => {
     social_proof_enabled:       readBoolSetting(req.shopId, 'social_proof_enabled', SOCIAL_PROOF_DEFAULT),
     ai_generic_identity_prompt_enabled: readBoolSetting(req.shopId, 'ai_generic_identity_prompt_enabled', AI_GENERIC_IDENTITY_PROMPT_DEFAULT),
     upsell_tracking_enabled:    readBoolSetting(req.shopId, 'upsell_tracking_enabled', UPSELL_TRACKING_DEFAULT),
+    resume_design_enabled:      readBoolSetting(req.shopId, 'resume_design_enabled', RESUME_DESIGN_DEFAULT),
   });
 });
 
@@ -174,6 +191,7 @@ router.get('/style/public', (req, res) => {
       reassurance_banner_enabled: REASSURANCE_BANNER_DEFAULT,
       mobile_price_bar_enabled: MOBILE_PRICE_BAR_DEFAULT,
       social_proof_enabled: SOCIAL_PROOF_DEFAULT,
+      resume_design_enabled: RESUME_DESIGN_DEFAULT,
     });
   }
   const shopId = getShopIdByDomain(shopDomain);
@@ -184,6 +202,7 @@ router.get('/style/public', (req, res) => {
       reassurance_banner_enabled: REASSURANCE_BANNER_DEFAULT,
       mobile_price_bar_enabled: MOBILE_PRICE_BAR_DEFAULT,
       social_proof_enabled: SOCIAL_PROOF_DEFAULT,
+      resume_design_enabled: RESUME_DESIGN_DEFAULT,
     });
   }
   res.json({
@@ -192,6 +211,7 @@ router.get('/style/public', (req, res) => {
     reassurance_banner_enabled: readBoolSetting(shopId, 'reassurance_banner_enabled', REASSURANCE_BANNER_DEFAULT),
     mobile_price_bar_enabled:   readBoolSetting(shopId, 'mobile_price_bar_enabled', MOBILE_PRICE_BAR_DEFAULT),
     social_proof_enabled:       readBoolSetting(shopId, 'social_proof_enabled', SOCIAL_PROOF_DEFAULT),
+    resume_design_enabled:      readBoolSetting(shopId, 'resume_design_enabled', RESUME_DESIGN_DEFAULT),
   });
 });
 
