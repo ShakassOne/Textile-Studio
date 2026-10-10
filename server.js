@@ -513,6 +513,9 @@ app.use((req, res, next) => {
     '/api/upsell-candidates/public', // ← suggestions après ajout au panier : un CLIENT ne souscrit pas
     '/api/upsell-candidates/track',  // ← tracking impression/clic de l'encart : même raison
     '/api/designs/mine',    // ← bandeau "Reprendre ma création" : même raison (item 24)
+    // (lien de reprise par email, item 25 : /api/designs/:id/email-resume-link,
+    // exemptée juste au-dessous via emailResumeLinkPath — id variable, pas de
+    // préfixe fixe possible avec startsWith)
     '/textilelab-studio.html',
     '/tl-modal.js',
     '/tl-designs.js',
@@ -521,7 +524,12 @@ app.use((req, res, next) => {
     '/uploads',
     '/assets',
   ];
-  if (exempted.some(p => req.path.startsWith(p))) return next();
+  // Chemin à id variable (/api/designs/123/email-resume-link) : pas de préfixe
+  // fixe possible avec startsWith, d'où une regex dédiée plutôt qu'une entrée
+  // dans `exempted` (item 25 — un visiteur anonyme ne souscrit pas, même
+  // raison que /api/designs/mine juste au-dessus).
+  const emailResumeLinkPath = /^\/api\/designs\/\d+\/email-resume-link$/;
+  if (exempted.some(p => req.path.startsWith(p)) || emailResumeLinkPath.test(req.path)) return next();
   return checkSubscription(req, res, next);
 });
 

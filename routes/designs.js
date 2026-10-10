@@ -9,6 +9,7 @@ const { getDB, getShopIdByDomain } = require('../db/database');
 const { getSetting } = require('../db/settings');
 const { attachShopIdSoft, attachShopId } = require('./_shop-context');
 const RESUME = require('../utils/design-resume');
+const EMAIL_RESUME = require('../utils/email-resume');
 
 // Colonne secret par design (idempotent) — protège les écritures render/* (audit IMPORTANT).
 try { getDB().prepare('ALTER TABLE designs ADD COLUMN edit_token TEXT').run(); } catch { /* déjà présent */ }
@@ -39,6 +40,18 @@ const createDesignLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders:   false,
   message:         { error: 'Trop de créations de design — réessayez dans une heure' },
+});
+
+// Anti-abus lien de reprise par email (backlog item 25) : plus strict que les
+// créations (40/h), car cette route envoie un email à une adresse arbitraire
+// fournie par l'appelant — surface d'abus différente (spam via l'infra TSL).
+const emailResumeLimiter = rateLimit({
+  windowMs:        60 * 60 * 1000,
+  max:             5,
+  keyGenerator:    (req) => `${req.shopId || '?'}:${ipKeyGenerator(req.ip)}`,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message:         { error: 'Trop de demandes de lien — réessayez dans une heure' },
 });
 
 // Toutes les routes /api/designs sont scopées par shop_id (audit B1).
@@ -86,6 +99,53 @@ router.options('/mine', (req, res) => {
   res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type');
   res.sendStatus(204);
+});
+
+// POST /api/designs/:id/email-resume-link — envoie par email un lien pour
+// reprendre une création, pour un visiteur NON connecté (backlog item 25,
+// complète l'item 24 qui ne couvre que le client connecté). PUBLIQUE (scopée
+// shop via ?shop=), gated serveur par le flag email_resume_enabled — pas
+// seulement côté client, même logique que les autres ajouts storefront.
+//
+// Protégée par la possession du design (edit_token, même pattern que
+// _designTokenOk dans routes/render.js lignes 14-22) : sans cette vérité, un
+// id séquentiel permettrait à n'importe qui de faire envoyer par TSL le lien
+// de la création de quelqu'un d'autre à l'adresse email de son choix.
+router.post('/:id/email-resume-link', attachShopId, emailResumeLimiter, express.json(), async (req, res) => {
+  const enabledVal = getSetting(req.shopId, 'email_resume_enabled');
+  const enabled = enabledVal === '1' || enabledVal === 'true';
+  if (!enabled) return res.status(404).json({ error: 'Fonctionnalité désactivée' });
+
+  const db = getDB();
+  const row = db.prepare('SELECT id, edit_token FROM designs WHERE id = ? AND shop_id = ?')
+    .get(req.params.id, req.shopId);
+  if (!row) return res.status(404).json({ error: 'Design not found' });
+
+  const suppliedToken = String(req.body?.design_token || req.headers['x-design-token'] || '');
+  if (!EMAIL_RESUME.designTokenOk(row, suppliedToken)) {
+    return res.status(403).json({ error: 'Jeton de design invalide' });
+  }
+
+  const email = String(req.body?.email || '').trim();
+  if (!EMAIL_RESUME.isValidEmail(email)) {
+    return res.status(400).json({ error: 'Adresse email invalide' });
+  }
+
+  const appUrl = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
+  const link = `${appUrl}/textilelab-studio.html?design=${row.id}&shop=${encodeURIComponent(req.shopDomain || '')}`;
+
+  try {
+    const { sendEmail } = require('./email'); // lazy : pas de cycle au boot
+    await sendEmail({
+      to: email,
+      subject: 'Votre création vous attend',
+      html: EMAIL_RESUME.buildResumeEmailHtml(link),
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(`❌ POST /api/designs/${req.params.id}/email-resume-link :`, e.message);
+    res.status(500).json({ error: 'Envoi impossible' });
+  }
 });
 
 // GET /api/designs/:id — soft scoping (le design ne doit pas appartenir à un autre shop)

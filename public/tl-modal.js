@@ -6,7 +6,9 @@
  *
  * Communication iframe ↔ parent via postMessage :
  *   - { type: 'tl-add-to-cart', variantId, quantity, properties, previewUrl } → AJAX cart + drawer
- *   - { type: 'tl-close-modal' }                                               → ferme le modal
+ *   - { type: 'tl-close-modal', designId, designToken }                       → ferme le modal
+ *     (designId/designToken : backlog item 25, lien de reprise par email pour
+ *     un visiteur non connecté — cf. _tlOfferEmailResumeLink ci-dessous)
  */
 
 (function () {
@@ -24,6 +26,11 @@
   // overlays déjà présents quand la réponse arrive (cas où le drawer s'ouvre
   // avant la fin du fetch).
   var _TL_CART_BG = '';
+
+  // Flag item 25 (lien de reprise par email) : lu une fois par _tlLoadStyleSettings,
+  // consommé à la fermeture du studio. false tant que la réponse n'est pas arrivée
+  // (comportement identique à aujourd'hui : rien ne s'affiche).
+  var _TL_EMAIL_RESUME_ENABLED = false;
 
   // ── Styles injectés ─────────────────────────────────────────────────────────
   // Le bloc CART_FIX_CSS résout le bug de chevauchement image/titre dans les
@@ -297,6 +304,53 @@
     .tl-resume-z { font-weight: 400; opacity: .7; }\
   ';
 
+  // Lien "Recevoir un lien pour reprendre ma création" (item 25) : même ton
+  // discret que .tl-resume (item 24), proposé uniquement à un visiteur SANS
+  // jeton client (sinon le bandeau .tl-resume prend le relais). Replié en un
+  // simple lien tant qu'il n'est pas cliqué, pour ne jamais ressembler à un
+  // popup qui s'impose.
+  var TL_EMAIL_RESUME_CSS = '\
+    .tl-email-resume {\
+      margin: 0 0 8px;\
+      padding: 10px 12px;\
+      border-radius: 10px;\
+      border: 1px solid rgba(0,0,0,.12);\
+      background: rgba(0,0,0,.03);\
+      font: 400 13px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\
+      color: inherit;\
+    }\
+    .tl-email-resume-link {\
+      border: 0;\
+      background: none;\
+      padding: 0;\
+      font: inherit;\
+      font-weight: 600;\
+      text-decoration: underline;\
+      cursor: pointer;\
+      color: inherit;\
+    }\
+    .tl-email-resume-form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }\
+    .tl-email-resume-input {\
+      flex: 1 1 180px;\
+      min-width: 0;\
+      padding: 7px 10px;\
+      border-radius: 8px;\
+      border: 1px solid rgba(0,0,0,.2);\
+      font: inherit;\
+    }\
+    .tl-email-resume-send, .tl-email-resume-cancel {\
+      border: 0;\
+      border-radius: 8px;\
+      padding: 7px 12px;\
+      font: inherit;\
+      font-weight: 600;\
+      cursor: pointer;\
+    }\
+    .tl-email-resume-send { background: #111; color: #fff; }\
+    .tl-email-resume-cancel { background: none; opacity: .7; }\
+    .tl-email-resume-msg { display: block; margin-top: 6px; font-size: 12px; opacity: .8; }\
+  ';
+
   // NOTE : ne pas nommer cette variable "CSS" — cela écraserait window.CSS
   // (l'API globale) dans le scope de l'IIFE et ferait planter CSS.escape().
   var TL_STYLES = '\
@@ -316,7 +370,7 @@
       border: none;\
       display: block;\
     }\
-  ' + CART_FIX_CSS + TL_CTA_CSS + TL_UPSELL_CSS + TL_RESUME_CSS;
+  ' + CART_FIX_CSS + TL_CTA_CSS + TL_UPSELL_CSS + TL_RESUME_CSS + TL_EMAIL_RESUME_CSS;
 
   // ── Injection des éléments DOM ──────────────────────────────────────────────
   function injectDOM() {
@@ -779,6 +833,7 @@
 
         case 'tl-close-modal':
           closeModal();
+          _tlMaybeOfferEmailResumeLink(e.data.designId || null, e.data.designToken || null);
           break;
 
         case 'tl-open-product-page':
@@ -1114,6 +1169,10 @@
           // sur la route /api/designs/mine elle-même, pour ne faire cet appel
           // réseau en plus (whoami + designs/mine) que si le marchand l'a activé.
           if (data.resume_design_enabled) _tlCheckResumeDesign();
+          // Flag item 25 (lien de reprise par email) : simple mémorisation,
+          // consommée à la fermeture du studio (case 'tl-close-modal' ci-dessous) —
+          // pas d'appel réseau supplémentaire ici.
+          _TL_EMAIL_RESUME_ENABLED = !!data.email_resume_enabled;
         })
         .catch(function() {});
     } catch (e) { /* silencieux */ }
@@ -1269,6 +1328,128 @@
     actions.appendChild(zero);
 
     el.appendChild(actions);
+
+    var container = _tlCtaContainer(btn);
+    container.parentNode.insertBefore(el, container);
+  }
+
+  // ── Lien de reprise par email, pour le visiteur NON connecté (item 25) ─────
+  //
+  // Complète le bandeau "Reprendre ma création" ci-dessus (item 24, client
+  // connecté uniquement) : un visiteur anonyme qui ferme le studio sans avoir
+  // acheté peut demander à recevoir par email un lien pour reprendre sa
+  // création plus tard. Déclenché uniquement à la fermeture VOLONTAIRE du
+  // studio (case 'tl-close-modal') — jamais après un ajout au panier (fermé
+  // par le message 'tl-add-to-cart' ci-dessus, qui ne passe pas par ici) :
+  // pas de proposition sur un achat déjà fait.
+  function _tlEmailResumeDismissKey(designId) { return 'tl_email_resume_dismissed_' + designId; }
+
+  function _tlMaybeOfferEmailResumeLink(designId, designToken) {
+    if (!_TL_EMAIL_RESUME_ENABLED || !designId) return;
+    try { if (sessionStorage.getItem(_tlEmailResumeDismissKey(designId))) return; } catch (e) { /* stockage indisponible → on propose quand même */ }
+
+    _tlFetchCustomerToken().then(function (token) {
+      if (token) return; // client connecté : le bandeau .tl-resume (item 24) prend déjà le relais
+      _tlInjectEmailResumeLink(designId, designToken);
+    });
+  }
+
+  function _tlInjectEmailResumeLink(designId, designToken) {
+    var vieux = document.querySelector('.tl-email-resume');
+    if (vieux && vieux.parentNode) vieux.parentNode.removeChild(vieux);
+
+    var btns = document.querySelectorAll('.tl-personalise-btn');
+    var btn = null;
+    for (var i = 0; i < btns.length; i++) {
+      var p = _tlBtnProduct(btns[i]);
+      if (p.pid || p.ph) { btn = btns[i]; break; }
+    }
+    if (!btn) return; // aucun bouton de personnalisation sur cette page → rien à ancrer
+
+    var el = document.createElement('div');
+    el.className = 'tl-email-resume';
+
+    var lien = document.createElement('button');
+    lien.type = 'button';
+    lien.className = 'tl-email-resume-link';
+    lien.textContent = 'Recevoir un lien pour reprendre ma création';
+    el.appendChild(lien);
+
+    var msg = document.createElement('span');
+    msg.className = 'tl-email-resume-msg';
+    msg.style.display = 'none';
+
+    lien.addEventListener('click', function () {
+      if (el.querySelector('.tl-email-resume-form')) return; // déjà ouvert
+      lien.style.display = 'none';
+
+      var form = document.createElement('div');
+      form.className = 'tl-email-resume-form';
+
+      var input = document.createElement('input');
+      input.type = 'email';
+      input.className = 'tl-email-resume-input';
+      input.placeholder = 'votre@email.com';
+      form.appendChild(input);
+
+      var envoyer = document.createElement('button');
+      envoyer.type = 'button';
+      envoyer.className = 'tl-email-resume-send';
+      envoyer.textContent = 'Envoyer';
+      form.appendChild(envoyer);
+
+      var annuler = document.createElement('button');
+      annuler.type = 'button';
+      annuler.className = 'tl-email-resume-cancel';
+      annuler.textContent = 'Annuler';
+      annuler.addEventListener('click', function () {
+        try { sessionStorage.setItem(_tlEmailResumeDismissKey(designId), '1'); } catch (e) { /* tant pis, pas bloquant */ }
+        if (el.parentNode) el.parentNode.removeChild(el);
+      });
+      form.appendChild(annuler);
+
+      el.appendChild(form);
+      el.appendChild(msg);
+      input.focus();
+
+      envoyer.addEventListener('click', function () {
+        var email = String(input.value || '').trim();
+        if (!email || email.indexOf('@') === -1 || email.indexOf('.') === -1) {
+          msg.textContent = 'Adresse email invalide.';
+          msg.style.display = '';
+          return;
+        }
+        envoyer.disabled = true;
+        var shop = (window.Shopify && window.Shopify.shop) || window._TL_SHOP || window.location.hostname;
+        var url = TSL_BACKEND_ORIGIN
+                + '/api/designs/' + encodeURIComponent(designId) + '/email-resume-link'
+                + '?shop=' + encodeURIComponent(shop);
+        fetch(url, {
+          method: 'POST',
+          mode: 'cors',
+          credentials: 'omit',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email, design_token: designToken }),
+        })
+        .then(function (r) { return r.ok; })
+        .then(function (ok) {
+          envoyer.disabled = false;
+          if (ok) {
+            try { sessionStorage.setItem(_tlEmailResumeDismissKey(designId), '1'); } catch (e) { /* non bloquant */ }
+            form.style.display = 'none';
+            msg.textContent = 'Lien envoyé — vérifiez votre boîte mail.';
+          } else {
+            msg.textContent = 'Envoi impossible, réessayez plus tard.';
+          }
+          msg.style.display = '';
+        })
+        .catch(function () {
+          envoyer.disabled = false;
+          msg.textContent = 'Envoi impossible, réessayez plus tard.';
+          msg.style.display = '';
+        });
+      });
+    });
 
     var container = _tlCtaContainer(btn);
     container.parentNode.insertBefore(el, container);

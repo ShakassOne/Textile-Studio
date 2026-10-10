@@ -47,6 +47,13 @@
  *      Désactivé par défaut : nouveau changement visuel sur la fiche produit
  *      (hors studio), à valider avant diffusion large, même logique prudente
  *      que mobile_price_bar_enabled/social_proof_enabled.
+ *    email_resume_enabled       bool  — lien "Recevoir un lien pour reprendre
+ *      ma création" proposé à la fermeture du studio pour un visiteur NON
+ *      connecté (POST /api/designs/:id/email-resume-link, backlog item 25,
+ *      complète resume_design_enabled qui ne couvre que le client connecté).
+ *      Exposé sur la route publique : tl-modal.js n'affiche le lien que si ce
+ *      flag est actif ET qu'aucun jeton client n'est présent (jamais les deux
+ *      bandeaux en même temps). Désactivé par défaut, même logique prudente.
  *
  *  Cors public : Cross-origin (shop_domain.myshopify.com → textile-studio-production)
  *    → le storefront fait fetch direct, on autorise tout origin sur le GET public.
@@ -105,6 +112,9 @@ const UPSELL_TRACKING_DEFAULT = true;
 // Bandeau de reprise de création désactivé par défaut : changement visuel
 // sur la fiche produit, à valider avant diffusion large (backlog item 24).
 const RESUME_DESIGN_DEFAULT = false;
+// Lien de reprise par email (visiteur non connecté) désactivé par défaut :
+// même logique prudente, à valider avant diffusion large (backlog item 25).
+const EMAIL_RESUME_DEFAULT = false;
 
 // ── GET /api/shop-settings/style — lecture admin ────────────────────────────
 router.get('/style', requireAuth, attachShopId, (req, res) => {
@@ -117,6 +127,7 @@ router.get('/style', requireAuth, attachShopId, (req, res) => {
     ai_generic_identity_prompt_enabled: readBoolSetting(req.shopId, 'ai_generic_identity_prompt_enabled', AI_GENERIC_IDENTITY_PROMPT_DEFAULT),
     upsell_tracking_enabled:    readBoolSetting(req.shopId, 'upsell_tracking_enabled', UPSELL_TRACKING_DEFAULT),
     resume_design_enabled:      readBoolSetting(req.shopId, 'resume_design_enabled', RESUME_DESIGN_DEFAULT),
+    email_resume_enabled:       readBoolSetting(req.shopId, 'email_resume_enabled', EMAIL_RESUME_DEFAULT),
   });
 });
 
@@ -163,6 +174,10 @@ router.post('/style', requireAuth, attachShopId, express.json(), (req, res) => {
     setSetting(req.shopId, 'resume_design_enabled', coerceBool(body.resume_design_enabled) ? '1' : '0');
   }
 
+  if ('email_resume_enabled' in body) {
+    setSetting(req.shopId, 'email_resume_enabled', coerceBool(body.email_resume_enabled) ? '1' : '0');
+  }
+
   res.json({
     ok: true,
     cart_drawer_bg_color:       getSetting(req.shopId, 'cart_drawer_bg_color') || '',
@@ -173,6 +188,7 @@ router.post('/style', requireAuth, attachShopId, express.json(), (req, res) => {
     ai_generic_identity_prompt_enabled: readBoolSetting(req.shopId, 'ai_generic_identity_prompt_enabled', AI_GENERIC_IDENTITY_PROMPT_DEFAULT),
     upsell_tracking_enabled:    readBoolSetting(req.shopId, 'upsell_tracking_enabled', UPSELL_TRACKING_DEFAULT),
     resume_design_enabled:      readBoolSetting(req.shopId, 'resume_design_enabled', RESUME_DESIGN_DEFAULT),
+    email_resume_enabled:       readBoolSetting(req.shopId, 'email_resume_enabled', EMAIL_RESUME_DEFAULT),
   });
 });
 
@@ -192,6 +208,7 @@ router.get('/style/public', (req, res) => {
       mobile_price_bar_enabled: MOBILE_PRICE_BAR_DEFAULT,
       social_proof_enabled: SOCIAL_PROOF_DEFAULT,
       resume_design_enabled: RESUME_DESIGN_DEFAULT,
+      email_resume_enabled: EMAIL_RESUME_DEFAULT,
     });
   }
   const shopId = getShopIdByDomain(shopDomain);
@@ -203,6 +220,7 @@ router.get('/style/public', (req, res) => {
       mobile_price_bar_enabled: MOBILE_PRICE_BAR_DEFAULT,
       social_proof_enabled: SOCIAL_PROOF_DEFAULT,
       resume_design_enabled: RESUME_DESIGN_DEFAULT,
+      email_resume_enabled: EMAIL_RESUME_DEFAULT,
     });
   }
   res.json({
@@ -212,6 +230,7 @@ router.get('/style/public', (req, res) => {
     mobile_price_bar_enabled:   readBoolSetting(shopId, 'mobile_price_bar_enabled', MOBILE_PRICE_BAR_DEFAULT),
     social_proof_enabled:       readBoolSetting(shopId, 'social_proof_enabled', SOCIAL_PROOF_DEFAULT),
     resume_design_enabled:      readBoolSetting(shopId, 'resume_design_enabled', RESUME_DESIGN_DEFAULT),
+    email_resume_enabled:       readBoolSetting(shopId, 'email_resume_enabled', EMAIL_RESUME_DEFAULT),
   });
 });
 
