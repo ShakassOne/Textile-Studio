@@ -101,7 +101,13 @@
    * fenêtre déplacerait le design sur le vêtement.
    */
   Moteur.prototype.definirZone = function (zone) {
-    var calques = this.lireCalques();
+    // Une pose en cours a DÉJÀ vidé le canevas — elle le remplira quand les
+    // images auront fini de charger. Le relire à cet instant rend une liste
+    // vide, qu'on reposerait aussitôt : la composition disparaîtrait pour de
+    // bon, sans la moindre erreur. C'est ce qui se produisait quand deux
+    // redimensionnements s'enchaînaient, à la fermeture d'un panneau par
+    // exemple. On reprend alors les calques en vol.
+    var calques = this._poseEnCours ? (this._calquesEnVol || []) : this.lireCalques();
     this.zone = zone;
     this.poserCalques(calques);
   };
@@ -144,10 +150,14 @@
     var jeton = (this._pose = (this._pose || 0) + 1);
 
     this._poseEnCours = true;
+    // Mémorisés le temps du vol : le canevas est vide pendant la pose, et
+    // c'est cette liste qui fait foi si on redemande la composition.
+    this._calquesEnVol = calques || [];
     this.objets().forEach(function (o) { self.canvas.remove(o); });
     var restants = (calques || []).length;
     if (!restants) {
       this._poseEnCours = false;
+      this._calquesEnVol = null;
       this.canvas.requestRenderAll();
       if (pret) pret();
       return;
@@ -159,6 +169,7 @@
       if (jeton !== self._pose) return;   // pose périmée : une autre a pris la main
       if (--restants === 0) {
         self._poseEnCours = false;
+        self._calquesEnVol = null;
         self.canvas.requestRenderAll();
         if (pret) pret();
       }
