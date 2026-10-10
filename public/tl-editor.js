@@ -624,6 +624,35 @@
     return '#ffffff';
   }
 
+  /**
+   * Rectangle réellement PEINT par une image, dans le repère de sa boîte.
+   *
+   * Les thèmes modernes posent la photo dans une boîte à `aspect-ratio`
+   * fixe — souvent carrée — avec `object-fit: contain`. Une photo de
+   * mannequin, elle, est en portrait : elle n'occupe alors qu'une bande
+   * centrale de sa boîte, et le reste est du fond. Se fier à la boîte,
+   * c'est poser la zone d'impression À CÔTÉ du vêtement.
+   *
+   * Mesuré en pixels de MISE EN PAGE : un rectangle d'écran inclurait le
+   * zoom, et le calcul deviendrait cumulatif.
+   *
+   * `object-position` n'est pas lu : la valeur par défaut (centré) couvre
+   * tous les thèmes rencontrés, et une valeur exotique décalerait au pire
+   * la zone comme avant ce correctif.
+   */
+  function rectPeint(img) {
+    var L = Math.max(1, img.offsetWidth);
+    var H = Math.max(1, img.offsetHeight);
+    var nl = img.naturalWidth || 0;
+    var nh = img.naturalHeight || 0;
+    var fit = '';
+    try { fit = getComputedStyle(img).objectFit || ''; } catch (e) { /* vieux navigateur */ }
+    if (!nl || !nh || (fit !== 'contain' && fit !== 'cover')) return { x: 0, y: 0, w: L, h: H };
+    var e = fit === 'contain' ? Math.min(L / nl, H / nh) : Math.max(L / nl, H / nh);
+    var w = nl * e, h = nh * e;
+    return { x: (L - w) / 2, y: (H - h) / 2, w: w, h: h };
+  }
+
   Editeur.prototype.placer = function () {
     var img = imageProduit();
     var colonne = this.colonneInfos(img);
@@ -1053,7 +1082,6 @@
     // et le zoom vise cette boîte-là, agrandie, plutôt que la photo seule.
     if (this._hauteurHote === undefined) this._hauteurHote = hote.style.minHeight || '';
 
-    var large = d.largeur;
     // Le plafond monte sur mobile, où la surface d'affichage est le vrai
     // facteur limitant — et où un visuel trop petit ne se place pas au
     // doigt. La netteté suit : canevas et photo demandent leur définition
@@ -1064,39 +1092,91 @@
     // 0,98 en largeur, 0,86 en hauteur : un filet au-dessus et en dessous
     // de la zone, pour qu'elle se lise comme posée sur le vêtement et que
     // ses poignées restent attrapables.
-    var k = Math.min(plafond, Math.max(1,
-      Math.min(large * 0.98 / z.w, hMax * 0.86 / z.h)));
+    var facteur = function (dim, hauteurVue) {
+      return Math.min(plafond, Math.max(1,
+        Math.min(dim.largeur * 0.98 / dim.zone.w, hauteurVue * 0.86 / dim.zone.h)));
+    };
 
-    // La boîte prend juste la hauteur de la zone agrandie, marges comprises.
-    // Une hauteur fixe laissait un grand vide sous le cadre — et comme les
-    // boutons se posent dessous, ils tombaient au milieu de l'écran. On ne
-    // fait que l'agrandir : jamais rogner l'aperçu d'origine.
-    var voulue = Math.max(d.hauteur, Math.min(hMax, Math.round((z.h * k) / 0.86)));
-    this._hauteurVue = voulue;
-    if (voulue > d.hauteur) hote.style.minHeight = voulue + 'px';
+    // ── 1. Faut-il, et peut-on, donner plus de hauteur à l'aperçu ? ─────
+    //
+    // Sur mobile la photo fait toute la largeur mais guère plus de 290 px
+    // de haut : la zone d'impression, même remplie à ras bord, reste
+    // minuscule. On tente donc d'allonger le conteneur — il rogne déjà.
+    //
+    // Mais beaucoup de thèmes enferment la photo dans une boîte à rapport
+    // d'image fixe : le conteneur s'allonge, la photo NON. On n'y gagne
+    // alors qu'une bande vide sous le vêtement, où la zone d'impression se
+    // prolonge dans le vide. C'est précisément ce que montraient les
+    // captures Android. On vérifie donc, et on renonce si la photo ne suit
+    // pas.
+    var voulue = Math.min(hMax, Math.round((z.h * facteur(d, hMax)) / 0.86));
+    if (voulue > d.hauteur) {
+      var avantH = this.imageProduit.offsetHeight;
+      var avantL = hote.clientWidth;
+      hote.style.minHeight = voulue + 'px';
+      // Deux façons d'échouer, toutes deux silencieuses :
+      //  • le conteneur s'allonge mais pas la photo — un rapport d'image
+      //    imposé par le thème. On ne gagne qu'une bande vide sous le
+      //    vêtement, où la zone d'impression se prolonge dans le vide ;
+      //  • le conteneur s'ÉLARGIT avec sa hauteur, toujours à cause du
+      //    rapport d'image : l'aperçu déborde alors l'écran et la zone part
+      //    sur le côté. On ne demandait que de la hauteur.
+      // Dans les deux cas on renonce : mieux vaut un aperçu modeste et
+      // juste qu'un grand aperçu faux.
+      if (this.imageProduit.offsetHeight <= avantH + 2
+          || hote.clientWidth > avantL + 2) {
+        hote.style.minHeight = this._hauteurHote || '';
+      }
+    }
 
-    var boite = { w: large, h: voulue };
-    var ox = (z.x + z.w / 2) / d.largeur * 100;
-    var oy = (z.y + z.h / 2) / d.hauteur * 100;
+    // ── 2. Tout se remesure APRÈS la décision ───────────────────────────
+    //
+    // L'échelle dépend de la taille finale de la photo, et la photo de la
+    // hauteur accordée : calculée avant, elle était trop grande dès que le
+    // conteneur avait grandi, et la zone sortait de l'écran par le haut.
+    d = this._dimensions();
+    z = d.zone;
+    if (!z.w || !z.h) return;
+    var pr = rectPeint(this.imageProduit);
 
     if (this._surplusHote === undefined) this._surplusHote = hote.style.overflow;
     hote.style.overflow = 'hidden';
 
-    // Recentrage. Avec une origine posée sur le centre de la zone, ce point
-    // reste là où il était : si la zone est basse ou décalée sur la photo,
+    // La boîte qui rogne est la seule qui décide de ce qu'on voit.
+    var vueL = Math.max(1, hote.clientWidth || d.largeur);
+    var vueH = Math.max(1, hote.clientHeight || d.hauteur);
+    this._hauteurVue = vueH;
+    var k = facteur(d, vueH);
+
+    // ── 3. Deux origines, et non une seule ──────────────────────────────
+    //
+    // La scène épouse la photo PEINTE ; l'image, elle, garde sa boîte de
+    // mise en page, plus large dès que le thème la contient. Une origine
+    // commune ferait tourner les deux autour de deux points différents, et
+    // le dessin se décalerait du vêtement.
+    var L = Math.max(1, this.imageProduit.offsetWidth);
+    var H = Math.max(1, this.imageProduit.offsetHeight);
+    var origineImg = ((pr.x + z.x + z.w / 2) / L * 100).toFixed(2) + '% '
+                   + ((pr.y + z.y + z.h / 2) / H * 100).toFixed(2) + '%';
+    var origine = ((z.x + z.w / 2) / d.largeur * 100).toFixed(2) + '% '
+                + ((z.y + z.h / 2) / d.hauteur * 100).toFixed(2) + '%';
+
+    // ── 4. Recentrage ───────────────────────────────────────────────────
+    //
+    // Avec une origine posée sur le centre de la zone, ce point reste là où
+    // il était : si la zone est basse ou décalée sur la photo,
     // l'agrandissement la pousse hors du cadre et il « manque un bout ».
-    // On translate donc ce point jusqu'où on veut le voir. Le repère est la
-    // photo et non son conteneur : un thème peut étirer celui-ci bien
-    // au-delà, et la zone partait alors se centrer dans du vide.
+    // On translate donc ce point jusqu'où on veut le voir.
     //
     // Centrée horizontalement, posée HAUT verticalement : la zone est ce
     // qu'on vient regarder, le vêtement autour n'est qu'un repère. Centrer
     // en hauteur la laissait flotter au milieu, avec du vide dessous.
-    var tx = Math.round(boite.w / 2 - (z.x + z.w / 2));
-    var ty = Math.round(Math.min(boite.h / 2, boite.h * 0.07 + (z.h * k) / 2)
-                        - (z.y + z.h / 2));
+    var dh = decalageDans(this.imageProduit, hote);
+    var centreX = dh.x + pr.x + z.x + z.w / 2;
+    var centreY = dh.y + pr.y + z.y + z.h / 2;
+    var tx = Math.round(vueL / 2 - centreX);
+    var ty = Math.round(Math.min(vueH / 2, vueH * 0.07 + (z.h * k) / 2) - centreY);
 
-    var origine = ox.toFixed(2) + '% ' + oy.toFixed(2) + '%';
     var echelle = 'translate(' + tx + 'px,' + ty + 'px) scale(' + k.toFixed(3) + ')';
     // Le style EN LIGNE porte l'agrandissement, la variable ne sert qu'à la
     // règle de survol. Piloter la transformation depuis une variable posée
@@ -1105,7 +1185,7 @@
     // et l'image restait à sa taille initiale sans un mot.
     hote.style.setProperty('--tsle-origine', origine);
     hote.style.setProperty('--tsle-zoom', echelle);
-    poser(this.imageProduit, echelle, origine);
+    poser(this.imageProduit, echelle, origineImg);
     poser(this.scene, echelle, origine);
     this.majTaillePoignees(k);
     this.definitionCanevas(k);
@@ -3516,18 +3596,21 @@
     var img = this.imageProduit;
     if (!hote || !img) return;
     var d = decalageDans(img, hote);
-    this.scene.style.left = Math.round(d.x) + 'px';
-    this.scene.style.top = Math.round(d.y) + 'px';
-    this.scene.style.width = Math.round(img.offsetWidth) + 'px';
-    this.scene.style.height = Math.round(img.offsetHeight) + 'px';
+    var p = rectPeint(img);
+    this.scene.style.left = Math.round(d.x + p.x) + 'px';
+    this.scene.style.top = Math.round(d.y + p.y) + 'px';
+    this.scene.style.width = Math.round(p.w) + 'px';
+    this.scene.style.height = Math.round(p.h) + 'px';
   };
 
   /** Taille du canevas et zone d'édition, en pixels de la photo affichée. */
   Editeur.prototype._dimensions = function () {
     // Dimensions de MISE EN PAGE, jamais celles affichées : le zoom est une
     // transformation, et la reprendre dans la mesure la rendrait cumulative.
-    var largeur = Math.max(1, Math.round(this.imageProduit.offsetWidth));
-    var hauteur = Math.max(1, Math.round(this.imageProduit.offsetHeight));
+    // Et celles de la photo PEINTE, pas de sa boîte : voir rectPeint().
+    var p = rectPeint(this.imageProduit);
+    var largeur = Math.max(1, Math.round(p.w));
+    var hauteur = Math.max(1, Math.round(p.h));
 
     var coins = this.zoneCalibree && this.zoneCalibree.corners;
     if (!coins || coins.length !== 4) {
