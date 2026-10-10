@@ -7414,12 +7414,16 @@ function _renderMobileLibGrid(cat) {
         const thumbSrc = item.thumb_url || item.url;
         const fullSrc  = item.url;
         img.src     = isUserAi ? thumbSrc : (API_BASE + thumbSrc);
-        img.alt     = item.filename || '';
+        // Le nom choisi par le marchand, pas le nom de fichier : c'est lui
+        // que le client lit, en infobulle comme dans la liste des calques.
+        const libelle = (item.display_name || '').trim() || item.filename || '';
+        img.alt     = libelle;
         img.loading = 'lazy';
+        div.title   = libelle;
         div.appendChild(img);
         div.addEventListener('click', () => {
           const src = isUserAi ? fullSrc : (API_BASE + fullSrc);
-          addLibraryImageToCanvas(src, item.filename);
+          addLibraryImageToCanvas(src, libelle);
         });
         grid.appendChild(div);
       });

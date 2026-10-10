@@ -128,6 +128,17 @@ function initDB() {
   try { db.exec("ALTER TABLE shops ADD COLUMN is_active INTEGER DEFAULT 1"); } catch {}
   try { db.exec("ALTER TABLE library ADD COLUMN thumb_url TEXT DEFAULT NULL"); } catch {}
 
+  // ── Bibliothèque : le visuel devient une fiche, pas un fichier ─────────
+  // Le marchand renomme, classe, étiquette, et retire de la vente sans
+  // supprimer. Colonnes ajoutées à chaud : une base déjà en service les
+  // reçoit au démarrage, et une relance ne refait rien (le catch avale le
+  // « duplicate column »).
+  try { db.exec("ALTER TABLE library ADD COLUMN slug TEXT DEFAULT ''"); } catch {}
+  try { db.exec("ALTER TABLE library ADD COLUMN display_name TEXT DEFAULT ''"); } catch {}
+  try { db.exec("ALTER TABLE library ADD COLUMN is_active INTEGER DEFAULT 1"); } catch {}
+  try { db.exec("ALTER TABLE library ADD COLUMN tags TEXT DEFAULT '[]'"); } catch {}
+  try { db.exec("ALTER TABLE library ADD COLUMN excluded_mockups TEXT DEFAULT '[]'"); } catch {}
+
   // ── Table: categories (catégories de bibliothèque sans placeholder SVG) ────
   db.exec(`
     CREATE TABLE IF NOT EXISTS categories (

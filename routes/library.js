@@ -7,6 +7,7 @@ const fs      = require('fs');
 const { requireAuth } = require('./auth');
 const { getDB } = require('../db/database');
 const { attachShopId } = require('./_shop-context');
+const DL = require('../utils/design-library');
 
 const DEFAULT_CATEGORIES = ['logos', 'illustrations', 'patterns', 'textes', 'divers', 'Dall-E'];
 
@@ -92,12 +93,26 @@ router.delete('/categories/:name', requireAuth, attachShopId, (req, res) => {
 });
 
 // GET /api/library — exclut les cat_placeholder côté serveur (scopé shop)
+// GET /api/library — la bibliothèque
+//
+// `?all=1` est le point de vue de l'ADMIN : il voit tout, y compris ce qui
+// est retiré de la vente. Sans ce drapeau — donc depuis le studio — les
+// visuels retirés n'apparaissent pas. Sans cette séparation, décocher
+// « Proposé à la vente » ne changerait rien pour le client.
 router.get('/', attachShopId, (req, res) => {
   const db = getDB();
   const { category, limit = 200 } = req.query;
-  const rows = category
-    ? db.prepare("SELECT * FROM library WHERE shop_id=? AND category=? AND filename NOT LIKE '__cat_placeholder_%' ORDER BY created_at DESC LIMIT ?").all(req.shopId, category, Number(limit))
-    : db.prepare("SELECT * FROM library WHERE shop_id=? AND filename NOT LIKE '__cat_placeholder_%' ORDER BY created_at DESC LIMIT ?").all(req.shopId, Number(limit));
+  const tous = String(req.query.all || '') === '1';
+
+  const where = ['shop_id=?', "filename NOT LIKE '__cat_placeholder_%'"];
+  const args  = [req.shopId];
+  if (category) { where.push('category=?'); args.push(category); }
+  if (!tous)    { where.push('is_active=1'); }
+  args.push(Number(limit));
+
+  const rows = db.prepare(
+    `SELECT * FROM library WHERE ${where.join(' AND ')} ORDER BY created_at DESC LIMIT ?`
+  ).all(...args);
   res.json(rows);
 });
 
@@ -181,13 +196,45 @@ router.post('/',       requireAuth, attachShopId, (req, res) => handleUpload(req
 router.post('/upload', requireAuth, attachShopId, (req, res) => handleUpload(req, res, err => { if(err) return res.status(400).json({error:err.message}); processUpload(req, res); }));
 
 // PATCH /api/library/:id (admin, scopé shop)
+// PATCH /api/library/:id — renommer, classer, étiqueter, retirer de la vente
+//
+// Chaque champ est FACULTATIF : l'écran n'envoie que ce qu'il modifie, et un
+// champ absent ne doit rien écraser. C'est ce qui permet d'ajouter des
+// réglages plus tard sans casser les appels existants.
 router.patch('/:id', requireAuth, attachShopId, (req, res) => {
   const db  = getDB();
   const row = db.prepare('SELECT * FROM library WHERE id=? AND shop_id=?').get(req.params.id, req.shopId);
   if (!row) return res.status(404).json({ error: 'Not found' });
-  const cat = (req.body.category || '').trim() || row.category;
-  db.prepare('UPDATE library SET category=? WHERE id=? AND shop_id=?').run(cat, req.params.id, req.shopId);
-  res.json({ ...row, category: cat });
+
+  const b = req.body || {};
+  const maj = {};
+
+  if (typeof b.category === 'string' && b.category.trim()) {
+    maj.category = b.category.trim();
+    // Classer dans une catégorie qu'on vient d'inventer doit la créer, sinon
+    // elle disparaîtrait du filtre au rechargement.
+    try { db.prepare('INSERT OR IGNORE INTO categories (shop_id, name) VALUES (?, ?)').run(req.shopId, maj.category); } catch {}
+  }
+
+  if (typeof b.display_name === 'string') {
+    const nom = b.display_name.trim();
+    if (!nom) return res.status(400).json({ error: 'Le nom affiché ne peut pas être vide' });
+    maj.display_name = nom.slice(0, 120);
+  }
+
+  if (b.tags !== undefined) maj.tags = JSON.stringify(DL.normalizeTags(b.tags));
+  if (b.is_active !== undefined) maj.is_active = b.is_active ? 1 : 0;
+  if (b.excluded_mockups !== undefined) {
+    maj.excluded_mockups = JSON.stringify(DL.normalizeExclusions(b.excluded_mockups));
+  }
+
+  const champs = Object.keys(maj);
+  if (!champs.length) return res.json(row);
+
+  db.prepare(`UPDATE library SET ${champs.map(c => c + '=?').join(', ')} WHERE id=? AND shop_id=?`)
+    .run(...champs.map(c => maj[c]), req.params.id, req.shopId);
+
+  res.json(db.prepare('SELECT * FROM library WHERE id=? AND shop_id=?').get(req.params.id, req.shopId));
 });
 
 // DELETE /api/library/:id (admin, scopé shop)

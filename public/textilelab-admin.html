@@ -122,6 +122,11 @@ tr:hover td{background:var(--glass)}
 .lib-item.selected{border-color:var(--amber);background:var(--amber-dim)}
 .lib-item.selected::after{content:'✓';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:28px;color:var(--amber);font-weight:800;background:rgba(0,0,0,.35);pointer-events:none}
 .lib-item img{width:100%;height:100%;object-fit:contain;padding:4px}
+.lib-item-edit{position:absolute;top:4px;left:4px;background:rgba(0,0,0,.7);border:none;border-radius:6px;color:var(--text);width:22px;height:22px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;opacity:0;transition:.15s;z-index:2}
+.lib-item:hover .lib-item-edit{opacity:1}
+/* Retiré de la vente : visible en admin, absent de la boutique. */
+.lib-item.retire{opacity:.45}
+.lib-item.retire::before{content:'retiré';position:absolute;bottom:4px;left:4px;z-index:2;font-size:9px;letter-spacing:.04em;text-transform:uppercase;background:rgba(0,0,0,.72);color:var(--text2);padding:2px 5px;border-radius:5px}
 .lib-item-del{position:absolute;top:4px;right:4px;background:rgba(0,0,0,.7);border:none;border-radius:6px;color:var(--danger);width:22px;height:22px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;opacity:0;transition:.15s;z-index:2}
 .lib-item:hover .lib-item-del{opacity:1}
 .lib-cat-label{font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;position:absolute;bottom:4px;left:6px;pointer-events:none}
@@ -1561,7 +1566,7 @@ async function loadDashboard() {
   document.getElementById('dash-date').textContent = d.toLocaleDateString('fr-FR',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
   const [stats, libData, mockupData, catData] = await Promise.all([
     api('/api/stats'),
-    api('/api/library'),
+    api('/api/library?all=1'),
     api('/api/mockups'),
     api('/api/product-categories'),
   ]);
@@ -1642,11 +1647,11 @@ async function loadLibrary() {
   let data = null, cats = [];
   try {
     [data, cats] = await Promise.all([
-      api('/api/library'),
+      api('/api/library?all=1'),
       api('/api/library/categories').catch(() => []),
     ]);
   } catch(e) {
-    data = await api('/api/library').catch(() => []);
+    data = await api('/api/library?all=1').catch(() => []);
   }
   _libItems = Array.isArray(data) ? data : (data?.items || []);
   _libCats  = Array.isArray(cats) ? cats : [];
@@ -1684,9 +1689,10 @@ function renderLibGrid() {
     return;
   }
   grid.innerHTML = items.map(i => `
-    <div class="lib-item ${_libSelected.has(i.id) ? 'selected' : ''}" data-id="${i.id}" title="${i.filename}">
-      <img src="${API_BASE}${i.url}" alt="${i.filename}" loading="lazy" onerror="this.style.display='none'">
+    <div class="lib-item ${_libSelected.has(i.id) ? 'selected' : ''} ${i.is_active === 0 ? 'retire' : ''}" data-id="${i.id}" title="${_esc(_libLabel(i))}">
+      <img src="${API_BASE}${i.url}" alt="${_esc(_libLabel(i))}" loading="lazy" onerror="this.style.display='none'">
       <span class="lib-cat-label">${i.category}</span>
+      <button class="lib-item-edit" title="Renommer, classer, étiqueter">✎</button>
       <button class="lib-item-del" title="Supprimer">✕</button>
     </div>`).join('');
 
@@ -1695,6 +1701,13 @@ function renderLibGrid() {
     const item = e.target.closest('.lib-item');
     if (!item) return;
     const id = parseInt(item.dataset.id);
+    // Clic sur le crayon : le double-clic marche aussi, mais rien ne le
+    // laissait deviner — et il n'existe pas au doigt.
+    if (e.target.closest('.lib-item-edit')) {
+      e.stopPropagation();
+      openEditLibItem(id);
+      return;
+    }
     // Clic sur le bouton supprimer
     if (e.target.closest('.lib-item-del')) {
       e.stopPropagation();
@@ -1712,7 +1725,7 @@ function renderLibGrid() {
     _updateLibSelToolbar(items.length);
   };
 
-  // Double-clic → ouvrir modal d'édition (changer catégorie)
+  // Double-clic → ouvrir la fiche du visuel (nom, catégorie, étiquettes…)
   grid.ondblclick = e => {
     const item = e.target.closest('.lib-item');
     if (!item || e.target.closest('.lib-item-del')) return;
@@ -1720,6 +1733,15 @@ function renderLibGrid() {
   };
 
   _updateLibSelToolbar(items.length);
+}
+
+// Le nom qu'on montre : celui choisi par le marchand, sinon ce que le nom
+// de fichier veut bien dire, sinon le fichier lui-même. Un visuel importé
+// avant le renommage n'a pas de display_name — il ne doit pas pour autant
+// s'afficher « sans nom ».
+function _libLabel(i) {
+  if (!i) return '';
+  return (i.display_name || '').trim() || i.filename || `Visuel ${i.id}`;
 }
 
 function _updateLibSelToolbar(total) {
@@ -2569,40 +2591,107 @@ function openEditLibItem(id) {
   _modalOpen();
   const item = _libItems.find(i => i.id === id);
   if (!item) return;
-  const opts = _libCats.map(c => `<option value="${c}" ${c===item.category?'selected':''}>${c}</option>`).join('');
+
+  const cats = _libCats.length ? _libCats : [item.category].filter(Boolean);
+  const opts = cats.map(c => `<option value="${_esc(c)}" ${c === item.category ? 'selected' : ''}>${_esc(c)}</option>`).join('');
+
+  // Supports exclus : par défaut un visuel est proposé partout. On ne coche
+  // ici que les exceptions, d'où la liste repliée.
+  const exclus  = new Set((_libParseListe(item.excluded_mockups)).map(Number));
+  const mockups = Array.isArray(MOCKUPS) ? MOCKUPS : [];
+  const listeMockups = mockups.length
+    ? mockups.map(m => `
+        <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text2);padding:3px 0;cursor:pointer">
+          <input type="checkbox" class="edit-lib-excl" value="${m.id}" ${exclus.has(Number(m.id)) ? 'checked' : ''}>
+          <span>${_esc(m.name || ('Mockup ' + m.id))}</span>
+        </label>`).join('')
+    : '<div style="font-size:12px;color:var(--text3)">Aucun mockup enregistré.</div>';
+
   const modal = document.createElement('div');
   modal.className = 'modal-overlay open';
   modal.id = 'edit-lib-modal';
-  modal.addEventListener('click', e => { if(e.target === modal) { modal.remove(); _modalClose(); } });
+  modal.addEventListener('click', e => { if (e.target === modal) { modal.remove(); _modalClose(); } });
   modal.innerHTML = `
-    <div class="modal-box" style="width:min(380px,94vw)" onclick="event.stopPropagation()">
+    <div class="modal-box" style="width:min(460px,94vw)" onclick="event.stopPropagation()">
       <div class="modal-header"><div class="modal-title">✏ Modifier le visuel</div><button class="modal-close" onclick="document.getElementById('edit-lib-modal').remove();_modalClose()">×</button></div>
-      <div class="modal-body" style="display:flex;flex-direction:column;gap:14px;align-items:center">
-        <img src="${API_BASE}${item.url}" style="max-height:160px;max-width:100%;border-radius:10px;object-fit:contain;background:var(--bg3);padding:8px">
-        <div style="width:100%">
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:14px">
+
+        <img src="${API_BASE}${item.url}" style="max-height:150px;max-width:100%;border-radius:10px;object-fit:contain;background:var(--bg3);padding:8px;align-self:center">
+
+        <div>
+          <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">Nom affiché au client</label>
+          <input id="edit-lib-name" type="text" value="${_esc(_libLabel(item))}" maxlength="120"
+            style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:9px 12px;color:var(--text);font-size:13px;outline:none">
+        </div>
+
+        <div>
           <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">Catégorie</label>
           <select id="edit-cat-select" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:9px 12px;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;outline:none">${opts}</select>
         </div>
-        <div style="font-size:11px;color:var(--text3);align-self:flex-start">${item.filename}</div>
+
+        <div>
+          <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">Étiquettes <span style="color:var(--text3);font-weight:400">(séparées par des virgules)</span></label>
+          <input id="edit-lib-tags" type="text" value="${_esc(_libParseListe(item.tags).join(', '))}" placeholder="rose, octobre, solidarité"
+            style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:9px 12px;color:var(--text);font-size:13px;outline:none">
+        </div>
+
+        <label style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text);cursor:pointer">
+          <input id="edit-lib-active" type="checkbox" ${item.is_active === 0 ? '' : 'checked'}>
+          <span>Proposé à la vente<span style="color:var(--text3);font-size:11.5px"> — décoché, le visuel reste en base mais disparaît du studio</span></span>
+        </label>
+
+        <details>
+          <summary style="font-size:12px;color:var(--text2);cursor:pointer">Supports exclus <span style="color:var(--text3);font-weight:400">(${exclus.size} coché·s)</span></summary>
+          <div style="margin-top:8px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;max-height:190px;overflow:auto">
+            <div style="font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.5">Par défaut le visuel est disponible sur tous les supports. Ne cochez ici que les exceptions.</div>
+            ${listeMockups}
+          </div>
+        </details>
+
+        <div style="font-size:10.5px;color:var(--text3);font-family:'DM Mono',monospace;line-height:1.6;border-top:1px solid var(--border);padding-top:10px">
+          fichier : ${_esc(item.filename)}
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-danger" onclick="deleteLibItem(${id},true)">🗑 Supprimer</button>
         <button class="btn" onclick="document.getElementById('edit-lib-modal').remove();_modalClose()">Annuler</button>
-        <button class="btn btn-primary" onclick="saveLibItemCategory(${id})">Enregistrer</button>
+        <button class="btn btn-primary" onclick="saveLibItem(${id})">Enregistrer</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
+  setTimeout(() => document.getElementById('edit-lib-name')?.focus(), 50);
 }
 
-async function saveLibItemCategory(id) {
-  const cat = document.getElementById('edit-cat-select')?.value;
-  if (!cat) return;
-  await api(`/api/library/${id}`, {method:'PATCH', body:JSON.stringify({category:cat})});
+// Les listes arrivent en JSON depuis SQLite, mais une base ancienne peut
+// rendre une chaîne vide ou un tableau déjà décodé : on accepte les trois
+// plutôt que de laisser une exception vider la fenêtre.
+function _libParseListe(brut) {
+  if (Array.isArray(brut)) return brut;
+  if (typeof brut !== 'string' || !brut.trim()) return [];
+  try { const v = JSON.parse(brut); return Array.isArray(v) ? v : []; } catch { return []; }
+}
+
+async function saveLibItem(id) {
+  const nom = (document.getElementById('edit-lib-name')?.value || '').trim();
+  if (!nom) return showToast('⚠ Le nom affiché est obligatoire');
+
+  const corps = {
+    display_name:     nom,
+    category:         document.getElementById('edit-cat-select')?.value || undefined,
+    tags:             (document.getElementById('edit-lib-tags')?.value || '').split(','),
+    is_active:        !!document.getElementById('edit-lib-active')?.checked,
+    excluded_mockups: [...document.querySelectorAll('.edit-lib-excl:checked')].map(c => c.value),
+  };
+
+  const r = await api(`/api/library/${id}`, { method: 'PATCH', body: JSON.stringify(corps) });
+  if (r === null) return showToast('⚠ Enregistrement impossible');
+
   document.getElementById('edit-lib-modal')?.remove();
   _modalClose();
-  showToast('✅ Catégorie mise à jour');
+  showToast('✅ Visuel mis à jour');
   loadLibrary();
 }
+
 
 async function deleteLibItem(id, fromModal=false) {
   if (!confirm('Supprimer cette image ?')) return;
