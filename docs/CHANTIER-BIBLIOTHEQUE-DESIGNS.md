@@ -1040,6 +1040,23 @@ partagés faits et testés le 04/10, intégration au configurateur pas
 commencée côté chantier — tout ce qui s'est passé depuis sur ce trio est le
 travail manuel d'Alan, pas cette tâche-ci).
 
+### 2026-10-10 — Repassage : HEAD inchangé, trio toujours commité ce matin
+
+Arbre de travail propre, toujours sur `dev`, HEAD toujours sur `c447a15` (le
+commit de l'entrée précédente) : aucun commit n'est arrivé entre les deux
+passages. Dernier commit sur `tl-editor.js`/`tsl-engine.js`/
+`textilelab-studio.html` toujours `fec26cf`, ce matin à 09h34 — quelques
+heures d'écart avec ce passage, pas « plusieurs jours » : même consigne que
+l'entrée précédente, je n'y touche pas.
+
+Rien de neuf sur les 3 questions du lot E (tranchées le 04/10, en attente de
+la commande de test réelle d'Alan) ni sur le lot G (après E dans le tableau).
+
+`npm test` : 161 tests, 158 passent, 3 ignorés (`social_proof_items`,
+`upsell_candidates` — cause machine connue — et `design-resume`, même cause,
+inchangé depuis l'entrée précédente). Aucune régression. Aucun fichier de
+code modifié.
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.
