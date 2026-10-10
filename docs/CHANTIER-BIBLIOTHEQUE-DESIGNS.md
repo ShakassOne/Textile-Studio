@@ -965,6 +965,36 @@ Rien d'indépendant à avancer sur le lot E (bloqué sur la commande de test
 réelle d'Alan) ni sur le lot G (après E dans le tableau). Aucun fichier de
 code modifié.
 
+### 2026-10-09 — Repassage du soir : écart qui dépasse deux jours, toujours rien de neuf
+
+Arbre propre, toujours sur `dev`, HEAD toujours sur `23f3e71` (le commit de
+l'entrée précédente) : aucun commit n'est arrivé entre les deux passages.
+Dernier commit sur `tl-editor.js`/`tsl-engine.js`/`textilelab-studio.html`
+toujours `1ffc969`, le 2026-10-07 10h10 — soit **2 jours et 10 h** d'écart
+avec ce passage (09/10 20h42), la première fois que ce chiffre dépasse
+nettement les « deux jours » invoqués dans les entrées précédentes.
+
+Ai hésité à reprendre le fil du raccordement configurateur ↔ moteur partagé
+(dernier état connu : moteur et canevas partagés faits et testés, intégration
+au configurateur pas commencée — cf. entrée du 04/10, « Reste à faire »).
+Décidé de ne pas m'y engager ce soir : 2 j 10 h reste une fourchette où Alan
+peut très bien reprendre la main le lendemain matin sur des fichiers qu'il
+retravaille à la main depuis le 05/10, et la consigne du chantier est de ne
+jamais deviner sur un choix qui engage la suite. « Plusieurs jours » devient
+cependant franchi si le prochain passage constate toujours aucun commit sur
+ce trio : **la prochaine session automatique qui retrouve ce même état (HEAD
+inchangé, trio toujours à `1ffc969`) doit considérer le seuil atteint et
+reprendre le fil**, plutôt que de reconduire cette même prudence une fois de
+plus.
+
+Rien de neuf non plus sur les 3 questions du lot E (tranchées le 04/10, lot
+câblé, en attente de la commande de test réelle d'Alan) ni sur le lot G
+(après E dans le tableau).
+
+`npm test` : 149 tests, 147 passent, 2 ignorés (`social_proof_items` et
+`upsell_candidates`, cause machine connue, inchangée). Aucune régression.
+Aucun fichier de code modifié.
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.
