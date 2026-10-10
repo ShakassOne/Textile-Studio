@@ -69,6 +69,32 @@ function paliers(faceSurcharges = FACE_SURCHARGES) {
     .map(n => ({ amount: n, key: amountKey(n), label: amountLabel(n) }));
 }
 
+/**
+ * Arrondit un montant au palier configuré immédiatement SUPÉRIEUR.
+ * ──────────────────────────────────────────────────────────────────────────
+ * Une variante Shopify est créée à la volée pour chaque montant inédit. Un
+ * montant hors barème — barème changé après coup, appel direct à l'API,
+ * sonde de test — fabrique donc une variante de plus, définitivement. À
+ * sept tailles et douze paliers on frôle déjà la limite de cent variantes
+ * par produit : laisser passer des montants arbitraires, c'est la dépasser.
+ *
+ * Vers le HAUT, jamais vers le bas : arrondir à l'inférieur reviendrait à
+ * offrir la différence au client. Au-delà du plus haut palier on s'y tient —
+ * il vaut A3 recto + A3 verso, soit tout ce qu'on sait imprimer.
+ *
+ * Un montant déjà sur un palier ressort inchangé : en fonctionnement normal
+ * la surcharge est une somme de paliers, et cette fonction ne fait rien.
+ *
+ * Fonction PURE : aucun accès DB, réseau ou DOM.
+ */
+function arrondirAuPalier(montant, faceSurcharges = FACE_SURCHARGES) {
+  const n = Math.round(Number(montant || 0) * 100) / 100;
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  const echelle = paliers(faceSurcharges).map((t) => t.amount);
+  for (const a of echelle) if (a >= n - 0.001) return a;
+  return echelle[echelle.length - 1];
+}
+
 /** Heuristique : un nom d'option Shopify désigne-t-il l'impression ? */
 function isPrintOptionName(name) {
   return /impr|print|perso|finition/i.test(String(name || ''));
@@ -215,6 +241,7 @@ module.exports = {
   amountKey,
   mappingKey,
   paliers,
+  arrondirAuPalier,
   isPrintOptionName,
   amountFromOptionValue,
 };

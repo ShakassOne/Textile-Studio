@@ -86,3 +86,42 @@ test('montantComposition — le barème de la boutique prime sur le défaut', ()
   const comp = { faces: { front: uneFace(0.5) } };
   assert.equal(montantComposition(comp, { front: 420 }, { A6: 1, A5: 2, A4: 9, A3: 12 }), 9);
 });
+
+// ── Arrondi au palier ─────────────────────────────────────────────────────
+//
+// Garde-fou de catalogue : chaque montant inédit fait naître une variante
+// Shopify qui ne disparaît plus. Sept tailles et douze paliers frôlent déjà
+// la limite de cent variantes par produit.
+
+test('arrondirAuPalier remonte au palier configuré, jamais en dessous', () => {
+  assert.equal(PRINT.arrondirAuPalier(1.2), 1.5);
+  assert.equal(PRINT.arrondirAuPalier(2.5), 3);
+  assert.equal(PRINT.arrondirAuPalier(3.2), 3.5);
+  assert.equal(PRINT.arrondirAuPalier(7.9), 8);
+});
+
+test('arrondirAuPalier laisse un montant déjà sur un palier', () => {
+  // En fonctionnement normal la surcharge est une somme de paliers : la
+  // fonction ne doit alors RIEN changer, sinon elle surfacturerait.
+  for (const t of PRINT.paliers()) {
+    assert.equal(PRINT.arrondirAuPalier(t.amount), t.amount, 'palier ' + t.amount);
+  }
+});
+
+test('arrondirAuPalier borne au plus haut palier et encaisse l\'absurde', () => {
+  assert.equal(PRINT.arrondirAuPalier(9), 8, 'au-delà d\'A3 recto + A3 verso');
+  assert.equal(PRINT.arrondirAuPalier(1000), 8);
+  assert.equal(PRINT.arrondirAuPalier(0), 0);
+  assert.equal(PRINT.arrondirAuPalier(-5), 0);
+  assert.equal(PRINT.arrondirAuPalier(null), 0);
+  assert.equal(PRINT.arrondirAuPalier(undefined), 0);
+  assert.equal(PRINT.arrondirAuPalier(NaN), 0);
+});
+
+test('arrondirAuPalier suit le barème de la boutique, pas le défaut', () => {
+  const maison = { A6: 1, A5: 2, A4: 9, A3: 12 };
+  // Paliers de ce barème : 0/1/2/3/4/9/10/11/12/13/18/21/24…
+  assert.equal(PRINT.arrondirAuPalier(1.5, maison), 2);
+  assert.equal(PRINT.arrondirAuPalier(5, maison), 9);
+  assert.equal(PRINT.arrondirAuPalier(9, maison), 9);
+});

@@ -661,7 +661,21 @@ const _numId = (v) => String(v || '').replace(/^gid:\/\/shopify\/ProductVariant\
 async function resolveVariantForCustomization(p) {
   const { shopRecord, shopId } = p;
   const baseVariantId = _numId(p.baseVariantId);
-  const amount = Math.round(Number(p.amount || 0) * 100) / 100;
+
+  // Arrondi au palier AVANT toute recherche : la stratégie C crée une
+  // variante Shopify pour chaque montant inédit, et elle reste. Un montant
+  // hors barème en fabriquerait une de plus à chaque fois, jusqu'à buter
+  // sur la limite de cent variantes par produit. Vers le haut, jamais vers
+  // le bas : arrondir à l'inférieur offrirait la différence au client.
+  const amountBrut = Math.round(Number(p.amount || 0) * 100) / 100;
+  let bareme;
+  try { bareme = require('./pricing').lireBaremeFormats(shopId); }
+  catch (e) { bareme = undefined; }   // barème par défaut
+  const amount = PRINT.arrondirAuPalier(amountBrut, bareme);
+  if (amount !== amountBrut) {
+    console.info('[resolve-variant] montant hors barème arrondi',
+      JSON.stringify({ demande: amountBrut, retenu: amount, base_variant_id: baseVariantId }));
+  }
 
   if (!baseVariantId) return { ok: false, error: 'baseVariantId manquant' };
 
