@@ -995,6 +995,51 @@ câblé, en attente de la commande de test réelle d'Alan) ni sur le lot G
 `upsell_candidates`, cause machine connue, inchangée). Aucune régression.
 Aucun fichier de code modifié.
 
+### 2026-10-10 — Session automatique : audit TSL-004 en cours sur le trio éditeur, rien touché
+
+Arbre de travail propre, toujours sur `dev`. Trois commits sont arrivés
+depuis la dernière entrée (09/10 20h42, HEAD `23f3e71`) : `24b435d`
+(`fix(mobile)`, TICKET 1 de l'audit du 10/10, TSL-004), `fec26cf`
+(`fix(moteur)`, TICKET 3 du même audit) et `ee725b7` (`fix(tarification)`,
+même audit). Tous les trois datés de ce matin, entre 09h21 et 09h57. Les
+deux premiers touchent exactement le trio `tl-editor.js`/`tsl-engine.js`/
+`textilelab-studio.html` qu'Alan retravaille à la main.
+
+Conclusion : la règle posée le 09/10 au soir (« si le prochain passage
+retrouve le même HEAD, considérer le seuil de deux jours atteint et
+reprendre le fil ») **ne s'applique pas** — ce n'est pas le même état, HEAD
+a bougé et c'est une activité fraîche de ce matin même sur ce trio précis,
+pas un silence prolongé. Je n'ai donc touché ni `tl-editor.js`, ni
+`tsl-engine.js`, ni `textilelab-studio.html` : même prudence que les
+passages précédents, pour une raison encore plus nette cette fois (quelques
+heures d'écart, pas plusieurs jours).
+
+Je n'ai pas trouvé de trace de cet « audit du 10/10 » (TSL-004) dans
+`docs/ROADMAP-DEV.md` ni ailleurs dans `docs/` — probablement suivi hors de
+ce dépôt (issue, Linear) ou par une autre routine automatisée. Sans
+incidence sur ce chantier : aucun des trois commits ne touche au lot E ni au
+lot G.
+
+Rien de neuf sur les 3 questions du lot E (tranchées le 04/10, toujours en
+attente de la commande de test réelle d'Alan) ni sur le lot G (après E dans
+le tableau, pas de raison de l'entamer avant).
+
+`npm test` : 161 tests, 158 passent, 3 ignorés — `social_proof_items` et
+`upsell_candidates` (cause machine connue, inchangée) plus un nouveau,
+`design-resume`, même cause (better-sqlite3 natif indisponible sur cette
+machine) : pas une régression, c'est le test d'une fonctionnalité ajoutée
+entre-temps (lien de reprise par email, commit `8ef7755`). Aucune régression
+réelle. Aucun fichier de code modifié.
+
+**Pour la prochaine session automatique :** si ce même trio continue de
+recevoir des commits à intervalle de quelques heures (comme ce matin),
+rester sur cette prudence. Le seuil « plusieurs jours sans commit sur le
+trio » reste le bon repère pour reprendre le fil du raccordement
+configurateur ↔ moteur partagé (dernier état connu : moteur et canevas
+partagés faits et testés le 04/10, intégration au configurateur pas
+commencée côté chantier — tout ce qui s'est passé depuis sur ce trio est le
+travail manuel d'Alan, pas cette tâche-ci).
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.
