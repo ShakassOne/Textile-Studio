@@ -32,6 +32,18 @@
   // (comportement identique à aujourd'hui : rien ne s'affiche).
   var _TL_EMAIL_RESUME_ENABLED = false;
 
+  // Flag item 26 (bouton "Modifier" sur une ligne de panier déjà personnalisée) :
+  // même mécanique que _TL_EMAIL_RESUME_ENABLED ci-dessus, lu une fois par
+  // _tlLoadStyleSettings. false tant que la réponse n'est pas arrivée.
+  var _TL_CART_EDIT_DESIGN_ENABLED = false;
+
+  // Clé ("<variantId>:<hash>") de la ligne de panier en cours de modification
+  // via le bouton "Modifier" (item 26), le temps que le nouvel ajout soit
+  // confirmé — remise à null après la suppression de l'ancienne ligne OU à la
+  // fermeture du studio sans sauvegarde (sinon un ajout ultérieur sans rapport
+  // supprimerait à tort cette ancienne ligne).
+  var _tlEditingCartKey = null;
+
   // ── Styles injectés ─────────────────────────────────────────────────────────
   // Le bloc CART_FIX_CSS résout le bug de chevauchement image/titre dans les
   // drawers panier des thèmes Shopify modernes (Studio, Sense, etc.) où une
@@ -660,11 +672,22 @@
         var items = cart.items || [];
         if (!items.length) return;
 
-        // Map: key → { url } (item.key = "<variantId>:<hash>")
+        // Map: key → { url, designId, cartKey } (item.key = "<variantId>:<hash>")
+        // designId (_design_id) est déjà posé en propriété de ligne panier à
+        // chaque ajout (routes/render.js, routes/storefront.js, routes/app-proxy.js)
+        // mais n'était jusqu'ici jamais lu côté drawer — aucun appel réseau
+        // supplémentaire, juste une clé de plus prise sur la même réponse /cart.js
+        // (backlog item 26, bouton "Modifier" sur une ligne déjà personnalisée).
         var byKey = {};
         items.forEach(function(item) {
           var url = (item.properties && item.properties['_preview_img']) || null;
-          if (url) byKey[item.key] = { url: url };
+          if (url) {
+            byKey[item.key] = {
+              url: url,
+              designId: (item.properties && item.properties['_design_id']) || null,
+              cartKey: item.key,
+            };
+          }
         });
 
         // Approche A : matching par data-key (Dawn 2024+, plupart des thèmes modernes)
@@ -676,6 +699,7 @@
           rows.forEach(function(row) {
             _tlInjectOverlay(row, byKey[key].url);
             _tlFixLineItemProps(row);
+            _tlEnsureModifierButton(row, byKey[key]);
           });
         });
 
@@ -694,6 +718,10 @@
             if (!url || !rows[idx]) return;
             _tlInjectOverlay(rows[idx], url);
             _tlFixLineItemProps(rows[idx]);
+            _tlEnsureModifierButton(rows[idx], {
+              designId: (item.properties && item.properties['_design_id']) || null,
+              cartKey: item.key,
+            });
           });
         });
 
@@ -705,6 +733,7 @@
           nodes.forEach(function(node) {
             _tlInjectOverlay(node, byKey[key].url);
             _tlFixLineItemProps(node);
+            _tlEnsureModifierButton(node, byKey[key]);
           });
         });
       })
@@ -735,7 +764,64 @@
     setTimeout(_tlSyncCartImages, 1500);
   }
 
+  // ── Bouton "Modifier" sur une ligne de panier déjà personnalisée (item 26) ─
+  // L'URL du studio est construite à la main (comme le fait déjà
+  // _tlInjectEmailResumeLink plus bas pour un autre besoin) plutôt que via
+  // buildStudioUrl(ref) : une ligne de panier ne porte que _design_id, pas
+  // forcément le handle/id produit — déjà suffisant pour rouvrir le studio
+  // sur cette création précise.
+  function _tlCartEditDesignUrl(designId) {
+    var shop = (window.Shopify && window.Shopify.shop) || window._TL_SHOP || window.location.hostname;
+    var params = new URLSearchParams({ shop: shop, embed: '1', design: String(designId) });
+    if (_tlCustomerToken) params.set('ct', _tlCustomerToken);
+    return TSL_BACKEND_ORIGIN + '/textilelab-studio.html?' + params.toString();
+  }
+
+  // Ajoute le bouton "Modifier" juste après le lien "Voir mon design" déjà
+  // rendu dans `row` — appelé UNIQUEMENT depuis _tlSyncCartImages (ci-dessus),
+  // jamais depuis _tlFixLineItemProps/_tlFixAllLineItems : ces derniers tournent
+  // aussi en amont SANS `extra` (balayage "immédiat" anti-flicker, avant que le
+  // fetch /cart.js n'ait pu résoudre), et leur garde `dataset.tlFixed` rendrait
+  // sinon cette insertion définitivement sautée pour la ligne si elle passait
+  // par le même chemin trop tôt. Idempotent via `data-tl-cart-key` sur le
+  // bouton lui-même (pas de garde dans le DOM parent) → peut être retenté sans
+  // coût à chaque sync tant que "Voir mon design" n'est pas encore rendu.
+  function _tlEnsureModifierButton(row, extra) {
+    if (!_TL_CART_EDIT_DESIGN_ENABLED || !row || !extra || !extra.designId || !extra.cartKey) return;
+    var link = row.querySelector('.tl-voir-design-link');
+    if (!link || !link.parentNode) return; // pas encore rendu → retenté au sync suivant
+    var cartKeyAttr = String(extra.cartKey).replace(/"/g, '');
+    if (link.parentNode.querySelector('.tl-cart-edit-btn[data-tl-cart-key="' + cartKeyAttr + '"]')) return;
+    // Couleur en dur comme les autres boutons injectés ici : ce script
+    // s'injecte dans le thème du marchand, qui n'a aucune de nos variables CSS.
+    link.insertAdjacentHTML('afterend',
+      '<button type="button" class="tl-cart-edit-btn" data-tl-cart-key="' + cartKeyAttr + '" ' +
+      'style="display:inline-flex;align-items:center;gap:6px;' +
+      'padding:6px 12px;margin-top:4px;margin-left:6px;border-radius:8px;' +
+      'background:transparent;color:#111114 !important;border:1px solid #111114;' +
+      'font-size:12px;font-weight:600;cursor:pointer;">' +
+      '<span aria-hidden="true">&#9999;&#65039;</span> Modifier</button>'
+    );
+    var btn = link.parentNode.querySelector('.tl-cart-edit-btn[data-tl-cart-key="' + cartKeyAttr + '"]');
+    if (!btn) return;
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      // Mémorisé pour que le handler 'tl-add-to-cart' retire cette ancienne
+      // ligne une fois le nouvel ajout confirmé (voir plus bas) ; remis à
+      // null sur une fermeture du studio SANS sauvegarde (case 'tl-close-modal').
+      _tlEditingCartKey = extra.cartKey;
+      openModal(_tlCartEditDesignUrl(extra.designId));
+    });
+  }
+
   // ── Nettoyage des propriétés line item dans le drawer ─────────────────────
+  // Le bouton "Modifier" (item 26) n'est PAS injecté ici : cette fonction tourne
+  // aussi en amont sans donnée cart (balayage "immédiat" anti-flicker, avant que
+  // le fetch /cart.js n'ait pu résoudre) et son garde `dataset.tlFixed` rendrait
+  // sinon l'insertion définitivement sautée pour la ligne. Le lien "Voir mon
+  // design" est juste marqué `.tl-voir-design-link`, point d'ancrage que
+  // _tlEnsureModifierButton (ci-dessus, appelée depuis _tlSyncCartImages où la
+  // donnée cart est connue) utilise pour s'insérer après coup, sans course.
   function _tlFixLineItemProps(container) {
     if (!container) return;
     var dts = container.querySelectorAll('dl dt');
@@ -755,7 +841,7 @@
         var url = dd.textContent.trim();
         dt.style.display = 'none'; // masquer la key technique
         if (url.startsWith('http')) {
-          dd.innerHTML = '<a href="' + url + '" target="_blank" rel="noopener" ' +
+          dd.innerHTML = '<a href="' + url + '" target="_blank" rel="noopener" class="tl-voir-design-link" ' +
             'style="display:inline-flex;align-items:center;gap:6px;' +
             'padding:6px 12px;margin-top:4px;border-radius:8px;' +
             'background:#111114;color:#ffffff !important;' +
@@ -800,7 +886,7 @@
       var m = t.match(/^Voir mon design\s*[:=]\s*(https?:\/\/\S+)\s*$/i);
       if (m) {
         el.dataset.tlFixed2 = '1';
-        el.innerHTML = '<a href="' + m[1] + '" target="_blank" rel="noopener" ' +
+        el.innerHTML = '<a href="' + m[1] + '" target="_blank" rel="noopener" class="tl-voir-design-link" ' +
           'style="display:inline-flex;align-items:center;gap:6px;' +
           'padding:6px 12px;margin-top:4px;border-radius:8px;' +
           'background:#111114;color:#ffffff !important;' +
@@ -833,6 +919,12 @@
 
         case 'tl-close-modal':
           closeModal();
+          // Fermeture SANS sauvegarde après un clic sur "Modifier" (item 26) :
+          // remettre à null pour qu'un ajout ultérieur sans rapport ne
+          // supprime pas à tort l'ancienne ligne modifiée (le cas "fermeture
+          // APRÈS sauvegarde" est géré dans 'tl-add-to-cart' ci-dessous, qui
+          // ne passe jamais par ce message).
+          _tlEditingCartKey = null;
           _tlMaybeOfferEmailResumeLink(e.data.designId || null, e.data.designToken || null);
           break;
 
@@ -950,7 +1042,23 @@
                 document.body.classList.remove('tl-cart-loading');
               }, 1800);
 
-              // 5. Suggestions curées par le marchand pour ce produit.
+              // 5. Si cet ajout remplace une création déjà en panier (bouton
+              //    "Modifier", item 26) : retirer l'ancienne ligne plutôt que
+              //    d'empiler un doublon. Jamais bloquant pour le nouvel ajout
+              //    déjà confirmé ci-dessus, même si cette suppression échoue.
+              if (_tlEditingCartKey) {
+                var _oldKey = _tlEditingCartKey;
+                _tlEditingCartKey = null;
+                fetch('/cart/change.json', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ id: _oldKey, quantity: 0 }),
+                })
+                .then(function() { _tlFixAllLineItems(); _tlSyncCartImages(); })
+                .catch(function() {});
+              }
+
+              // 6. Suggestions curées par le marchand pour ce produit.
               _tlProposerUpsell(e.data);
             })
             .catch(function(err) {
@@ -1173,6 +1281,14 @@
           // consommée à la fermeture du studio (case 'tl-close-modal' ci-dessous) —
           // pas d'appel réseau supplémentaire ici.
           _TL_EMAIL_RESUME_ENABLED = !!data.email_resume_enabled;
+          // Flag item 26 (bouton "Modifier" sur une ligne de panier) : simple
+          // mémorisation, consommée par _tlEnsureModifierButton à chaque sync
+          // panier — si la réponse arrive après que des lignes ont déjà été
+          // fixées sans le bouton, le sync suivant (debounce/MutationObserver/
+          // évènements thème) le rattrape, _tlEnsureModifierButton n'étant pas
+          // gardée par le même marqueur "déjà traité" que _tlFixLineItemProps.
+          _TL_CART_EDIT_DESIGN_ENABLED = !!data.cart_edit_design_enabled;
+          if (_TL_CART_EDIT_DESIGN_ENABLED) _tlSyncCartImages();
         })
         .catch(function() {});
     } catch (e) { /* silencieux */ }
