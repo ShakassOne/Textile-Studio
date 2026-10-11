@@ -1081,6 +1081,23 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
   </div>
 </div>
 
+<div class="modal-overlay" id="upsell-modal" onclick="if(event.target===this)closeModal('upsell-modal')">
+  <div class="modal-box" style="width:min(480px,94vw)">
+    <div class="modal-header">
+      <div class="modal-title">🔗 Produits suggérés</div>
+      <button class="modal-close" onclick="closeModal('upsell-modal')">×</button>
+    </div>
+    <div class="modal-body" style="display:flex;flex-direction:column;gap:10px">
+      <div style="font-size:11px;color:var(--text3)">Sélectionnez jusqu'à 4 produits à proposer après l'ajout au panier de <strong id="upsell-modal-source-title"></strong>.</div>
+      <div id="upsell-modal-list" style="display:flex;flex-direction:column;gap:4px;max-height:360px;overflow-y:auto"></div>
+    </div>
+    <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn" onclick="closeModal('upsell-modal')">Annuler</button>
+      <button class="btn btn-primary" onclick="_plSaveUpsellCandidates()">💾 Enregistrer</button>
+    </div>
+  </div>
+</div>
+
 <input type="file" id="global-view-file-input" accept="image/*" style="display:none" onchange="handleViewImage(event)">
 <input type="file" id="lib-upload-file-input" accept="image/*,image/svg+xml" multiple style="display:none">
 <input type="file" id="lib-upload-folder-input" accept="image/*,image/svg+xml" multiple webkitdirectory style="display:none">
@@ -3215,13 +3232,16 @@ async function deleteMockup(id) {
 let _plMockups    = [];   // cache mockups
 let _plProducts   = [];   // cache produits Shopify
 let _plLinks      = {};   // { shopify_product_id: mockup_id }
+let _plUpsellGrouped = {}; // { source_shopify_product_id: [{id, target_shopify_product_id, ...}] } — Upsell V2
+let _plUpsellSourcePid = null; // produit source en cours d'édition dans le modal upsell
 
 async function loadProductLinks() {
-  // Charger mockups + produits Shopify + liaisons existantes en parallèle
-  const [mockupsRaw, shopifyResult, linksRaw] = await Promise.all([
+  // Charger mockups + produits Shopify + liaisons existantes + candidats upsell en parallèle
+  const [mockupsRaw, shopifyResult, linksRaw, upsellGrouped] = await Promise.all([
     api('/api/mockups'),
     _fetchShopifyProducts(),
     api('/api/product-links'),
+    api('/api/upsell-candidates'),
   ]);
 
   _plMockups  = Array.isArray(mockupsRaw) ? mockupsRaw : [];
@@ -3230,6 +3250,7 @@ async function loadProductLinks() {
   if (Array.isArray(linksRaw)) {
     linksRaw.forEach(l => { _plLinks[l.shopify_product_id] = l.mockup_id; });
   }
+  _plUpsellGrouped = (upsellGrouped && typeof upsellGrouped === 'object' && !Array.isArray(upsellGrouped)) ? upsellGrouped : {};
 
   _renderShopifyStatus(shopifyResult.configured, shopifyResult.error);
   _renderProductLinks();
@@ -3316,6 +3337,11 @@ function _renderProductLinks() {
     const statusHtml = mock
       ? `<span class="pl-linked">✓ Lié</span>`
       : `<span class="pl-unlinked">Non lié</span>`;
+    const upsellCount = (_plUpsellGrouped[pid] || []).length;
+    const upsellBtn = linked
+      ? `<button class="btn btn-sm" id="pl-upsell-btn-${_pid2id(pid)}" title="Produits à proposer après l'ajout au panier"
+           onclick="_plOpenUpsellModal('${_esc(String(pid)).replace(/'/g,"\\'")}')">🔗 Produits suggérés (${upsellCount})</button>`
+      : '';
     return `
       <tr>
         <td>
@@ -3334,10 +3360,11 @@ function _renderProductLinks() {
         </td>
         <td id="pl-status-${_pid2id(pid)}">
           ${statusHtml}
-          <div style="margin-top:6px">
+          <div style="margin-top:6px;display:flex;flex-direction:column;gap:4px">
             <button class="btn btn-sm pl-prep-btn" data-pid="${_esc(String(pid))}"
               title="Ajoute l'option « Impression » (masquée sur la fiche) pour la tarification à la volée"
               onclick="_plPrepareCustomization(this)">✨ Activer perso tarifée</button>
+            ${upsellBtn}
           </div>
         </td>
       </tr>`;
@@ -3415,6 +3442,468 @@ async function _onPlChange(sel) {
   } else {
     showToast('⚠ Erreur lors de la sauvegarde');
   }
+}
+
+// ── Upsell V2 (admin) — « Produits suggérés » ───────────────────────────
+// Associe à un produit source (déjà lié à un mockup) 2-4 autres produits
+// déjà liés à un mockup, proposés après l'ajout au panier. Réutilise le
+// backend existant (routes/upsell-candidates.js, livré le 02/10) : pas de
+// rendu réel ici, juste la curation des paires source→target.
+const UPSELL_MAX_TARGETS = 4;
+
+function _plOpenUpsellModal(pid) {
+  _plUpsellSourcePid = pid;
+  const sourceProduct = _plProducts.find(p => String(p.id) === String(pid));
+  document.getElementById('upsell-modal-source-title').textContent = sourceProduct ? sourceProduct.title : pid;
+
+  const existingIds = new Set((_plUpsellGrouped[pid] || []).map(c => String(c.target_shopify_product_id)));
+  const candidates = _plProducts.filter(p => String(p.id) !== String(pid) && _plLinks[p.id]);
+
+  const list = document.getElementById('upsell-modal-list');
+  if (!candidates.length) {
+    list.innerHTML = `<div style="font-size:12px;color:var(--text3);padding:8px">Aucun autre produit lié à un mockup pour l'instant.</div>`;
+  } else {
+    list.innerHTML = candidates.map(p => `
+      <label style="display:flex;align-items:center;gap:8px;padding:6px 4px;cursor:pointer">
+        <input type="checkbox" class="upsell-target-cb" value="${_esc(String(p.id))}" ${existingIds.has(String(p.id)) ? 'checked' : ''} onchange="_plEnforceUpsellLimit(this)">
+        <span style="font-size:13px">${_esc(p.title)}</span>
+      </label>`).join('');
+  }
+  document.getElementById('upsell-modal').classList.add('open');
+}
+
+function _plEnforceUpsellLimit(changedCb) {
+  const boxes = Array.from(document.querySelectorAll('#upsell-modal-list .upsell-target-cb'));
+  const checkedCount = boxes.filter(cb => cb.checked).length;
+  boxes.forEach(cb => { if (!cb.checked) cb.disabled = checkedCount >= UPSELL_MAX_TARGETS; });
+  if (changedCb && changedCb.checked && checkedCount > UPSELL_MAX_TARGETS) {
+    changedCb.checked = false;
+    showToast(`⚠ Maximum ${UPSELL_MAX_TARGETS} produits suggérés`);
+  }
+}
+
+async function _plSaveUpsellCandidates() {
+  const pid = _plUpsellSourcePid;
+  if (!pid) return;
+  const existing  = _plUpsellGrouped[pid] || [];
+  const existingById = new Map(existing.map(c => [String(c.target_shopify_product_id), c]));
+  const checkedIds = Array.from(document.querySelectorAll('#upsell-modal-list .upsell-target-cb'))
+    .filter(cb => cb.checked).map(cb => cb.value);
+
+  for (const targetId of checkedIds) {
+    if (existingById.has(targetId)) continue;
+    const r = await api('/api/upsell-candidates', {
+      method: 'POST',
+      body: JSON.stringify({ source_shopify_product_id: pid, target_shopify_product_id: targetId }),
+    });
+    if (!r || r.error) {
+      showToast('❌ ' + (window.__TL_LAST_API_ERROR || 'Échec de la sauvegarde'));
+      return;
+    }
+  }
+  const checkedSet = new Set(checkedIds);
+  for (const candidate of existing) {
+    if (checkedSet.has(String(candidate.target_shopify_product_id))) continue;
+    const r = await api('/api/upsell-candidates/' + encodeURIComponent(candidate.id), { method: 'DELETE' });
+    if (!r) {
+      showToast('❌ ' + (window.__TL_LAST_API_ERROR || 'Échec de la sauvegarde'));
+      return;
+    }
+  }
+
+  const refreshed = await api('/api/upsell-candidates?source=' + encodeURIComponent(pid));
+  _plUpsellGrouped[pid] = Array.isArray(refreshed) ? refreshed : [];
+  const btn = document.getElementById('pl-upsell-btn-' + _pid2id(pid));
+  if (btn) btn.textContent = `🔗 Produits suggérés (${_plUpsellGrouped[pid].length})`;
+
+  showToast('✅ Produits suggérés enregistrés');
+  closeModal('upsell-modal');
+}
+
+// ============================================
+// ZONES D'AFFICHAGE PRODUIT
+// ============================================
+// Calibration de la surface imprimable sur la PHOTO COMMERCIALE d'un produit
+// vierge. Rien à voir avec « Mockups & Zones », qui définit la zone du
+// fichier d'impression sur un packshot à plat : formes, repères et usages
+// différents, et deux tables distinctes en base.
+//
+// Les coins sont enregistrés en POURCENTAGE de l'image, jamais en pixels : le
+// CDN Shopify sert la même photo en plusieurs définitions.
+
+let _dzProducts = [], _dzImages = [], _dzImage = null, _dzCorners = null, _dzZones = [];
+// Pour le produit en cours : la zone master (valable par défaut sur toutes
+// les photos) et les zones propres à une photo, indexées par identifiant.
+let _dzMaster = null, _dzOverrides = {};
+// Face de la zone en cours d'édition. Le recto est la règle : une seconde
+// photo sert d'abord à rattraper un cadrage, pas à désigner un dos.
+let _dzFace = 'front';
+
+function choisirFaceZone(face) {
+  _dzFace = face === 'back' ? 'back' : 'front';
+  _dzMajBoutonFace();
+  showToast(_dzFace === 'back'
+    ? 'Verso sélectionné — pensez à enregistrer la zone'
+    : 'Recto sélectionné : cette zone restera un cadrage de l\'avant');
+}
+
+// Deux boutons et non un interrupteur : on choisit la face de la photo
+// qu'on est en train de calibrer, on ne bascule pas un état qu'il faudrait
+// deviner. Celui qui est actif indique ce qui sera enregistré.
+function _dzMajBoutonFace() {
+  [['front', 'dz-face-front'], ['back', 'dz-face-back']].forEach(([f, id]) => {
+    const b = document.getElementById(id);
+    if (!b) return;
+    b.style.display = '';
+    b.classList.toggle('btn-primary', _dzFace === f);
+  });
+}
+
+// Zone de départ : un cadre raisonnable au centre, que l'admin ajuste.
+// Ordre imposé : haut-gauche, haut-droit, bas-droit, bas-gauche.
+const DZ_DEPART = [{ x: 32, y: 26 }, { x: 68, y: 26 }, { x: 68, y: 64 }, { x: 32, y: 64 }];
+const DZ_LETTRES = ['1', '2', '3', '4'];
+
+async function loadDisplayZones() {
+  const sel = document.getElementById('dz-product');
+  const [res, zones] = await Promise.all([
+    _fetchShopifyProducts(),
+    api('/api/admin/product-display-zones').catch(() => []),
+  ]);
+  _dzProducts = res.products || [];
+  _dzZones    = Array.isArray(zones) ? zones : [];
+
+  const calibres = new Set(_dzZones.map(z => String(z.productId)));
+  sel.innerHTML = '<option value="">— Choisir un produit —</option>' +
+    _dzProducts.map(p => {
+      const id = String(p.id || '').replace(/\D/g, '');
+      return `<option value="${id}">${calibres.has(id) ? '✓ ' : ''}${_esc(p.title)}</option>`;
+    }).join('');
+
+  _dzRenderList();
+}
+
+function _dzRenderList() {
+  const el = document.getElementById('dz-list');
+  if (!_dzZones.length) {
+    el.innerHTML = 'Aucun produit calibré pour l\'instant.';
+    return;
+  }
+  const titres = {};
+  _dzProducts.forEach(p => { titres[String(p.id || '').replace(/\D/g, '')] = p.title; });
+  el.innerHTML = _dzZones.map(z => `
+    <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)">
+      <span style="color:var(--amber)">◆</span>
+      <span style="flex:1;color:var(--text)">${_esc(titres[String(z.productId)] || ('Produit ' + z.productId))}</span>
+      <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text3)">${_esc(z.updatedAt || '')}</span>
+      <button class="btn btn-sm" onclick="selectDisplayZoneProduct('${z.productId}', true)">Modifier</button>
+    </div>`).join('');
+}
+
+async function selectDisplayZoneProduct(productId, depuisListe) {
+  const stage = document.getElementById('dz-stage');
+  const vide  = document.getElementById('dz-vide');
+  const badge = document.getElementById('dz-badge');
+  document.getElementById('dz-save').disabled = true;
+  document.getElementById('dz-del').style.display = 'none';
+  document.getElementById('dz-reset').style.display = 'none';
+  document.getElementById('dz-heriter').style.display = 'none';
+
+  if (depuisListe) document.getElementById('dz-product').value = productId;
+
+  if (!productId) {
+    stage.style.display = 'none'; vide.style.display = ''; badge.textContent = '—';
+    document.getElementById('dz-images').innerHTML = '';
+    return;
+  }
+
+  badge.textContent = '⏳ chargement…';
+  const data = await api(`/api/admin/products/${productId}/display-zone`);
+  if (!data) { badge.textContent = '⚠ illisible'; return; }
+
+  _dzImages    = data.images || [];
+  _dzMaster    = data.master || null;
+  _dzOverrides = {};
+  (data.overrides || []).forEach(z => { _dzOverrides[z.referenceMediaId] = z; });
+
+  // Photo de départ : celle du master si elle existe encore, sinon la
+  // première. Si elle a disparu du produit, on le dit — garder la zone en
+  // silence la ferait tomber au mauvais endroit.
+  const refId = _dzMaster?.referenceMediaId || null;
+  const ref   = refId ? _dzImages.find(i => i.id === refId) : null;
+  if (refId && !ref) {
+    showToast('⚠ L\'image calibrée n\'existe plus sur ce produit — repositionnez la zone');
+  }
+  _dzImage = ref || _dzImages[0] || null;
+
+  if (!_dzImage) {
+    stage.style.display = 'none'; vide.style.display = '';
+    badge.textContent = '⚠ ce produit n\'a aucune image';
+    document.getElementById('dz-images').innerHTML = '';
+    return;
+  }
+
+  vide.style.display = 'none';
+  stage.style.display = '';
+  _dzRenderImages();
+  _dzAfficherImage();
+}
+
+/**
+ * Coins à afficher pour la photo courante.
+ *
+ * Une photo peut avoir sa propre zone — c'est le cas d'un coloris dont la
+ * prise de vue cadre le produit plus haut. Sinon elle hérite du master, qui
+ * sert alors de point de départ : le marchand n'a qu'à corriger.
+ */
+function _dzCoinsPourPhoto() {
+  const propre = _dzImage && _dzOverrides[_dzImage.id];
+  if (propre?.corners?.length === 4) return propre.corners.map(c => ({ ...c }));
+  if (_dzMaster?.corners?.length === 4) return _dzMaster.corners.map(c => ({ ...c }));
+  return DZ_DEPART.map(c => ({ ...c }));
+}
+
+/** Badge et boutons, selon ce que porte la photo courante. */
+function _dzMajStatut() {
+  const badge = document.getElementById('dz-badge');
+  const propre = _dzImage && _dzOverrides[_dzImage.id];
+  const estPhotoDuMaster = _dzMaster && _dzImage && _dzMaster.referenceMediaId === _dzImage.id;
+
+  if (propre && propre.face === 'back') badge.textContent = '🔄 verso — seconde face à imprimer';
+  else if (propre)              badge.textContent = '◆ zone propre à cette photo';
+  else if (estPhotoDuMaster)    badge.textContent = '✓ zone de référence';
+  else if (_dzMaster)           badge.textContent = '↳ hérite de la zone de référence';
+  else                          badge.textContent = 'zone à poser';
+
+  document.getElementById('dz-del').style.display = _dzMaster ? '' : 'none';
+  const btnHeriter = document.getElementById('dz-heriter');
+  if (btnHeriter) btnHeriter.style.display = propre ? '' : 'none';
+}
+
+function _dzRenderImages() {
+  document.getElementById('dz-images').innerHTML = _dzImages.map(i => {
+    const zone   = _dzOverrides[i.id];
+    const verso  = zone && zone.face === 'back';
+    const propre = !!zone;
+    const master = _dzMaster && _dzMaster.referenceMediaId === i.id;
+    const marque = verso ? 'V' : (propre ? '◆' : (master ? '✓' : ''));
+    return `
+    <div class="dz-thumb ${_dzImage && i.id === _dzImage.id ? 'on' : ''}" data-id="${_esc(i.id)}"
+         title="${i.width}×${i.height}${verso ? ' — VERSO' : (propre ? ' — zone propre' : (master ? ' — zone de référence' : ''))}"
+         onclick="_dzChoisirImage('${_esc(i.id)}')">
+      <img src="${_esc(i.url)}" alt="" loading="lazy">
+      ${marque ? `<span class="dz-marque">${marque}</span>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function _dzChoisirImage(id) {
+  const img = _dzImages.find(i => i.id === id);
+  if (!img) return;
+  _dzImage = img;
+  _dzRenderImages();
+  _dzAfficherImage();
+}
+
+/** Supprime la zone propre à la photo courante : elle repasse sous le master. */
+async function heriterDuMaster() {
+  const productId = document.getElementById('dz-product').value;
+  if (!productId || !_dzImage) return;
+  const r = await api(`/api/admin/products/${productId}/display-zone?media=${encodeURIComponent(_dzImage.id)}`,
+                      { method: 'DELETE' });
+  if (r === null) return showToast('⚠ Suppression impossible');
+  delete _dzOverrides[_dzImage.id];
+  showToast('↳ Cette photo suit de nouveau la zone de référence');
+  _dzRenderImages();
+  _dzAfficherImage();
+}
+
+function _dzAfficherImage() {
+  const img = document.getElementById('dz-img');
+  _dzCorners = _dzCoinsPourPhoto();
+  // La face suit la photo affichée : on reprend ce qui a été enregistré
+  // pour elle, et on retombe sur le recto pour une photo encore vierge.
+  _dzFace = (_dzOverrides[_dzImage.id] || {}).face === 'back' ? 'back' : 'front';
+  _dzMajBoutonFace();
+  _dzMajStatut();
+  img.onload = () => { _dzPoserPoignees(); document.getElementById('dz-save').disabled = false; };
+  img.src = _dzImage.url;
+  if (img.complete && img.naturalWidth) img.onload();
+}
+
+/** (Re)crée les quatre poignées et les positionne en pourcentage. */
+function _dzPoserPoignees() {
+  const stage = document.getElementById('dz-stage');
+  stage.querySelectorAll('.dz-handle').forEach(h => h.remove());
+  _dzCorners.forEach((c, i) => {
+    const h = document.createElement('div');
+    h.className = 'dz-handle';
+    h.dataset.i = i;
+    h.textContent = DZ_LETTRES[i];
+    h.style.left = c.x + '%';
+    h.style.top  = c.y + '%';
+    h.addEventListener('pointerdown', _dzDebutGlisse);
+    stage.appendChild(h);
+  });
+  const zone = document.getElementById('dz-zone');
+  if (zone && !zone.__dzLie) {
+    zone.addEventListener('pointerdown', _dzDebutDeplacement);
+    zone.__dzLie = true;
+  }
+  document.getElementById('dz-reset').style.display = '';
+  _dzMajPolygone();
+}
+
+function _dzDebutGlisse(e) {
+  e.preventDefault();
+  const poignee = e.currentTarget;
+  const i = Number(poignee.dataset.i);
+  const img = document.getElementById('dz-img');
+  poignee.setPointerCapture(e.pointerId);
+
+  const bouger = (ev) => {
+    const r = img.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    // Un peu de débordement toléré : un design peut mordre le bord d'un sac.
+    const x = Math.max(-10, Math.min(110, ((ev.clientX - r.left) / r.width) * 100));
+    const y = Math.max(-10, Math.min(110, ((ev.clientY - r.top) / r.height) * 100));
+    _dzCorners[i] = { x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100 };
+    poignee.style.left = x + '%';
+    poignee.style.top  = y + '%';
+    _dzMajPolygone();
+  };
+  const finir = () => {
+    poignee.removeEventListener('pointermove', bouger);
+    poignee.removeEventListener('pointerup', finir);
+    poignee.removeEventListener('pointercancel', finir);
+  };
+  poignee.addEventListener('pointermove', bouger);
+  poignee.addEventListener('pointerup', finir);
+  poignee.addEventListener('pointercancel', finir);
+}
+
+/**
+ * Glisser l'intérieur de la zone la déplace d'un bloc.
+ *
+ * Sans ça, la seule prise sur la zone est ses quatre poignées : la bouger
+ * oblige à les déplacer une par une, ce qui la déforme à chaque fois. C'est
+ * exactement ce qu'Alan a rencontré en calibrant son premier produit.
+ */
+function _dzDebutDeplacement(e) {
+  e.preventDefault();
+  const img = document.getElementById('dz-img');
+  const r0  = img.getBoundingClientRect();
+  if (!r0.width || !r0.height) return;
+
+  const depart = _dzCorners.map(c => ({ ...c }));
+  const xDepart = e.clientX, yDepart = e.clientY;
+  const zone = e.currentTarget;
+  zone.setPointerCapture(e.pointerId);
+
+  const bouger = (ev) => {
+    const dx = ((ev.clientX - xDepart) / r0.width)  * 100;
+    const dy = ((ev.clientY - yDepart) / r0.height) * 100;
+    // On décale le quadrilatère entier, en le retenant au bord pour qu'il ne
+    // sorte jamais complètement de l'image.
+    const minX = Math.min(...depart.map(c => c.x)), maxX = Math.max(...depart.map(c => c.x));
+    const minY = Math.min(...depart.map(c => c.y)), maxY = Math.max(...depart.map(c => c.y));
+    const dxLim = Math.max(-10 - minX, Math.min(110 - maxX, dx));
+    const dyLim = Math.max(-10 - minY, Math.min(110 - maxY, dy));
+    _dzCorners = depart.map(c => ({
+      x: Math.round((c.x + dxLim) * 100) / 100,
+      y: Math.round((c.y + dyLim) * 100) / 100,
+    }));
+    _dzPositionnerPoignees();
+    _dzMajPolygone();
+  };
+  const finir = () => {
+    zone.removeEventListener('pointermove', bouger);
+    zone.removeEventListener('pointerup', finir);
+    zone.removeEventListener('pointercancel', finir);
+  };
+  zone.addEventListener('pointermove', bouger);
+  zone.addEventListener('pointerup', finir);
+  zone.addEventListener('pointercancel', finir);
+}
+
+/** Repositionne les poignées existantes sans les recréer. */
+function _dzPositionnerPoignees() {
+  document.querySelectorAll('#dz-stage .dz-handle').forEach(h => {
+    const c = _dzCorners[Number(h.dataset.i)];
+    if (!c) return;
+    h.style.left = c.x + '%';
+    h.style.top  = c.y + '%';
+  });
+}
+
+/**
+ * Redresse la zone en rectangle, à l'intérieur de son encombrement actuel.
+ * Utile après l'avoir déformée par mégarde, ou pour repartir d'une base
+ * droite sur un produit photographié de face.
+ */
+function resetDisplayZone() {
+  if (!_dzCorners) return;
+  const xs = _dzCorners.map(c => c.x), ys = _dzCorners.map(c => c.y);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const y0 = Math.min(...ys), y1 = Math.max(...ys);
+  _dzCorners = [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
+  _dzPositionnerPoignees();
+  _dzMajPolygone();
+  showToast('⬛ Zone redressée — pensez à enregistrer');
+}
+
+function _dzMajPolygone() {
+  const poly = document.querySelector('#dz-poly polygon');
+  // Unités SVG, pas de pourcentages : le viewBox est calé sur 0→100.
+  if (poly) poly.setAttribute('points', _dzCorners.map(c => `${c.x},${c.y}`).join(' '));
+}
+
+async function saveDisplayZone() {
+  const productId = document.getElementById('dz-product').value;
+  if (!productId || !_dzImage || !_dzCorners) return;
+  const r = await api(`/api/admin/products/${productId}/display-zone`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      corners:          _dzCorners,
+      referenceMediaId: _dzImage.id,
+      referenceWidth:   _dzImage.width,
+      referenceHeight:  _dzImage.height,
+      face:             _dzFace,
+    }),
+  });
+  if (r === null) return showToast('⚠ ' + (window.__TL_LAST_API_ERROR || 'Enregistrement impossible'));
+
+  if (r.face === 'back') {
+    _dzOverrides[_dzImage.id] = { referenceMediaId: _dzImage.id, face: 'back',
+                                  corners: _dzCorners.map(c => ({ ...c })) };
+    _dzZones = await api('/api/admin/product-display-zones').catch(() => _dzZones) || _dzZones;
+    return showToast('✅ Verso enregistré — le client pourra personnaliser les deux faces');
+  }
+
+  const zoneEnregistree = { referenceMediaId: _dzImage.id, corners: _dzCorners.map(c => ({ ...c })) };
+  if (r.estMaster) {
+    _dzMaster = { ...zoneEnregistree, isMaster: true };
+    showToast('✅ Zone de référence enregistrée — elle vaut pour toutes les photos');
+  } else {
+    _dzOverrides[_dzImage.id] = zoneEnregistree;
+    showToast('✅ Zone propre à cette photo — les autres ne bougent pas');
+  }
+  _dzRenderImages();
+  _dzMajStatut();
+  _dzZones = await api('/api/admin/product-display-zones').catch(() => _dzZones) || _dzZones;
+  _dzRenderList();
+}
+
+async function deleteDisplayZone() {
+  const productId = document.getElementById('dz-product').value;
+  if (!productId) return;
+  if (!confirm('Supprimer la zone de ce produit ? Les designs ne s\'afficheront plus sur sa photo.')) return;
+  const r = await api(`/api/admin/products/${productId}/display-zone`, { method: 'DELETE' });
+  if (r === null) return showToast('⚠ Suppression impossible');
+  showToast('🗑 Zone supprimée');
+  _dzZones = (await api('/api/admin/product-display-zones').catch(() => [])) || [];
+  _dzRenderList();
+  selectDisplayZoneProduct(productId);
 }
 
 async function refreshShopifyProducts() {
