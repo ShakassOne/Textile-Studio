@@ -577,7 +577,7 @@
           dd.innerHTML = '<a href="' + url + '" target="_blank" rel="noopener" ' +
             'style="display:inline-flex;align-items:center;gap:6px;' +
             'padding:6px 12px;margin-top:4px;border-radius:8px;' +
-            'background:#F59E0B;color:#0a0a0c !important;' +
+            'background:#111114;color:#ffffff !important;' +
             'font-size:12px;font-weight:600;text-decoration:none;' +
             'box-shadow:0 1px 2px rgba(0,0,0,.12);">' +
             '<span aria-hidden=\"true\">👁</span> Voir mon design</a>';
@@ -613,14 +613,16 @@
         el.style.display = 'none';
         return;
       }
-      // "Voir mon design: https://..." rendu en texte brut → bouton orange
+      // "Voir mon design: https://..." rendu en texte brut → bouton
+      // Couleur en dur et non var(--amber) : ce script s'injecte dans le
+      // thème du marchand, qui n'a aucune de nos variables.
       var m = t.match(/^Voir mon design\s*[:=]\s*(https?:\/\/\S+)\s*$/i);
       if (m) {
         el.dataset.tlFixed2 = '1';
         el.innerHTML = '<a href="' + m[1] + '" target="_blank" rel="noopener" ' +
           'style="display:inline-flex;align-items:center;gap:6px;' +
           'padding:6px 12px;margin-top:4px;border-radius:8px;' +
-          'background:#F59E0B;color:#0a0a0c !important;' +
+          'background:#111114;color:#ffffff !important;' +
           'font-size:12px;font-weight:600;text-decoration:none;' +
           'box-shadow:0 1px 2px rgba(0,0,0,.12);">' +
           '<span aria-hidden="true">&#128065;</span> Voir mon design</a>';
