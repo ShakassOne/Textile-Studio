@@ -1120,6 +1120,41 @@ commits récents d'Alan (contraste, icône panier, police) sont accompagnés de
 leurs propres tests, pas une anomalie de cette session. Aucune régression.
 Aucun fichier de code modifié.
 
+### 2026-10-12 — Repassage de la mi-journée : trio touché il y a 2 h, rien touché
+
+Trois commits sont arrivés depuis la dernière entrée (HEAD `0a599da`) :
+`07a684b` (`feat(fiche)`, le configurateur plein écran devient réservé à
+l'ordinateur par réglage de bloc — touche `tl-editor.js`), puis `a117f06` et
+`04fe68f` (`feat(vitrine)`, entrée par un lien de menu Shopify et sélecteur
+qui ouvre le studio directement avec la taille choisie — tous deux
+cherry-pickés depuis une autre branche de travail d'Alan, ne touchent que
+`public/tl-modal.js`, hors du trio de l'éditeur et hors du périmètre de ce
+chantier).
+
+Dernier commit sur le trio `tl-editor.js`/`tsl-engine.js`/
+`textilelab-studio.html` : `07a684b`, à 10h12 — environ 2 h 04 avant ce
+passage (12h16). Nettement sous le seuil de « plusieurs jours » posé le
+09/10 pour reprendre le fil du raccordement configurateur ↔ moteur partagé :
+même consigne, je n'y touche pas.
+
+Rien de neuf sur les 3 questions du lot E (tranchées le 04/10, en attente de
+la commande de test réelle d'Alan) ni sur le lot G (après E dans le tableau).
+
+Point de méthode pour cette session : le dépôt principal était resté sur
+`prod/menu-generique` avec des modifications non commitées sur
+`public/tl-modal.js` (travail en cours d'un autre agent, visible dans
+`git status` au démarrage). Plutôt que de risquer d'y toucher en basculant
+sur `dev`, j'ai travaillé dans un `git worktree` séparé
+(`/tmp/claude-worktrees/tsl-dev`, branche `dev`), avec un lien symbolique
+vers le `node_modules` du dépôt principal — aucune dépendance réinstallée,
+`package.json` identique entre les deux branches, vérifié par `diff` avant
+de créer le lien.
+
+`npm test` (dans ce worktree) : 185 tests, 182 passent, 3 ignorés
+(`social_proof_items`, `upsell_candidates`, `design-resume` — cause machine
+connue, inchangée). Identique au dernier relevé. Aucune régression. Aucun
+fichier de code modifié.
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.
