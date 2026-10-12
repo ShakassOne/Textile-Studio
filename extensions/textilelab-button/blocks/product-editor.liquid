@@ -14,6 +14,13 @@
   calibrée dans TSL — un support non calibré ne saurait de toute façon pas
   où poser un visuel.
 
+  APPAREILS CONCERNÉS : sur téléphone, la zone d'impression n'occupe qu'un
+  tiers de la largeur dès que le thème enferme une photo en portrait dans
+  une boîte carrée — ce que fait la plupart des galeries. Le cadre est juste,
+  mais trop petit pour travailler au doigt. Le configurateur plein écran, lui,
+  part de mockups cadrés pour ça. D'où le réglage « ordinateur seulement » :
+  sur téléphone, c'est le bouton « Personnaliser » qui prend la main.
+
   Les variantes sont sérialisées en JSON ici plutôt que lues dans le DOM :
   le balisage d'un sélecteur de variantes change d'un thème à l'autre, alors
   que `product.variants` est stable.
@@ -43,6 +50,7 @@
     data-tsl-default-tool="{{ block.settings.default_tool }}"
     data-tsl-cart-label="{{ block.settings.cart_label | escape }}"
     data-tsl-exiger-zone="{% if block.settings.exiger_zone %}1{% else %}0{% endif %}"
+    data-tsl-bureau-seulement="{% if block.settings.bureau_seulement %}1{% else %}0{% endif %}"
     {{ block.shopify_attributes }}
   >
     <noscript>
@@ -95,6 +103,13 @@
       "label": "Seulement si le produit a une zone calibrée dans TSL",
       "default": true,
       "info": "Un produit vendu tel quel, déjà imprimé, n'a pas de zone calibrée : la personnalisation ne s'y affiche donc pas."
+    },
+    {
+      "type": "checkbox",
+      "id": "bureau_seulement",
+      "label": "Uniquement sur ordinateur",
+      "default": true,
+      "info": "Sur téléphone, la zone d'impression est trop petite pour travailler au doigt dès que la galerie du thème recadre la photo. Le bouton « Personnaliser » et le configurateur plein écran prennent alors le relais. Décochez pour proposer la personnalisation sur la fiche y compris sur téléphone."
     },
     {
       "type": "text",

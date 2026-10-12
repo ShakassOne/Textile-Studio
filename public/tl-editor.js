@@ -41,6 +41,22 @@
   var COURBE = 'cubic-bezier(.32,.72,0,1)';
   var SOBRE = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+  /**
+   * Sommes-nous sur un téléphone ?
+   *
+   * La FENÊTRE, pas l'écran de l'appareil : `screen` rend la dalle physique,
+   * si bien qu'un ordinateur branché sur un moniteur court — 1280 × 600 —
+   * se faisait prendre pour un téléphone et perdait l'éditeur.
+   *
+   * Deux bornes, parce qu'un téléphone couché mesure 844 px de large et
+   * passerait la première : moins de 768 px de LARGE (le seuil que l'éditeur
+   * emploie déjà partout ailleurs), ou moins de 500 px de HAUT. Une tablette
+   * garde l'éditeur dans les deux sens — elle a la place.
+   */
+  function surTelephone() {
+    return window.innerWidth < 768 || window.innerHeight < 500;
+  }
+
   var OUTILS = {
     text:   { titre: 'Textes',  sous: 'Ajoutez et personnalisez votre texte',
               icone: '<path d="M4 7V5h16v2M9 19h6M12 5v14"/>' },
@@ -425,6 +441,22 @@
     this.outils = String(racine.getAttribute('data-tsl-tools') || '')
       .split(',').map(function (s) { return s.trim(); }).filter(function (s) { return OUTILS[s]; });
     if (!this.outils.length || !this.donnees) return;
+
+    // Téléphone : on ne construit rien, et le bouton « Personnaliser »
+    // prend la main.
+    //
+    // Ce n'est pas un aveu d'échec de placement — la zone tombe juste, on
+    // l'a mesuré aux cinq largeurs. C'est que la galerie du thème enferme
+    // une photo de mannequin, en portrait, dans une boîte carrée : le
+    // vêtement n'occupe que les trois quarts de sa largeur, et la zone
+    // d'impression plafonne à un tiers de l'écran. Le configurateur plein
+    // écran, lui, part de mockups cadrés pour recevoir un visuel.
+    if (racine.getAttribute('data-tsl-bureau-seulement') === '1' && surTelephone()) {
+      console.info('[TSL] Personnalisation sur la fiche réservée à l\'ordinateur '
+        + '(réglage du bloc). Sur téléphone, le bouton « Personnaliser » ouvre '
+        + 'le configurateur.');
+      return;
+    }
 
     // Un produit vendu tel quel, déjà imprimé, ne doit rien proposer. Le
     // marqueur retenu est la zone d'impression calibrée : c'est une donnée
