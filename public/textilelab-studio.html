@@ -2439,7 +2439,7 @@
         <button id="btn-3d" onclick="setView('3d')">3D Live</button>
       </div>
       <button class="btn-cart" onclick="openCart()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.2" width="16" height="16" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 001.96-1.61L23 6H6"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--on-amber)" stroke-width="2.2" width="16" height="16" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 001.96-1.61L23 6H6"/></svg>
         <span class="cart-label">Ajouter au panier</span>
         <span class="cart-badge" id="cart-badge">0</span>
       </button>
@@ -5954,9 +5954,21 @@ function _selectFont(font) {
   const sel = document.getElementById('font-select');
   const lbl = document.getElementById('font-picker-label');
   const dd  = document.getElementById('font-picker-dropdown');
-  if (sel) { sel.value = font; sel.dispatchEvent(new Event('change')); }
-  if (lbl) { lbl.textContent = font; lbl.style.fontFamily = font + ', sans-serif'; }
-  if (dd)  dd.style.display = 'none';
+  // Le panneau mobile est un CLONE du panneau bureau, identifiants préfixés
+  // « m- ». Or applyLiveEdit lit `m-font-select` EN PREMIER quand il existe :
+  // ne mettre à jour que l'original laissait le clone sur son ancienne
+  // valeur, et choisir une police au doigt ne changeait rien sur le
+  // vêtement — le libellé seul bougeait, ce qui rendait le défaut d'autant
+  // plus déroutant.
+  const mSel = document.getElementById('m-font-select');
+  const mLbl = document.getElementById('m-font-picker-label');
+  const mDd  = document.getElementById('m-font-picker-dropdown');
+  if (sel)  { sel.value = font; sel.dispatchEvent(new Event('change')); }
+  if (mSel) { mSel.value = font; }
+  if (lbl)  { lbl.textContent = font; lbl.style.fontFamily = '"' + font + '", sans-serif'; }
+  if (mLbl) { mLbl.textContent = font; mLbl.style.fontFamily = '"' + font + '", sans-serif'; }
+  if (dd)   dd.style.display = 'none';
+  if (mDd)  mDd.style.display = 'none';
   _fontPickerOpen = false;
   loadGoogleFont(font);
   applyLiveEdit();
@@ -7495,13 +7507,10 @@ function _openMobileFontPicker() {
   const current = sel.value;
   Array.from(sel.options).forEach(opt => {
     const btn = document.createElement('button');
-    btn.style.cssText = `width:100%;padding:14px 16px;background:${opt.value === current ? 'var(--amber-dim)' : 'transparent'};border:none;border-bottom:1px solid var(--border);text-align:left;font-size:18px;font-family:${opt.value},sans-serif;color:${opt.value === current ? 'var(--amber)' : 'var(--text)'};cursor:pointer;`;
+    btn.style.cssText = `width:100%;padding:14px 16px;background:${opt.value === current ? 'var(--amber-dim)' : 'transparent'};border:none;border-bottom:1px solid var(--border);text-align:left;font-size:18px;font-family:"${opt.value}",sans-serif;color:${opt.value === current ? 'var(--amber)' : 'var(--text)'};cursor:pointer;`;
     btn.textContent = opt.value;
     btn.addEventListener('click', () => {
-      _selectFont(opt.value);
-      // Mettre à jour le label du bouton mobile
-      const mLabel = document.getElementById('m-font-picker-label');
-      if (mLabel) { mLabel.textContent = opt.value; mLabel.style.fontFamily = opt.value + ',sans-serif'; }
+      _selectFont(opt.value);   // met à jour les DEUX panneaux
       overlay.remove();
     });
     list.appendChild(btn);
@@ -8887,7 +8896,7 @@ function _addPhotoResult(base64, style) {
       </button>
       <button class="_photo-dl-btn"
         style="width:28px;padding:5px;background:var(--amber);border:none;border-radius:5px;cursor:pointer;display:flex;align-items:center;justify-content:center">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--on-amber)" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       </button>
     </div>`;
 
@@ -9062,7 +9071,7 @@ function _pmAddResult(base64, style) {
 
   const btnDl = document.createElement('button');
   btnDl.style.cssText = 'width:32px;padding:7px;background:var(--amber);border:none;border-radius:7px;cursor:pointer;display:flex;align-items:center;justify-content:center';
-  btnDl.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+  btnDl.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--on-amber)" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
   btnDl.onclick = () => _pmDownload(base64, style);
 
   row.appendChild(btnAdd);
@@ -11580,7 +11589,7 @@ init();
 
     <button onclick="closeMobileCartMenu();addToCart()" style="width:100%;display:flex;align-items:center;gap:14px;padding:16px 20px;background:transparent;border:none;border-bottom:1px solid var(--border);cursor:pointer;font-family:'DM Sans',sans-serif;text-align:left">
       <div style="width:40px;height:40px;border-radius:12px;background:var(--amber);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5" width="20" height="20"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 001.96-1.61L23 6H6"/><line x1="12" y1="8" x2="12" y2="4"/><line x1="10" y1="6" x2="14" y2="6"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--on-amber)" stroke-width="2.5" width="20" height="20"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 001.96-1.61L23 6H6"/><line x1="12" y1="8" x2="12" y2="4"/><line x1="10" y1="6" x2="14" y2="6"/></svg>
       </div>
       <div>
         <div style="font-size:14px;font-weight:700;color:var(--text)">Ajouter au panier</div>
