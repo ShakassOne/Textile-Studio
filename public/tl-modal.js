@@ -213,6 +213,18 @@
     .tl-choix-n { display: block; font-size: 12.5px; line-height: 1.3; }\
     .tl-choix-p { display: block; font-size: 12px; opacity: .6; margin-top: 2px; }\
     .tl-choix-vide { padding: 10px 2px 4px; font-size: 13px; opacity: .7; }\
+    .tl-choix-retour {\
+      display: inline-flex; align-items: center; gap: 6px; margin: 0 0 12px;\
+      padding: 7px 12px 7px 9px; border: 0; border-radius: 9px; cursor: pointer;\
+      background: rgba(0,0,0,.06); color: inherit; font: inherit; font-size: 12.5px;\
+    }\
+    .tl-choix-tailles { display: flex; flex-wrap: wrap; gap: 8px; }\
+    .tl-choix-taille {\
+      padding: 11px 16px; border: 1px solid rgba(0,0,0,.18); border-radius: 9px;\
+      background: #fff; color: inherit; font: inherit; font-size: 13.5px; cursor: pointer;\
+    }\
+    .tl-choix-taille:hover { background: #16161a; color: #fff; border-color: #16161a; }\
+    .tl-choix-taille[disabled] { opacity: .35; cursor: default; text-decoration: line-through; }\
   ';
 
   var TL_STYLES = '\
@@ -898,6 +910,34 @@
    * protégée par mot de passe rend sa page de garde. Et on juge la réponse
    * sur son contenu, car Shopify sert cette API en `text/javascript`.
    */
+  /**
+   * Les variantes qu'on peut proposer : celles SANS impression.
+   *
+   * Un produit préparé porte une option « Impression » qui transporte le
+   * surcoût. Elle n'a rien à faire dans un choix de taille — c'est la
+   * création qui la déterminera, et `_tlHidePrintOption` la cache d'ailleurs
+   * sur la fiche. On ne garde donc que la valeur de base, et on n'affiche
+   * que ce qui reste : la taille, la couleur, ce que le marchand a défini.
+   */
+  function _tlVariantesDeBase(d) {
+    var noms = (d.options || []).map(function (o) {
+      return String((o && o.name) || o || '');
+    });
+    var iImpr = -1;
+    for (var i = 0; i < noms.length; i++) {
+      if (/impr|print|perso|finition/i.test(noms[i])) { iImpr = i; break; }
+    }
+    return (d.variants || []).filter(function (v) {
+      if (iImpr < 0) return true;
+      var val = String((v.options || [])[iImpr] || '').toLowerCase();
+      return val.indexOf('sans') === 0 || !val;
+    }).map(function (v) {
+      var etiquette = (v.options || []).filter(function (_, i) { return i !== iImpr; })
+        .filter(Boolean).join(' / ');
+      return { id: v.id, nom: etiquette || v.title, dispo: v.available !== false };
+    });
+  }
+
   function _tlFicheSupport(p) {
     var h = p.shopify_product_handle;
     return fetch('/products/' + encodeURIComponent(h) + '.js', { credentials: 'same-origin' })
@@ -905,16 +945,33 @@
       .then(function (txt) {
         var d = null;
         try { d = JSON.parse(txt); } catch (e) { /* page de garde, pas un produit */ }
-        if (!d || !d.title) return { handle: h, titre: p.shopify_product_title || h, image: '', prix: '' };
+        // Produit dépublié ou supprimé — ça existe, j'en ai trouvé deux
+        // encore liés à un mockup. Mieux vaut l'omettre que proposer une
+        // vignette qui mène à une page introuvable.
+        if (!d || !d.title) return null;
         var prix = '';
         try {
           var dev = (window.Shopify && window.Shopify.currency && window.Shopify.currency.active) || 'EUR';
           prix = new Intl.NumberFormat(document.documentElement.lang || 'fr',
                    { style: 'currency', currency: dev }).format(d.price / 100);
         } catch (e) { /* devise inconnue : on se passe du prix */ }
-        return { handle: h, titre: d.title, image: d.featured_image || '', prix: prix };
+        return { handle: h, titre: d.title, image: d.featured_image || '',
+                 prix: prix, variantes: _tlVariantesDeBase(d) };
       })
-      .catch(function () { return { handle: h, titre: p.shopify_product_title || h, image: '', prix: '' }; });
+      .catch(function () { return null; });
+  }
+
+  /**
+   * Ouvre le studio sur un support et une variante précise.
+   *
+   * La variante est indispensable : sans elle, le studio retombe sur la
+   * première du produit et vendrait du XS à tout le monde. C'est pour ça
+   * qu'on la demande ICI plutôt que de renvoyer le visiteur sur la fiche —
+   * une étape de plus pour le même résultat.
+   */
+  function _tlLancerStudio(handle, variantId) {
+    _tlFermerChoix();
+    openProduct(handle, variantId);
   }
 
   function _tlAfficherChoix(fiches) {
@@ -933,34 +990,79 @@
     x.setAttribute('aria-label', 'Fermer');
     x.textContent = '\u00d7';
 
-    var t = document.createElement('div');
-    t.className = 'tl-choix-t'; t.textContent = 'Que voulez-vous personnaliser ?';
-    var sst = document.createElement('p');
-    sst.className = 'tl-choix-s';
-    sst.textContent = 'Choisissez un support, puis votre taille sur sa fiche.';
+    var corps = document.createElement('div');
 
-    var g = document.createElement('div');
-    g.className = 'tl-choix-g';
-    fiches.forEach(function (f) {
-      var a = document.createElement('a');
-      a.className = 'tl-choix-i';
-      a.href = '/products/' + f.handle;
-      var vig = document.createElement('span');
-      vig.className = 'tl-choix-v';
-      if (f.image) vig.style.backgroundImage = 'url("' + String(f.image).replace(/"/g, '%22') + '")';
-      a.appendChild(vig);
-      var n = document.createElement('span');
-      n.className = 'tl-choix-n'; n.textContent = f.titre;
-      a.appendChild(n);
-      if (f.prix) {
-        var pr = document.createElement('span');
-        pr.className = 'tl-choix-p'; pr.textContent = f.prix;
-        a.appendChild(pr);
-      }
-      g.appendChild(a);
-    });
+    // ── Premier temps : le support ──────────────────────────────────────
+    var etapeSupports = function () {
+      corps.innerHTML = '';
+      var t = document.createElement('div');
+      t.className = 'tl-choix-t'; t.textContent = 'Que voulez-vous personnaliser ?';
+      var st = document.createElement('p');
+      st.className = 'tl-choix-s'; st.textContent = 'Choisissez un support pour commencer.';
+      var g = document.createElement('div');
+      g.className = 'tl-choix-g';
 
-    c.appendChild(x); c.appendChild(t); c.appendChild(sst); c.appendChild(g);
+      fiches.forEach(function (f) {
+        var a = document.createElement('a');
+        a.className = 'tl-choix-i';
+        a.href = '/products/' + f.handle;   // sens pour un clic du milieu, ou sans JS
+        var vig = document.createElement('span');
+        vig.className = 'tl-choix-v';
+        if (f.image) vig.style.backgroundImage = 'url("' + String(f.image).replace(/"/g, '%22') + '")';
+        a.appendChild(vig);
+        var n = document.createElement('span');
+        n.className = 'tl-choix-n'; n.textContent = f.titre;
+        a.appendChild(n);
+        if (f.prix) {
+          var pr = document.createElement('span');
+          pr.className = 'tl-choix-p'; pr.textContent = f.prix;
+          a.appendChild(pr);
+        }
+        a.addEventListener('click', function (e) {
+          e.preventDefault();
+          var vars = f.variantes || [];
+          // Une seule variante : rien à demander, on ouvre.
+          if (vars.length === 1) return _tlLancerStudio(f.handle, vars[0].id);
+          if (!vars.length) return _tlGoToProductPage(f.handle);
+          etapeTailles(f);
+        });
+        g.appendChild(a);
+      });
+
+      corps.appendChild(t); corps.appendChild(st); corps.appendChild(g);
+    };
+
+    // ── Second temps : la variante ──────────────────────────────────────
+    var etapeTailles = function (f) {
+      corps.innerHTML = '';
+      var retour = document.createElement('button');
+      retour.type = 'button'; retour.className = 'tl-choix-retour';
+      retour.textContent = '\u2190 Changer de support';
+      retour.addEventListener('click', etapeSupports);
+
+      var t = document.createElement('div');
+      t.className = 'tl-choix-t'; t.textContent = f.titre;
+      var st = document.createElement('p');
+      st.className = 'tl-choix-s'; st.textContent = 'Choisissez votre taille, puis la création s\'ouvre.';
+
+      var g = document.createElement('div');
+      g.className = 'tl-choix-tailles';
+      f.variantes.forEach(function (va) {
+        var b = document.createElement('button');
+        b.type = 'button'; b.className = 'tl-choix-taille';
+        b.textContent = va.nom;
+        if (!va.dispo) { b.disabled = true; b.title = 'Épuisé'; }
+        else b.addEventListener('click', function () { _tlLancerStudio(f.handle, va.id); });
+        g.appendChild(b);
+      });
+
+      corps.appendChild(retour); corps.appendChild(t); corps.appendChild(st); corps.appendChild(g);
+      var premier = g.querySelector('.tl-choix-taille:not([disabled])');
+      if (premier) premier.focus();
+    };
+
+    etapeSupports();
+    c.appendChild(x); c.appendChild(corps);
     v.appendChild(c);
 
     var auClavier = function (e) {
@@ -994,7 +1096,16 @@
       if (!liste.length) { _tlGoToProductPage(''); return; }
       // Un seul : la question ne se pose pas.
       if (liste.length === 1) { _tlGoToProductPage(liste[0].shopify_product_handle); return; }
-      Promise.all(liste.map(_tlFicheSupport)).then(_tlAfficherChoix);
+      Promise.all(liste.map(_tlFicheSupport)).then(function (fiches) {
+        // Les produits dépubliés sont tombés à null : on ne propose que ce
+        // qui existe encore sur la boutique.
+        var vivants = fiches.filter(Boolean);
+        if (!vivants.length) return _tlGoToProductPage('');
+        if (vivants.length === 1 && (vivants[0].variantes || []).length === 1) {
+          return _tlLancerStudio(vivants[0].handle, vivants[0].variantes[0].id);
+        }
+        _tlAfficherChoix(vivants);
+      });
     });
   }
 
