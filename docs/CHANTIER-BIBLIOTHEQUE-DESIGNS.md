@@ -1074,6 +1074,32 @@ la commande de test réelle d'Alan) ni sur le lot G (après E dans le tableau).
 `upsell_candidates`, `design-resume` — cause machine connue, inchangée).
 Aucune régression. Aucun fichier de code modifié.
 
+### 2026-10-12 — Session automatique : Alan en train d'écrire sur le studio à l'instant, rien touché
+
+Arbre de travail propre, toujours sur `dev`. Deux commits viennent d'arriver
+pendant cette session même, entre ma lecture du journal et mon édition :
+`b1f37c9` (`fix(contraste)`, compteur du panier invisible et visuels perdus
+sur leur fond) et `2a5c2f4` (`fix(studio)`, icône du panier noire sur noir et
+la police qui ne changeait rien au doigt), datés de ce matin 07h43 et 08h14.
+Les deux touchent `public/textilelab-studio.html`, le fichier central du trio
+qu'Alan retravaille à la main. Mon premier brouillon d'entrée, rédigé avant
+ces deux commits, est resté correctement périmé : je ne l'ai pas committé,
+je l'ai réécrit sur l'état réel (HEAD `2a5c2f4`) avant de toucher quoi que ce
+soit d'autre — exactement le genre de double-travail que la consigne « un
+autre agent peut committer sur `dev` en parallèle » demande d'éviter.
+
+Dernier commit sur le trio `tl-editor.js`/`tsl-engine.js`/
+`textilelab-studio.html` : à l'instant (08h14), pas une question de jours.
+Même consigne que les sessions précédentes, pour une raison encore plus
+nette : je n'y touche pas.
+
+Rien de neuf sur les 3 questions du lot E (tranchées le 04/10, en attente de
+la commande de test réelle d'Alan) ni sur le lot G (après E dans le tableau).
+
+`npm test` : 161 tests, 158 passent, 3 ignorés (`social_proof_items`,
+`upsell_candidates`, `design-resume` — cause machine connue, inchangée).
+Aucune régression. Aucun fichier de code modifié par cette session.
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.
