@@ -1155,6 +1155,26 @@ de créer le lien.
 connue, inchangée). Identique au dernier relevé. Aucune régression. Aucun
 fichier de code modifié.
 
+### 2026-10-12 — Repassage de l'après-midi : 6 h sans commit sur le trio, rien touché
+
+Arbre de travail propre, toujours sur `dev`, HEAD toujours sur `2604dfe` (le
+commit de l'entrée précédente, 12h17) : aucun commit n'est arrivé entre les
+deux passages — ni sur le trio, ni ailleurs dans le dépôt. Dernier commit sur
+`tl-editor.js`/`tsl-engine.js`/`textilelab-studio.html` toujours `07a684b`,
+le 2026-10-12 à 10h12 — environ 6 h d'écart avec ce passage (16h15). C'est le
+plus long silence du trio depuis l'ouverture du raccordement
+configurateur ↔ moteur partagé, mais encore loin du seuil de « plusieurs
+jours » posé le 09/10 pour reprendre le fil : même consigne, je n'y touche
+pas.
+
+Rien de neuf sur les 3 questions du lot E (tranchées le 04/10, en attente de
+la commande de test réelle d'Alan) ni sur le lot G (après E dans le tableau).
+
+`npm test` : 185 tests, 182 passent, 3 ignorés (`social_proof_items`,
+`upsell_candidates`, `design-resume` — cause machine connue, inchangée).
+Identique au dernier relevé. Aucune régression. Aucun fichier de code
+modifié.
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.
