@@ -63,6 +63,17 @@
  *      par défaut, même logique prudente que les autres changements visuels
  *      storefront (pas de navigateur avec session Shopify dans cet
  *      environnement pour valider le rendu avant diffusion large).
+ *    panel_mode_studio_enabled  bool  — sur desktop uniquement (mobile
+ *      inchangé), ouvre le studio dans un panneau centré ~90vw/90vh avec un
+ *      fond semi-transparent flouté plutôt qu'en plein écran opaque
+ *      (tl-modal.js, backlog item 23) — laisse deviner la page produit
+ *      (prix, réassurance, preuve sociale) derrière pendant l'édition. Pur
+ *      CSS/dimensionnement, ne touche à aucun fichier gelé par le chantier
+ *      "Bibliothèque de designs". Exposé sur la route publique : tl-modal.js
+ *      n'applique le mode panneau que si ce flag est actif. Désactivé par
+ *      défaut, même logique prudente que les autres changements visuels
+ *      storefront desktop (pas de navigateur dans cet environnement pour
+ *      valider le rendu avant diffusion large).
  *
  *  Cors public : Cross-origin (shop_domain.myshopify.com → textile-studio-production)
  *    → le storefront fait fetch direct, on autorise tout origin sur le GET public.
@@ -128,6 +139,10 @@ const EMAIL_RESUME_DEFAULT = false;
 // défaut : nouveau changement visuel dans le drawer panier, à valider avant
 // diffusion large (backlog item 26).
 const CART_EDIT_DESIGN_DEFAULT = false;
+// Mode panneau partiel du studio sur desktop désactivé par défaut : nouveau
+// changement visuel desktop (plein écran → panneau centré), à valider avant
+// diffusion large (backlog item 23).
+const PANEL_MODE_STUDIO_DEFAULT = false;
 
 // ── GET /api/shop-settings/style — lecture admin ────────────────────────────
 router.get('/style', requireAuth, attachShopId, (req, res) => {
@@ -142,6 +157,7 @@ router.get('/style', requireAuth, attachShopId, (req, res) => {
     resume_design_enabled:      readBoolSetting(req.shopId, 'resume_design_enabled', RESUME_DESIGN_DEFAULT),
     email_resume_enabled:       readBoolSetting(req.shopId, 'email_resume_enabled', EMAIL_RESUME_DEFAULT),
     cart_edit_design_enabled:   readBoolSetting(req.shopId, 'cart_edit_design_enabled', CART_EDIT_DESIGN_DEFAULT),
+    panel_mode_studio_enabled:  readBoolSetting(req.shopId, 'panel_mode_studio_enabled', PANEL_MODE_STUDIO_DEFAULT),
   });
 });
 
@@ -196,6 +212,10 @@ router.post('/style', requireAuth, attachShopId, express.json(), (req, res) => {
     setSetting(req.shopId, 'cart_edit_design_enabled', coerceBool(body.cart_edit_design_enabled) ? '1' : '0');
   }
 
+  if ('panel_mode_studio_enabled' in body) {
+    setSetting(req.shopId, 'panel_mode_studio_enabled', coerceBool(body.panel_mode_studio_enabled) ? '1' : '0');
+  }
+
   res.json({
     ok: true,
     cart_drawer_bg_color:       getSetting(req.shopId, 'cart_drawer_bg_color') || '',
@@ -208,6 +228,7 @@ router.post('/style', requireAuth, attachShopId, express.json(), (req, res) => {
     resume_design_enabled:      readBoolSetting(req.shopId, 'resume_design_enabled', RESUME_DESIGN_DEFAULT),
     email_resume_enabled:       readBoolSetting(req.shopId, 'email_resume_enabled', EMAIL_RESUME_DEFAULT),
     cart_edit_design_enabled:   readBoolSetting(req.shopId, 'cart_edit_design_enabled', CART_EDIT_DESIGN_DEFAULT),
+    panel_mode_studio_enabled:  readBoolSetting(req.shopId, 'panel_mode_studio_enabled', PANEL_MODE_STUDIO_DEFAULT),
   });
 });
 
@@ -229,6 +250,7 @@ router.get('/style/public', (req, res) => {
       resume_design_enabled: RESUME_DESIGN_DEFAULT,
       email_resume_enabled: EMAIL_RESUME_DEFAULT,
       cart_edit_design_enabled: CART_EDIT_DESIGN_DEFAULT,
+      panel_mode_studio_enabled: PANEL_MODE_STUDIO_DEFAULT,
     });
   }
   const shopId = getShopIdByDomain(shopDomain);
@@ -242,6 +264,7 @@ router.get('/style/public', (req, res) => {
       resume_design_enabled: RESUME_DESIGN_DEFAULT,
       email_resume_enabled: EMAIL_RESUME_DEFAULT,
       cart_edit_design_enabled: CART_EDIT_DESIGN_DEFAULT,
+      panel_mode_studio_enabled: PANEL_MODE_STUDIO_DEFAULT,
     });
   }
   res.json({
@@ -253,6 +276,7 @@ router.get('/style/public', (req, res) => {
     resume_design_enabled:      readBoolSetting(shopId, 'resume_design_enabled', RESUME_DESIGN_DEFAULT),
     email_resume_enabled:       readBoolSetting(shopId, 'email_resume_enabled', EMAIL_RESUME_DEFAULT),
     cart_edit_design_enabled:   readBoolSetting(shopId, 'cart_edit_design_enabled', CART_EDIT_DESIGN_DEFAULT),
+    panel_mode_studio_enabled:  readBoolSetting(shopId, 'panel_mode_studio_enabled', PANEL_MODE_STUDIO_DEFAULT),
   });
 });
 

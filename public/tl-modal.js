@@ -37,6 +37,13 @@
   // _tlLoadStyleSettings. false tant que la réponse n'est pas arrivée.
   var _TL_CART_EDIT_DESIGN_ENABLED = false;
 
+  // Flag item 23 (panneau partiel desktop, au lieu du plein écran opaque) :
+  // même mécanique, lu une fois par _tlLoadStyleSettings. false tant que la
+  // réponse n'est pas arrivée (comportement identique à aujourd'hui : plein
+  // écran). Consommé par openModal()/closeModal() ci-dessous, desktop
+  // uniquement (mobile toujours en plein écran par construction).
+  var _TL_PANEL_MODE_STUDIO_ENABLED = false;
+
   // Clé ("<variantId>:<hash>") de la ligne de panier en cours de modification
   // via le bouton "Modifier" (item 26), le temps que le nouvel ajout soit
   // confirmé — remise à null après la suppression de l'ancienne ligne OU à la
@@ -382,6 +389,21 @@
       border: none;\
       display: block;\
     }\
+    @media (min-width: 769px) {\
+      #tl-modal-overlay.tl-panel-mode {\
+        background: rgba(10, 10, 12, .6);\
+        backdrop-filter: blur(4px);\
+        -webkit-backdrop-filter: blur(4px);\
+      }\
+      #tl-modal-overlay.tl-panel-mode #tl-modal-iframe {\
+        position: absolute;\
+        inset: 5vh 5vw;\
+        width: 90vw;\
+        height: 90vh;\
+        border-radius: 16px;\
+        box-shadow: 0 20px 60px rgba(0, 0, 0, .4);\
+      }\
+    }\
   ' + CART_FIX_CSS + TL_CTA_CSS + TL_UPSELL_CSS + TL_RESUME_CSS + TL_EMAIL_RESUME_CSS;
 
   // ── Injection des éléments DOM ──────────────────────────────────────────────
@@ -420,6 +442,12 @@
     document.body.style.overflow = 'hidden';
     iframe.src = editorUrl;
     overlay.classList.add('tl-open');
+    // Item 23 : panneau partiel sur desktop uniquement (même seuil que le
+    // reste du fichier/du studio) — mobile toujours en plein écran, par
+    // construction, aucune condition JS supplémentaire nécessaire côté mobile.
+    if (_TL_PANEL_MODE_STUDIO_ENABLED && window.innerWidth > 768) {
+      overlay.classList.add('tl-panel-mode');
+    }
   }
 
   // ── Fermeture du modal ──────────────────────────────────────────────────────
@@ -428,6 +456,7 @@
     var iframe  = document.getElementById('tl-modal-iframe');
     if (!overlay) return;
     overlay.classList.remove('tl-open');
+    overlay.classList.remove('tl-panel-mode');
     setTimeout(function() {
       if (iframe) iframe.src = 'about:blank';
       document.body.style.overflow = '';
@@ -1289,6 +1318,11 @@
           // gardée par le même marqueur "déjà traité" que _tlFixLineItemProps.
           _TL_CART_EDIT_DESIGN_ENABLED = !!data.cart_edit_design_enabled;
           if (_TL_CART_EDIT_DESIGN_ENABLED) _tlSyncCartImages();
+          // Flag item 23 (panneau partiel desktop) : simple mémorisation,
+          // consommée par openModal()/closeModal() à la prochaine ouverture —
+          // si le studio est déjà ouvert quand la réponse arrive, il reste en
+          // plein écran jusqu'à la fermeture suivante (pas de bascule à chaud).
+          _TL_PANEL_MODE_STUDIO_ENABLED = !!data.panel_mode_studio_enabled;
         })
         .catch(function() {});
     } catch (e) { /* silencieux */ }
