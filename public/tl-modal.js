@@ -172,6 +172,49 @@
 
   // NOTE : ne pas nommer cette variable "CSS" — cela écraserait window.CSS
   // (l'API globale) dans le scope de l'IIFE et ferait planter CSS.escape().
+  // ── Sélecteur de support, ouvert depuis un lien de menu ──────────────────
+  //
+  // Surface opaque et police système : on s'affiche par-dessus un thème dont
+  // on ne maîtrise rien, et hériter de ses styles donnerait n'importe quoi.
+  var TL_CHOIX_CSS = '\
+    .tl-choix {\
+      position: fixed; inset: 0; z-index: 2147483000;\
+      display: flex; align-items: center; justify-content: center;\
+      padding: 18px; background: rgba(10,10,12,.62);\
+      opacity: 0; transition: opacity .18s ease;\
+      font: 400 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\
+    }\
+    .tl-choix.tl-on { opacity: 1; }\
+    .tl-choix-c {\
+      width: 100%; max-width: 620px; max-height: 86vh; box-sizing: border-box;\
+      display: flex; flex-direction: column;\
+      padding: 20px 20px 18px; border-radius: 16px;\
+      background: #fff; color: #16161a;\
+      box-shadow: 0 18px 60px rgba(0,0,0,.3);\
+      transform: translateY(10px) scale(.98); transition: transform .18s ease;\
+    }\
+    .tl-choix.tl-on .tl-choix-c { transform: none; }\
+    .tl-choix-t { font-weight: 600; font-size: 16px; margin: 0 30px 4px 2px; }\
+    .tl-choix-s { font-size: 13px; opacity: .62; margin: 0 30px 16px 2px; }\
+    .tl-choix-x {\
+      position: absolute; top: 14px; right: 14px; width: 32px; height: 32px;\
+      padding: 0; border: 0; border-radius: 50%; cursor: pointer;\
+      background: rgba(0,0,0,.06); color: #16161a; font-size: 19px; line-height: 1;\
+    }\
+    .tl-choix-g {\
+      display: grid; gap: 12px; overflow-y: auto; padding: 2px;\
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));\
+    }\
+    .tl-choix-i { display: block; text-decoration: none; color: inherit; min-width: 0; }\
+    .tl-choix-v {\
+      display: block; width: 100%; aspect-ratio: 1 / 1; border-radius: 10px;\
+      margin-bottom: 7px; background: #7b7b82 center / cover no-repeat;\
+    }\
+    .tl-choix-n { display: block; font-size: 12.5px; line-height: 1.3; }\
+    .tl-choix-p { display: block; font-size: 12px; opacity: .6; margin-top: 2px; }\
+    .tl-choix-vide { padding: 10px 2px 4px; font-size: 13px; opacity: .7; }\
+  ';
+
   var TL_STYLES = '\
     #tl-modal-overlay {\
       display: none;\
@@ -189,7 +232,7 @@
       border: none;\
       display: block;\
     }\
-  ' + CART_FIX_CSS;
+  ' + CART_FIX_CSS + TL_CHOIX_CSS;
 
   // ── Injection des éléments DOM ──────────────────────────────────────────────
   function injectDOM() {
@@ -785,6 +828,176 @@
     });
   }
 
+  // ── Entrée par le menu ──────────────────────────────────────────────────────
+  //
+  // Un menu Shopify n'accepte qu'une URL : pas de bouton, pas d'attribut.
+  // On guette donc un marqueur dans l'adresse, lu au chargement de n'importe
+  // quelle page — l'app embed charge ce script partout.
+  //
+  //   /?tsl=1                → demande sur quel support créer
+  //   /?tsl=t-shirt-xyz      → va droit à ce produit
+  //   /pages/creer#tsl       → même chose, pour les menus qui refusent le « ? »
+  //
+  // Le sélecteur mène à la FICHE PRODUIT, pas au studio. Sans variante
+  // choisie, le studio retombe sur la première du produit et vendrait du XS
+  // à tout le monde : la taille se choisit sur la fiche, et c'est le bouton
+  // « Personnaliser » qui ouvre ensuite le studio avec elle.
+
+  function _tlMarqueurUrl() {
+    try {
+      var p = new URLSearchParams(window.location.search).get('tsl');
+      if (p !== null) return String(p || '1').trim().toLowerCase();
+      var h = String(window.location.hash || '');
+      if (/^#tsl(=|$)/i.test(h)) return (h.split('=')[1] || '1').trim().toLowerCase();
+    } catch (e) { /* URL exotique : on ne force rien */ }
+    return null;
+  }
+
+  // L'adresse est nettoyée pour qu'un rafraîchissement ou un retour arrière
+  // ne rouvre pas la fenêtre dans le dos du visiteur.
+  function _tlEffacerMarqueur() {
+    try {
+      var u = new URL(window.location.href);
+      u.searchParams.delete('tsl');
+      if (/^#tsl(=|$)/i.test(u.hash)) u.hash = '';
+      window.history.replaceState({}, '', u.pathname + u.search + u.hash);
+    } catch (e) { /* pas d'historique : sans gravité */ }
+  }
+
+  function _tlFermerChoix() {
+    var v = document.querySelector('.tl-choix');
+    if (v && v.parentNode) v.parentNode.removeChild(v);
+  }
+
+  /** Les supports personnalisables : ceux que l'admin a liés à un mockup. */
+  function _tlSupports() {
+    var shop = (window.Shopify && window.Shopify.shop)
+            || window._TL_SHOP
+            || window.location.hostname;
+    return fetch(TSL_BACKEND_ORIGIN + '/api/product-links/public?shop='
+                 + encodeURIComponent(shop) + '&_=' + Date.now(),
+                 { credentials: 'omit', mode: 'cors' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (l) {
+        if (!Array.isArray(l)) return [];
+        var vus = {};
+        return l.filter(function (x) {
+          var h = x && x.shopify_product_handle;
+          if (!h || vus[h]) return false;
+          vus[h] = 1;
+          return true;
+        });
+      })
+      .catch(function () { return []; });
+  }
+
+  /**
+   * Visuel, nom et prix lus sur la boutique elle-même.
+   *
+   * Requête de MÊME ORIGINE, donc avec les cookies : sans eux, une boutique
+   * protégée par mot de passe rend sa page de garde. Et on juge la réponse
+   * sur son contenu, car Shopify sert cette API en `text/javascript`.
+   */
+  function _tlFicheSupport(p) {
+    var h = p.shopify_product_handle;
+    return fetch('/products/' + encodeURIComponent(h) + '.js', { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.text() : ''; })
+      .then(function (txt) {
+        var d = null;
+        try { d = JSON.parse(txt); } catch (e) { /* page de garde, pas un produit */ }
+        if (!d || !d.title) return { handle: h, titre: p.shopify_product_title || h, image: '', prix: '' };
+        var prix = '';
+        try {
+          var dev = (window.Shopify && window.Shopify.currency && window.Shopify.currency.active) || 'EUR';
+          prix = new Intl.NumberFormat(document.documentElement.lang || 'fr',
+                   { style: 'currency', currency: dev }).format(d.price / 100);
+        } catch (e) { /* devise inconnue : on se passe du prix */ }
+        return { handle: h, titre: d.title, image: d.featured_image || '', prix: prix };
+      })
+      .catch(function () { return { handle: h, titre: p.shopify_product_title || h, image: '', prix: '' }; });
+  }
+
+  function _tlAfficherChoix(fiches) {
+    _tlFermerChoix();
+    var v = document.createElement('div');
+    v.className = 'tl-choix';
+    v.setAttribute('role', 'dialog');
+    v.setAttribute('aria-modal', 'true');
+
+    var c = document.createElement('div');
+    c.className = 'tl-choix-c';
+    c.style.position = 'relative';
+
+    var x = document.createElement('button');
+    x.type = 'button'; x.className = 'tl-choix-x';
+    x.setAttribute('aria-label', 'Fermer');
+    x.textContent = '\u00d7';
+
+    var t = document.createElement('div');
+    t.className = 'tl-choix-t'; t.textContent = 'Que voulez-vous personnaliser ?';
+    var sst = document.createElement('p');
+    sst.className = 'tl-choix-s';
+    sst.textContent = 'Choisissez un support, puis votre taille sur sa fiche.';
+
+    var g = document.createElement('div');
+    g.className = 'tl-choix-g';
+    fiches.forEach(function (f) {
+      var a = document.createElement('a');
+      a.className = 'tl-choix-i';
+      a.href = '/products/' + f.handle;
+      var vig = document.createElement('span');
+      vig.className = 'tl-choix-v';
+      if (f.image) vig.style.backgroundImage = 'url("' + String(f.image).replace(/"/g, '%22') + '")';
+      a.appendChild(vig);
+      var n = document.createElement('span');
+      n.className = 'tl-choix-n'; n.textContent = f.titre;
+      a.appendChild(n);
+      if (f.prix) {
+        var pr = document.createElement('span');
+        pr.className = 'tl-choix-p'; pr.textContent = f.prix;
+        a.appendChild(pr);
+      }
+      g.appendChild(a);
+    });
+
+    c.appendChild(x); c.appendChild(t); c.appendChild(sst); c.appendChild(g);
+    v.appendChild(c);
+
+    var auClavier = function (e) {
+      if (e.key !== 'Escape') return;
+      _tlFermerChoix();
+      document.removeEventListener('keydown', auClavier);
+    };
+    v.addEventListener('click', function (e) {
+      if (e.target === v || e.target === x) { _tlFermerChoix(); document.removeEventListener('keydown', auClavier); }
+    });
+    document.addEventListener('keydown', auClavier);
+
+    document.body.appendChild(v);
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { v.classList.add('tl-on'); });
+    });
+    if (x) x.focus();
+  }
+
+  function _tlEntreeParLeMenu() {
+    var m = _tlMarqueurUrl();
+    if (m === null) return;
+    _tlEffacerMarqueur();
+
+    // Un handle explicite : on n'a rien à demander.
+    if (m !== '1' && /^[a-z0-9][a-z0-9-]*$/.test(m)) { _tlGoToProductPage(m); return; }
+
+    _tlSupports().then(function (liste) {
+      // Aucun support lié : plutôt que d'ouvrir une fenêtre vide, on envoie
+      // sur le produit vierge que le marchand a désigné dans l'app embed.
+      if (!liste.length) { _tlGoToProductPage(''); return; }
+      // Un seul : la question ne se pose pas.
+      if (liste.length === 1) { _tlGoToProductPage(liste[0].shopify_product_handle); return; }
+      Promise.all(liste.map(_tlFicheSupport)).then(_tlAfficherChoix);
+    });
+  }
+
   // ── Interception des liens "Personnalisé" ───────────────────────────────────
   function _tlDefaultProductHandle() {
     var configured = window.TL_CONFIG && window.TL_CONFIG.defaultProductHandle;
@@ -1149,6 +1362,7 @@
     _tlHidePrintOption();
     _tlRelabelTemplateButtons();
     _tlFetchCustomerToken(); // en avance, pour que l'ouverture du studio soit immédiate
+    _tlEntreeParLeMenu();
     // Les sélecteurs de variante peuvent se rendre tardivement (thèmes JS).
     setTimeout(_tlHidePrintOption, 800);
     setTimeout(_tlHidePrintOption, 2000);
