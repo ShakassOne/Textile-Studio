@@ -1419,31 +1419,45 @@
     if (x) x.focus();
   }
 
-  function _tlEntreeParLeMenu() {
-    var m = _tlMarqueurUrl();
-    if (m === null) return;
-    _tlEffacerMarqueur();
-
-    // Un handle explicite : on n'a rien à demander.
-    if (m !== '1' && /^[a-z0-9][a-z0-9-]*$/.test(m)) { _tlGoToProductPage(m); return; }
-
+  /**
+   * « Sur quoi voulez-vous créer ? »
+   *
+   * Partagé par le lien /?tsl=1 et par tout bouton générique : les deux
+   * posent la même question, ils doivent donner la même réponse.
+   */
+  function _tlDemanderLeSupport() {
     _tlSupports().then(function (liste) {
-      // Aucun support lié : plutôt que d'ouvrir une fenêtre vide, on envoie
-      // sur le produit vierge que le marchand a désigné dans l'app embed.
-      if (!liste.length) { _tlGoToProductPage(''); return; }
-      // Un seul : la question ne se pose pas.
-      if (liste.length === 1) { _tlGoToProductPage(liste[0].shopify_product_handle); return; }
+      // Aucun support lié : le produit vierge désigné dans l'app embed est
+      // le dernier recours — encore faut-il qu'il existe. Un handle
+      // désactivé mènerait à une page introuvable, ce qui est pire que rien.
+      if (!liste.length) {
+        var defaut = _tlDefaultProductHandle();
+        fetch('/products/' + encodeURIComponent(defaut) + '.js', { credentials: 'same-origin' })
+          .then(function (r) { if (r.ok) _tlGoToProductPage(defaut); })
+          .catch(function () { /* injoignable : on ne renvoie nulle part */ });
+        return;
+      }
       Promise.all(liste.map(_tlFicheSupport)).then(function (fiches) {
         // Les produits dépubliés sont tombés à null : on ne propose que ce
         // qui existe encore sur la boutique.
         var vivants = fiches.filter(Boolean);
-        if (!vivants.length) return _tlGoToProductPage('');
+        if (!vivants.length) return;
+        // Un seul support ET une seule variante : la question ne se pose pas.
         if (vivants.length === 1 && (vivants[0].variantes || []).length === 1) {
           return _tlLancerStudio(vivants[0].handle, vivants[0].variantes[0].id);
         }
         _tlAfficherChoix(vivants);
       });
     });
+  }
+
+  function _tlEntreeParLeMenu() {
+    var m = _tlMarqueurUrl();
+    if (m === null) return;
+    _tlEffacerMarqueur();
+    // Un handle explicite : on n'a rien à demander.
+    if (m !== '1' && /^[a-z0-9][a-z0-9-]*$/.test(m)) { _tlGoToProductPage(m); return; }
+    _tlDemanderLeSupport();
   }
 
   // ── Interception des liens "Personnalisé" ───────────────────────────────────
@@ -1584,7 +1598,14 @@
         var finalUrl = customUrl ? customUrl : buildStudioUrl(ref, visual);
         var request  = _tlEditorRequest(finalUrl, btn);
         if (!request.ready) {
-          _tlGoToProductPage(/^[a-z0-9][a-z0-9-]*$/.test(ref) ? ref : '');
+          // Un bouton qui désigne un produit : on y va.
+          if (/^[a-z0-9][a-z0-9-]*$/.test(ref)) { _tlGoToProductPage(ref); return; }
+          // Un bouton GÉNÉRIQUE — « Personnaliser » dans un menu, par
+          // exemple — ne désigne rien. On envoyait alors sur le produit
+          // vierge par défaut, qui peut très bien être désactivé : c'est
+          // une page introuvable au bout d'un bouton d'accueil. On demande
+          // plutôt sur quoi créer, comme le fait le lien /?tsl=1.
+          _tlDemanderLeSupport();
           return;
         }
         openModal(request.url);
