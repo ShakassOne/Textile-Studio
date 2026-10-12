@@ -1100,6 +1100,26 @@ la commande de test réelle d'Alan) ni sur le lot G (après E dans le tableau).
 `upsell_candidates`, `design-resume` — cause machine connue, inchangée).
 Aucune régression. Aucun fichier de code modifié par cette session.
 
+### 2026-10-12 — Repassage du matin : trio commité il y a 42 minutes, rien touché
+
+Arbre de travail propre, toujours sur `dev`, HEAD toujours sur `0a599da` (le
+commit de l'entrée précédente, celle du même jour 08h57) : aucun commit n'est
+arrivé entre les deux passages. Dernier commit sur
+`tl-editor.js`/`tsl-engine.js`/`textilelab-studio.html` toujours `2a5c2f4`, à
+08h15 — 42 minutes d'écart avec ce passage (08h58) : largement sous le seuil
+de « plusieurs jours » posé le 09/10 pour reprendre le fil. Même consigne, je
+n'y touche pas.
+
+Rien de neuf sur les 3 questions du lot E (tranchées le 04/10, en attente de
+la commande de test réelle d'Alan) ni sur le lot G (après E dans le tableau).
+
+`npm test` : 185 tests, 182 passent, 3 ignorés (`social_proof_items`,
+`upsell_candidates`, `design-resume` — cause machine connue, inchangée). Le
+total de tests a grimpé de 161 à 185 depuis le dernier relevé : signe que les
+commits récents d'Alan (contraste, icône panier, police) sont accompagnés de
+leurs propres tests, pas une anomalie de cette session. Aucune régression.
+Aucun fichier de code modifié.
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.
