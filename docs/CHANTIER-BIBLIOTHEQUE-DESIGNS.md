@@ -1213,6 +1213,25 @@ la commande de test réelle d'Alan) ni sur le lot G (après E dans le tableau).
 Identique au dernier relevé. Aucune régression. Aucun fichier de code
 modifié.
 
+### 2026-10-13 — Repassage du matin : 22h45 sans commit sur le trio, rien touché
+
+Arbre de travail propre, toujours sur `dev`, HEAD toujours sur `c3208a7` (le
+commit de l'entrée précédente, 13/10 00h15) : aucun commit n'est arrivé entre
+les deux passages. Dernier commit sur
+`tl-editor.js`/`tsl-engine.js`/`textilelab-studio.html` toujours `07a684b`,
+le 2026-10-12 à 10h12 — environ 22h45 d'écart avec ce passage (13/10 08h57) :
+le plus long silence du trio à ce jour, mais encore sous le seuil de
+« plusieurs jours » posé le 09/10 pour reprendre le fil (moins d'une journée
+pleine). Même consigne, je n'y touche pas.
+
+Rien de neuf sur les 3 questions du lot E (tranchées le 04/10, en attente de
+la commande de test réelle d'Alan) ni sur le lot G (après E dans le tableau).
+
+`npm test` : 185 tests, 182 passent, 3 ignorés (`social_proof_items`,
+`upsell_candidates`, `design-resume` — cause machine connue, inchangée).
+Identique au dernier relevé. Aucune régression. Aucun fichier de code
+modifié.
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.
