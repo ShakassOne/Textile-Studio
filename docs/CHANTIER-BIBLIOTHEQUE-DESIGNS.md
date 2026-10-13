@@ -1232,6 +1232,29 @@ la commande de test réelle d'Alan) ni sur le lot G (après E dans le tableau).
 Identique au dernier relevé. Aucune régression. Aucun fichier de code
 modifié.
 
+### 2026-10-13 — Repassage de mi-journée : 26h sans commit sur le trio, rien touché
+
+Arbre de travail propre, toujours sur `dev`, HEAD toujours sur `422f5bd` (le
+commit de l'entrée précédente, 13/10 09h08) : aucun commit n'est arrivé entre
+les deux passages. Dernier commit sur
+`tl-editor.js`/`tsl-engine.js`/`textilelab-studio.html` toujours `07a684b`,
+le 2026-10-12 à 10h12 — environ 26 h d'écart avec ce passage (13/10 12h14) :
+pour la première fois l'écart dépasse une journée pleine, mais il s'agit d'un
+jour et deux heures, pas encore des « plusieurs jours » (pluriel) visés par
+le seuil posé le 09/10 pour reprendre le fil. Même consigne, je n'y touche
+pas ; si le prochain passage retrouve encore ce même état (HEAD inchangé,
+trio toujours à `07a684b`), l'écart franchira alors nettement deux jours et
+ce sera le moment de reprendre le raccordement configurateur ↔ moteur
+partagé.
+
+Rien de neuf sur les 3 questions du lot E (tranchées le 04/10, en attente de
+la commande de test réelle d'Alan) ni sur le lot G (après E dans le tableau).
+
+`npm test` : 185 tests, 182 passent, 3 ignorés (`social_proof_items`,
+`upsell_candidates`, `design-resume` — cause machine connue, inchangée).
+Identique au dernier relevé. Aucune régression. Aucun fichier de code
+modifié.
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.
