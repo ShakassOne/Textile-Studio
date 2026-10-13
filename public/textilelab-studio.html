@@ -4826,7 +4826,17 @@ function _syncResolvedProductHandle() {
     return;
   }
   const stillValid = options.some(o => o.handle === _resolvedProductHandle);
-  if (!stillValid) _resolvedProductHandle = options[0].handle || ('id:' + options[0].product_id);
+  if (!stillValid) {
+    // Même garde que chooseShopifyProductHandle() : une variante choisie pour
+    // le PRÉCÉDENT produit (ex. taille d'un sac) ne doit jamais survivre à un
+    // changement de produit silencieux (ex. selectProduct() depuis le panel
+    // Produits) — sinon "Ajouter au panier" (ligne ~8251, mode Shopify direct)
+    // réutilise window._TL_VARIANT_ID tel quel et vend la variante d'un AUTRE
+    // produit que celui visible à l'écran au moment du clic.
+    const previousRef = _resolvedProductHandle || window._TL_PRODUCT_HANDLE || '';
+    _resolvedProductHandle = options[0].handle || ('id:' + options[0].product_id);
+    if (previousRef && previousRef !== _resolvedProductHandle) window._TL_VARIANT_ID = '';
+  }
 }
 
 // Drapeau : true tant que l'utilisateur ne veut pas que le panel produits
