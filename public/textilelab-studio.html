@@ -4932,6 +4932,14 @@ async function loadShopifyProductLinks() {
       }
     }
 
+    // Repli : si rien n'a pu appliquer de mockup jusqu'ici (produit d'entrée
+    // sans liaison exploitable, lien sans mockup_id valide, ou pas de handle
+    // du tout), ne JAMAIS laisser le studio sans aucun mockup affiché —
+    // l'ancien défaut [0] reprend la main, mais seulement MAINTENANT, après
+    // avoir vraiment essayé de résoudre le bon produit (voir init() : le
+    // défaut n'y est plus appliqué à l'aveugle quand un produit est attendu).
+    if (!STATE_mockup) applyMockup(STATE.product, 0);
+
     refreshResolvedProductPrice();
     _tlLinksDebug = { lastSource:'public', lastCount: SHOPIFY_PRODUCT_LINKS.length, lastError:'' };
     updateViewSwitcher();
@@ -4942,6 +4950,10 @@ async function loadShopifyProductLinks() {
     _shopifyLinksFailed = true;
     _tlLinksDebug = { lastSource:'public', lastCount:0, lastError:String(e.message || e) };
     console.warn('[TL] loadShopifyProductLinks:', e.message);
+    // Même repli en cas d'échec réseau : un produit d'entrée attendait la
+    // résolution (voir init()), qui n'aura jamais lieu — sans ce filet, le
+    // studio resterait sans aucun mockup affiché.
+    if (!STATE_mockup) applyMockup(STATE.product, 0);
     updateViewSwitcher();
   }
 }
@@ -9561,9 +9573,26 @@ function init() {
       } else {
         applyMockup(STATE.product, 0);
       }
-    } else {
+    } else if (!window._TL_PRODUCT_HANDLE || !window._TL_SHOP) {
+      // Entrée générique (pas de produit connu, ou pas de contexte boutique
+      // pour le résoudre) : mockup par défaut immédiat, rien d'autre ne
+      // l'appliquera.
       applyMockup(STATE.product, 0);
     }
+    // Sinon (entrée via ?product=/?product_id= sans ?mockup=, le cas normal
+    // d'un clic « Personnaliser ») : AUCUN mockup par défaut n'est appliqué
+    // ici. L'appliquer à l'aveugle avant même de savoir à quel produit on a
+    // affaire cassait deux choses en cascade, trouvé en creusant un bug
+    // signalé par Alan (mockup Femme systématique, y compris en entrant par
+    // un Sac) : (1) le mauvais mockup s'affichait tant que la résolution
+    // réelle n'avait pas eu le temps d'arriver, et (2) loadShopifyProductLinks()
+    // (déjà lancé plus haut) validait alors le produit d'ORIGINE contre les
+    // produits liés à CE mockup par défaut (_syncResolvedProductHandle lit
+    // STATE_mockup.id), le jugeait invalide et le remplaçait par un autre
+    // produit — persistant, pas un simple flash. loadShopifyProductLinks()
+    // applique désormais lui-même le bon mockup via son bloc « Auto-bascule »,
+    // avec son propre repli si le produit d'entrée n'a aucune liaison
+    // exploitable (voir cette fonction, juste avant refreshResolvedProductPrice()).
     showMockupStatus();
 
     // ── Templates produit ────────────────────────────────────────────────
