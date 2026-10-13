@@ -8050,19 +8050,103 @@ function _returnToShopifyProductPage(ref) {
   window.location.assign(base + '/products/' + encodeURIComponent(targetHandle));
 }
 
+// Taille manquante (changement de produit dans TSL sans nouvelle variante
+// résolue) : on la redemande dans un petit popup plutôt que de renvoyer sur
+// la fiche produit, ce qui perdrait la création en cours. Même filtre de
+// variantes « de base » (sans l'option Impression) que tl-modal.js::_tlVariantesDeBase().
+function _tlVariantesDeBaseStudio(product) {
+  if (!product || !Array.isArray(product.variants)) return [];
+  const noms = (product.options || []).map(o => String((o && o.name) || o || ''));
+  let iImpr = -1;
+  for (let i = 0; i < noms.length; i++) {
+    if (/impr|print|perso|finition/i.test(noms[i])) { iImpr = i; break; }
+  }
+  return product.variants.filter(v => {
+    if (iImpr < 0) return true;
+    const val = String((v.options || [])[iImpr] || '').toLowerCase();
+    return val.indexOf('sans') === 0 || !val;
+  }).map(v => {
+    const etiquette = (v.options || []).filter((_, i) => i !== iImpr).filter(Boolean).join(' / ');
+    return { id: v.id, nom: etiquette || v.title, dispo: v.available !== false };
+  });
+}
+
+async function _tlDemanderTailleEtContinuer(ref) {
+  const handle = String(ref || '').startsWith('id:') ? '' : String(ref || '');
+  if (!handle) {
+    showToast('⚠️ Choisissez d’abord votre taille sur la fiche produit.');
+    setTimeout(() => _returnToShopifyProductPage(ref), 500);
+    return;
+  }
+  let product = null;
+  try {
+    const base = (window._TL_SHOP_URL || ('https://' + window._TL_SHOP)).replace(/\/+$/, '');
+    const res  = await fetch(`${base}/products/${encodeURIComponent(handle)}.json`);
+    product = res.ok ? (await res.json())?.product : null;
+  } catch (_) { /* réseau indisponible : repli sur la fiche produit */ }
+
+  const variantes = _tlVariantesDeBaseStudio(product);
+  if (!variantes.length) {
+    showToast('⚠️ Choisissez d’abord votre taille sur la fiche produit.');
+    setTimeout(() => _returnToShopifyProductPage(ref), 500);
+    return;
+  }
+  _tlAfficherPopupTaille(variantes);
+}
+
+function _tlAfficherPopupTaille(variantes) {
+  const ancien = document.getElementById('taille-popup-modal');
+  if (ancien) ancien.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'taille-popup-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:650;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.75);backdrop-filter:blur(4px)';
+  modal.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:20px;width:min(360px,92vw);padding:28px;position:relative">
+      <button onclick="document.getElementById('taille-popup-modal').remove()" style="position:absolute;top:16px;right:16px;background:transparent;border:none;color:var(--text2);font-size:22px;cursor:pointer;line-height:1">×</button>
+      <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:18px;margin-bottom:4px">Choisissez votre taille</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:20px">Votre création est conservée, il ne manque que la taille.</div>
+      <div id="taille-popup-grid" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  const grille = document.getElementById('taille-popup-grid');
+  variantes.forEach(v => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = v.nom;
+    b.disabled = !v.dispo;
+    b.style.cssText = `padding:10px 16px;border-radius:10px;border:1px solid var(--border);background:${v.dispo ? 'var(--bg3)' : 'transparent'};color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;cursor:${v.dispo ? 'pointer' : 'not-allowed'};opacity:${v.dispo ? '1' : '.4'}`;
+    if (!v.dispo) {
+      b.title = 'Épuisé';
+    } else {
+      b.addEventListener('click', () => {
+        window._TL_VARIANT_ID = String(v.id);
+        modal.remove();
+        _checkoutShopifyDirect();
+      });
+    }
+    grille.appendChild(b);
+  });
+}
+
 async function addToCart() {
   const product = PRODUCTS[STATE.product];
   if (!product) return showToast('❌ Produit introuvable');
 
   // Sur Shopify, l'ancien panier interne ne doit jamais prendre le relais : il
-  // ne connaît ni le produit ni la taille réels. Sans contexte complet, retour
-  // à la fiche produit pour sélectionner la variante avant personnalisation.
+  // ne connaît ni le produit ni la taille réels. Sans variante connue (ex. le
+  // client a changé de produit EN COURS DE SESSION dans TSL — _syncResolvedProductHandle()
+  // efface alors délibérément l'ancienne variante, qui ne doit pas survivre à
+  // un changement de produit), on demande la taille ICI, dans un popup, sans
+  // renvoyer à la fiche produit : un aller-retour perdrait la création en
+  // cours (applyMockup() réinitialise les calques à chaque changement de
+  // produit, voir STATE.viewLayers = {} plus haut). Un handle vraiment
+  // introuvable (_tlDemanderTailleEtContinuer) retombe sur l'ancien comportement.
   if (window._TL_SHOP) {
     const ref = _resolvedProductHandle || window._TL_PRODUCT_HANDLE || '';
     if (!ref || !window._TL_VARIANT_ID) {
-      showToast('⚠️ Choisissez d’abord votre taille sur la fiche produit.');
-      setTimeout(() => _returnToShopifyProductPage(ref), 500);
-      return;
+      return _tlDemanderTailleEtContinuer(ref);
     }
     return _checkoutShopifyDirect();
   }
