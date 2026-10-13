@@ -1477,14 +1477,25 @@
     window.location.assign(_tlProductPageUrl(handle));
   }
 
+  // Variante actuellement sélectionnée sur LA fiche produit qui porte ce
+  // bouton — jamais une autre. Sur une page qui affiche plusieurs produits
+  // (recommandations, upsell, carrousel « vu récemment »), chacun a son
+  // propre formulaire /cart/add : si le bouton n'est pas retrouvé dans une
+  // section scopée à SON produit, on ne doit PAS deviner avec le premier
+  // formulaire du document entier — ce serait potentiellement celui d'un
+  // AUTRE produit, et le client ajouterait au panier un produit différent de
+  // celui qu'il vient de personnaliser (variante sans rapport avec le
+  // product_id déjà correct, transmis par ailleurs dans l'URL). Mieux vaut
+  // ne rien trouver ici : l'appelant retombe alors sur `variant_id` déjà
+  // posé dans l'URL par Liquid pour CE produit (voir personalise-button.liquid).
   function _tlCurrentVariantId(link) {
     var scope = link && link.closest
-      ? (link.closest('.shopify-section, product-info, main') || document)
-      : document;
+      ? link.closest('.shopify-section, product-info, main')
+      : null;
+    if (!scope) return '';
     var input = scope.querySelector('form[action*="/cart/add"] input[name="id"]')
-      || document.querySelector('form[action*="/cart/add"] input[name="id"]')
-      || document.querySelector('product-form input[name="id"]')
-      || document.querySelector('input[name="id"][value]');
+      || scope.querySelector('product-form input[name="id"]')
+      || scope.querySelector('input[name="id"][value]');
     var value = input && input.value ? String(input.value).trim() : '';
     return /^\d+$/.test(value) ? value : '';
   }
