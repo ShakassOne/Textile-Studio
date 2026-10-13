@@ -994,6 +994,74 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
           <span id="social-proof-result" style="font-size:12px;color:var(--text3);min-height:16px;display:block;margin-top:6px"></span>
         </div>
 
+        <!-- Studio — Reprendre ma création (client connecté) -->
+        <div class="table-card" style="padding:20px">
+          <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px">↩️ Studio — Reprendre ma création</h3>
+          <p style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5">Sur la fiche produit, propose au client connecté de reprendre une création récente (30 jours) non encore commandée au lieu de repartir de zéro. <strong style="color:var(--text2)">Désactivé par défaut</strong> — non vérifié visuellement sur une vraie fiche WinShirt dans l'environnement de dev, à activer après vérification visuelle réelle. Prise en compte côté boutique en ~1 min.</p>
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+            <label class="tl-switch">
+              <input type="checkbox" id="resume-design-toggle" onchange="_applyResumeDesignToggle(this.checked)">
+              <span class="tl-switch-slider"></span>
+            </label>
+            <span id="resume-design-state" style="font-size:13px;color:var(--text3)">…</span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+            <button class="btn btn-primary" id="resume-design-save-btn" onclick="saveResumeDesign()">💾 Enregistrer</button>
+            <span id="resume-design-result" style="font-size:12px;color:var(--text3);align-self:center;min-height:16px"></span>
+          </div>
+        </div>
+
+        <!-- Studio — Lien de reprise par email (visiteur non connecté) -->
+        <div class="table-card" style="padding:20px">
+          <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px">✉️ Studio — Lien de reprise par email</h3>
+          <p style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5">À la fermeture volontaire du studio, propose au visiteur non connecté de recevoir par email un lien pour reprendre sa création (complète « Reprendre ma création » qui ne couvre que le client connecté). <strong style="color:var(--text2)">Désactivé par défaut</strong> — non vérifié visuellement sur une vraie fiche WinShirt dans l'environnement de dev, à activer après vérification visuelle réelle. Prise en compte côté boutique en ~1 min.</p>
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+            <label class="tl-switch">
+              <input type="checkbox" id="email-resume-toggle" onchange="_applyEmailResumeToggle(this.checked)">
+              <span class="tl-switch-slider"></span>
+            </label>
+            <span id="email-resume-state" style="font-size:13px;color:var(--text3)">…</span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+            <button class="btn btn-primary" id="email-resume-save-btn" onclick="saveEmailResume()">💾 Enregistrer</button>
+            <span id="email-resume-result" style="font-size:12px;color:var(--text3);align-self:center;min-height:16px"></span>
+          </div>
+        </div>
+
+        <!-- Panier — Bouton "Modifier" sur une ligne personnalisée -->
+        <div class="table-card" style="padding:20px">
+          <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px">✏️ Panier — Bouton « Modifier »</h3>
+          <p style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5">Ajoute un bouton « Modifier » sur une ligne de panier déjà personnalisée, qui rouvre le studio sur cette création et remplace la ligne au lieu d'en ajouter une nouvelle. <strong style="color:var(--text2)">Désactivé par défaut</strong> — non vérifié visuellement sur une vraie fiche WinShirt dans l'environnement de dev, à activer après vérification visuelle réelle. Prise en compte côté boutique en ~1 min.</p>
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+            <label class="tl-switch">
+              <input type="checkbox" id="cart-edit-design-toggle" onchange="_applyCartEditDesignToggle(this.checked)">
+              <span class="tl-switch-slider"></span>
+            </label>
+            <span id="cart-edit-design-state" style="font-size:13px;color:var(--text3)">…</span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+            <button class="btn btn-primary" id="cart-edit-design-save-btn" onclick="saveCartEditDesign()">💾 Enregistrer</button>
+            <span id="cart-edit-design-result" style="font-size:12px;color:var(--text3);align-self:center;min-height:16px"></span>
+          </div>
+        </div>
+
+        <!-- Studio — Panneau partiel desktop -->
+        <div class="table-card" style="padding:20px">
+          <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px">🖥️ Studio — Panneau partiel desktop</h3>
+          <p style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5">Sur desktop uniquement, ouvre le studio dans un panneau centré (fond flouté, coins arrondis, ombre) au lieu du plein écran opaque actuel. Mobile inchangé. <strong style="color:var(--text2)">Désactivé par défaut</strong> — non vérifié visuellement sur une vraie fiche WinShirt dans l'environnement de dev, à activer après vérification visuelle réelle. Prise en compte côté boutique en ~1 min.</p>
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+            <label class="tl-switch">
+              <input type="checkbox" id="panel-mode-studio-toggle" onchange="_applyPanelModeStudioToggle(this.checked)">
+              <span class="tl-switch-slider"></span>
+            </label>
+            <span id="panel-mode-studio-state" style="font-size:13px;color:var(--text3)">…</span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+            <button class="btn btn-primary" id="panel-mode-studio-save-btn" onclick="savePanelModeStudio()">💾 Enregistrer</button>
+            <span id="panel-mode-studio-result" style="font-size:12px;color:var(--text3);align-self:center;min-height:16px"></span>
+          </div>
+        </div>
+
         <!-- IA — Formulation d'identité générique du prompt Photo → Illustration -->
         <div class="table-card" style="padding:20px">
           <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px">🧩 IA — Formulation d'identité générique</h3>
@@ -4301,6 +4369,10 @@ async function loadSettingsInfo() {
   loadMobilePriceBar();
   loadSocialProof();
   loadAiGenericIdentity();
+  loadResumeDesign();
+  loadEmailResume();
+  loadCartEditDesign();
+  loadPanelModeStudio();
   const [aiStatus, shopStatus] = await Promise.all([api('/api/ai/status'), api('/api/shopify/status')]);
   const svcEl = document.getElementById('services-status');
   if (svcEl) {
@@ -4536,6 +4608,154 @@ async function saveSocialProofToggle() {
     _applySocialProofToggle(!!data.social_proof_enabled);
     if (out) { out.textContent = '✅ Enregistré — visible côté boutique dans ~1 min'; out.style.color = 'var(--success)'; }
     showToast('✅ Preuve sociale ' + (data.social_proof_enabled ? 'activée' : 'désactivée'));
+  } else {
+    if (out) { out.textContent = '❌ ' + (data?.error || 'Erreur inconnue'); out.style.color = 'var(--danger)'; }
+  }
+}
+
+// ── Studio : reprendre ma création (client connecté) ────────────────────────
+function _applyResumeDesignToggle(enabled) {
+  const tog = document.getElementById('resume-design-toggle');
+  const st  = document.getElementById('resume-design-state');
+  if (tog) tog.checked = !!enabled;
+  if (st) {
+    st.textContent  = enabled ? 'Activé — proposé au client connecté sur la fiche produit' : 'Désactivé — pas de proposition de reprise';
+    st.style.color  = enabled ? 'var(--success)' : 'var(--text3)';
+  }
+}
+
+async function loadResumeDesign() {
+  const data = await api('/api/shop-settings/style');
+  _applyResumeDesignToggle(!!(data && data.resume_design_enabled));
+}
+
+async function saveResumeDesign() {
+  const tog = document.getElementById('resume-design-toggle');
+  const out = document.getElementById('resume-design-result');
+  const btn = document.getElementById('resume-design-save-btn');
+  const enabled = !!(tog && tog.checked);
+  if (out) { out.textContent = '⏳ Sauvegarde…'; out.style.color = 'var(--text3)'; }
+  if (btn) btn.disabled = true;
+  const data = await api('/api/shop-settings/style', {
+    method: 'POST',
+    body:   JSON.stringify({ resume_design_enabled: enabled }),
+  });
+  if (btn) btn.disabled = false;
+  if (data?.ok) {
+    _applyResumeDesignToggle(!!data.resume_design_enabled);
+    if (out) { out.textContent = '✅ Enregistré — visible côté boutique dans ~1 min'; out.style.color = 'var(--success)'; }
+    showToast('✅ Reprendre ma création ' + (data.resume_design_enabled ? 'activé' : 'désactivé'));
+  } else {
+    if (out) { out.textContent = '❌ ' + (data?.error || 'Erreur inconnue'); out.style.color = 'var(--danger)'; }
+  }
+}
+
+// ── Studio : lien de reprise par email (visiteur non connecté) ──────────────
+function _applyEmailResumeToggle(enabled) {
+  const tog = document.getElementById('email-resume-toggle');
+  const st  = document.getElementById('email-resume-state');
+  if (tog) tog.checked = !!enabled;
+  if (st) {
+    st.textContent  = enabled ? 'Activé — proposé à la fermeture du studio (visiteur non connecté)' : 'Désactivé — pas de lien de reprise par email';
+    st.style.color  = enabled ? 'var(--success)' : 'var(--text3)';
+  }
+}
+
+async function loadEmailResume() {
+  const data = await api('/api/shop-settings/style');
+  _applyEmailResumeToggle(!!(data && data.email_resume_enabled));
+}
+
+async function saveEmailResume() {
+  const tog = document.getElementById('email-resume-toggle');
+  const out = document.getElementById('email-resume-result');
+  const btn = document.getElementById('email-resume-save-btn');
+  const enabled = !!(tog && tog.checked);
+  if (out) { out.textContent = '⏳ Sauvegarde…'; out.style.color = 'var(--text3)'; }
+  if (btn) btn.disabled = true;
+  const data = await api('/api/shop-settings/style', {
+    method: 'POST',
+    body:   JSON.stringify({ email_resume_enabled: enabled }),
+  });
+  if (btn) btn.disabled = false;
+  if (data?.ok) {
+    _applyEmailResumeToggle(!!data.email_resume_enabled);
+    if (out) { out.textContent = '✅ Enregistré — visible côté boutique dans ~1 min'; out.style.color = 'var(--success)'; }
+    showToast('✅ Lien de reprise par email ' + (data.email_resume_enabled ? 'activé' : 'désactivé'));
+  } else {
+    if (out) { out.textContent = '❌ ' + (data?.error || 'Erreur inconnue'); out.style.color = 'var(--danger)'; }
+  }
+}
+
+// ── Panier : bouton "Modifier" sur une ligne personnalisée ──────────────────
+function _applyCartEditDesignToggle(enabled) {
+  const tog = document.getElementById('cart-edit-design-toggle');
+  const st  = document.getElementById('cart-edit-design-state');
+  if (tog) tog.checked = !!enabled;
+  if (st) {
+    st.textContent  = enabled ? 'Activé — bouton « Modifier » visible dans le tiroir panier' : 'Désactivé — pas de bouton « Modifier »';
+    st.style.color  = enabled ? 'var(--success)' : 'var(--text3)';
+  }
+}
+
+async function loadCartEditDesign() {
+  const data = await api('/api/shop-settings/style');
+  _applyCartEditDesignToggle(!!(data && data.cart_edit_design_enabled));
+}
+
+async function saveCartEditDesign() {
+  const tog = document.getElementById('cart-edit-design-toggle');
+  const out = document.getElementById('cart-edit-design-result');
+  const btn = document.getElementById('cart-edit-design-save-btn');
+  const enabled = !!(tog && tog.checked);
+  if (out) { out.textContent = '⏳ Sauvegarde…'; out.style.color = 'var(--text3)'; }
+  if (btn) btn.disabled = true;
+  const data = await api('/api/shop-settings/style', {
+    method: 'POST',
+    body:   JSON.stringify({ cart_edit_design_enabled: enabled }),
+  });
+  if (btn) btn.disabled = false;
+  if (data?.ok) {
+    _applyCartEditDesignToggle(!!data.cart_edit_design_enabled);
+    if (out) { out.textContent = '✅ Enregistré — visible côté boutique dans ~1 min'; out.style.color = 'var(--success)'; }
+    showToast('✅ Bouton « Modifier » ' + (data.cart_edit_design_enabled ? 'activé' : 'désactivé'));
+  } else {
+    if (out) { out.textContent = '❌ ' + (data?.error || 'Erreur inconnue'); out.style.color = 'var(--danger)'; }
+  }
+}
+
+// ── Studio : panneau partiel desktop ─────────────────────────────────────────
+function _applyPanelModeStudioToggle(enabled) {
+  const tog = document.getElementById('panel-mode-studio-toggle');
+  const st  = document.getElementById('panel-mode-studio-state');
+  if (tog) tog.checked = !!enabled;
+  if (st) {
+    st.textContent  = enabled ? 'Activé — panneau centré sur desktop' : 'Désactivé — plein écran sur desktop';
+    st.style.color  = enabled ? 'var(--success)' : 'var(--text3)';
+  }
+}
+
+async function loadPanelModeStudio() {
+  const data = await api('/api/shop-settings/style');
+  _applyPanelModeStudioToggle(!!(data && data.panel_mode_studio_enabled));
+}
+
+async function savePanelModeStudio() {
+  const tog = document.getElementById('panel-mode-studio-toggle');
+  const out = document.getElementById('panel-mode-studio-result');
+  const btn = document.getElementById('panel-mode-studio-save-btn');
+  const enabled = !!(tog && tog.checked);
+  if (out) { out.textContent = '⏳ Sauvegarde…'; out.style.color = 'var(--text3)'; }
+  if (btn) btn.disabled = true;
+  const data = await api('/api/shop-settings/style', {
+    method: 'POST',
+    body:   JSON.stringify({ panel_mode_studio_enabled: enabled }),
+  });
+  if (btn) btn.disabled = false;
+  if (data?.ok) {
+    _applyPanelModeStudioToggle(!!data.panel_mode_studio_enabled);
+    if (out) { out.textContent = '✅ Enregistré — visible côté boutique dans ~1 min'; out.style.color = 'var(--success)'; }
+    showToast('✅ Panneau partiel desktop ' + (data.panel_mode_studio_enabled ? 'activé' : 'désactivé'));
   } else {
     if (out) { out.textContent = '❌ ' + (data?.error || 'Erreur inconnue'); out.style.color = 'var(--danger)'; }
   }
