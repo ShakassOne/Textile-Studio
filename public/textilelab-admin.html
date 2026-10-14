@@ -3554,6 +3554,21 @@ let _plUpsellGrouped = {}; // { source_shopify_product_id: [{id, target_shopify_
 let _plUpsellSourcePid = null; // produit source en cours d'édition dans le modal upsell
 let _plUpsellStats = {}; // { source_shopify_product_id: {impression, click} } — tracking Upsell V2 (30j)
 
+// GET /api/admin/products (GraphQL Admin API) renvoie un GID complet
+// ("gid://shopify/Product/123"), alors que les liaisons sont désormais
+// toujours stockées/renvoyées par le serveur en id numérique brut (fix du
+// 14/10, routes/product-links.js::normalizeProductId) — c'est ce même id
+// numérique que la fiche produit Shopify (Liquid `product.id`) transmet.
+// Sans normaliser p.id ICI, _plLinks[p.id] ne correspond jamais (un GID ne
+// matche jamais une clé numérique) : un produit tout juste lié réapparaît
+// "Non lié" au rechargement de cet écran, alors qu'il l'est bien en base.
+function _normPid(id) {
+  const s = String(id == null ? '' : id).trim();
+  if (!s) return s;
+  const m = s.match(/^gid:\/\/shopify\/\w+\/(\d+)$/);
+  return m ? m[1] : s;
+}
+
 async function loadProductLinks() {
   // Charger mockups + produits Shopify + liaisons existantes + candidats upsell + stats upsell en parallèle
   const [mockupsRaw, shopifyResult, linksRaw, upsellGrouped, upsellStats] = await Promise.all([
@@ -3565,7 +3580,7 @@ async function loadProductLinks() {
   ]);
 
   _plMockups  = Array.isArray(mockupsRaw) ? mockupsRaw : [];
-  _plProducts = shopifyResult.products || [];
+  _plProducts = (shopifyResult.products || []).map(p => ({ ...p, id: _normPid(p.id) }));
   _plLinks    = {};
   if (Array.isArray(linksRaw)) {
     linksRaw.forEach(l => { _plLinks[l.shopify_product_id] = l.mockup_id; });
