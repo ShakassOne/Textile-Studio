@@ -1158,6 +1158,8 @@
                     f.contentWindow.postMessage({ type: 'tl-add-failed', message: err.message }, '*');
                   }
                 } catch (e2) {}
+                var _errShop = (window.Shopify && window.Shopify.shop) || window._TL_SHOP || window.location.hostname;
+                _tlTrackCartError(_errShop, _vid, err.message);
                 alert('L\'ajout au panier a été refusé : ' + err.message
                     + '\n\nRéessayez dans quelques secondes.');
                 return;
@@ -2061,6 +2063,28 @@
       var url = TSL_BACKEND_ORIGIN
               + '/api/upsell-candidates/track?shop=' + encodeURIComponent(shop);
       var payload = JSON.stringify({ source: source, target: target, event: event });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
+      } else {
+        fetch(url, {
+          method: 'POST', mode: 'cors', credentials: 'omit', keepalive: true,
+          headers: { 'Content-Type': 'application/json' }, body: payload,
+        }).catch(function () {});
+      }
+    } catch (e) { /* jamais bloquant */ }
+  }
+
+  /**
+   * Refus de /cart/add déjà détecté par le client (tl-modal.js), envoyé
+   * sans jamais attendre ni bloquer — même mécanique que _tlTrackUpsell().
+   * Backlog item 31 : objectiver le point P0 (trou paiement commencé →
+   * commande) sans dépendre d'un accès live à Shopify Analytics.
+   */
+  function _tlTrackCartError(shop, variantId, reason) {
+    try {
+      var url = TSL_BACKEND_ORIGIN
+              + '/api/cart-add-errors/track?shop=' + encodeURIComponent(shop);
+      var payload = JSON.stringify({ variantId: variantId, reason: reason });
       if (navigator.sendBeacon) {
         navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
       } else {
