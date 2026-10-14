@@ -6315,9 +6315,16 @@ function _setPaletteForMockup(mockup) {
         : `Couleurs disponibles (${_activePalette.length})`)
     : 'Palette textile (36 couleurs)';
 
-  // Couleur courante indisponible sur ce produit → prendre la 1re du nuancier.
+  // Couleur courante indisponible sur ce produit → le blanc si ce produit le
+  // vend (c'est l'attente par défaut, un vêtement/accessoire "vierge"), sinon
+  // seulement la 1re du nuancier. Sans cette préférence explicite, un produit
+  // dont Shopify liste un autre coloris en premier (ex. "Beige" avant "Blanc"
+  // dans l'ordre des variantes) retombait sur ce premier coloris par pur hasard
+  // d'ordre — signalé par Alan sur un sac dont le blanc existe bien, mais
+  // n'est pas la 1re variante Shopify.
   if (restricted && !_activePalette.some(c => c.hex.toLowerCase() === String(STATE.textileColor || '').toLowerCase())) {
-    selectPaletteColor(_activePalette[0].hex);
+    const blanc = _activePalette.find(c => c.hex.toLowerCase() === '#ffffff');
+    selectPaletteColor((blanc || _activePalette[0]).hex);
   }
 }
 
