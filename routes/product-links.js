@@ -12,6 +12,31 @@ const router  = express.Router();
 const { getDB }       = require('../db/database');
 const { requireAuth } = require('./auth');
 const { attachShopId } = require('./_shop-context');
+const { normalizeProductId } = require('../utils/product-links');
+
+// Auto-guérison, une fois au démarrage : des liaisons enregistrées avant ce
+// correctif stockent parfois `shopify_product_id` sous forme de GID complet
+// ("gid://shopify/Product/123", renvoyé par GET /api/admin/products — GraphQL
+// Admin API) plutôt que l'id numérique brut que transmet la fiche produit
+// Shopify (Liquid `product.id`). La liaison existe bien en base, mais ne
+// correspond plus à rien pour un produit résolu par id seul (URL sans
+// `product=<handle>`) — recherche silencieusement infructueuse côté studio.
+// Idempotent, sans effet si rien n'a besoin d'être nettoyé.
+(function _normalizeExistingProductIds() {
+  try {
+    const db = getDB();
+    const rows = db.prepare('SELECT id, shopify_product_id FROM product_mockup_links').all();
+    const update = db.prepare('UPDATE product_mockup_links SET shopify_product_id = ? WHERE id = ?');
+    let fixed = 0;
+    for (const row of rows) {
+      const clean = normalizeProductId(row.shopify_product_id);
+      if (clean !== row.shopify_product_id) { update.run(clean, row.id); fixed++; }
+    }
+    if (fixed) console.log(`🔧  product-links: ${fixed} shopify_product_id normalisé(s) (GID → id numérique).`);
+  } catch (err) {
+    console.warn('⚠️  product-links: normalisation shopify_product_id ignorée —', err.message);
+  }
+})();
 
 // ── GET / — liste les liaisons du shop courant ─────────────────────────
 router.get('/', requireAuth, attachShopId, (req, res) => {
@@ -27,6 +52,7 @@ router.get('/', requireAuth, attachShopId, (req, res) => {
     WHERE pl.shop_id = ?
     ORDER BY pl.shopify_product_title COLLATE NOCASE
   `).all(req.shopId);
+  links.forEach(l => { l.shopify_product_id = normalizeProductId(l.shopify_product_id); });
   res.json(links);
 });
 
@@ -56,6 +82,7 @@ router.get('/public', attachShopId, (req, res) => {
     WHERE pl.shop_id = ?
     ORDER BY pl.shopify_product_title COLLATE NOCASE
   `).all(req.shopId);
+  links.forEach(l => { l.shopify_product_id = normalizeProductId(l.shopify_product_id); });
   res.json(links);
 });
 
@@ -74,27 +101,30 @@ router.get('/by-mockup/:mockupId', attachShopId, (req, res) => {
     WHERE pl.shop_id = ? AND pl.mockup_id = ?
     ORDER BY pl.shopify_product_title COLLATE NOCASE
   `).all(req.shopId, req.params.mockupId);
+  links.forEach(l => { l.shopify_product_id = normalizeProductId(l.shopify_product_id); });
   res.json(links);
 });
 
 // ── GET /by-product/:productId — utilisé par studio/storefront (scopé shop) ───
 router.get('/by-product/:productId', attachShopId, (req, res) => {
   const db = getDB();
+  const productId = normalizeProductId(req.params.productId);
   const link = db.prepare(`
     SELECT
       pl.*, m.name AS mockup_name, m.product AS mockup_product, m.views_json
     FROM product_mockup_links pl
     LEFT JOIN mockups m ON pl.mockup_id = m.id AND m.shop_id = pl.shop_id
     WHERE pl.shop_id = ? AND (pl.shopify_product_id = ? OR pl.shopify_product_handle = ?)
-  `).get(req.shopId, req.params.productId, req.params.productId);
+  `).get(req.shopId, productId, req.params.productId);
   if (!link) return res.status(404).json({ error: 'Aucune liaison trouvée' });
+  link.shopify_product_id = normalizeProductId(link.shopify_product_id);
   if (link.views_json) link.views = JSON.parse(link.views_json);
   res.json(link);
 });
 
 // ── PUT /:productId — upsert (créer ou mettre à jour, scopé shop) ───────
 router.put('/:productId', requireAuth, attachShopId, (req, res) => {
-  const { productId } = req.params;
+  const productId = normalizeProductId(req.params.productId);
   const { mockup_id, shopify_product_handle = '', shopify_product_title = '' } = req.body;
   const db = getDB();
 
@@ -106,7 +136,11 @@ router.put('/:productId', requireAuth, attachShopId, (req, res) => {
 
   // Note : la contrainte UNIQUE actuelle est sur shopify_product_id seul (globale).
   // Pour un même Shopify product_id, on autorise un seul shop l'utilisant — c'est cohérent
-  // car le product_id est unique par boutique.
+  // car le product_id est unique par boutique. `productId` est normalisé (GID → id
+  // numérique brut) avant d'être stocké : l'admin envoie un GID (GraphQL Admin API),
+  // la fiche produit Shopify (Liquid `product.id`) ne connaît que l'id numérique —
+  // sans cette normalisation la liaison existe mais ne correspond jamais à un
+  // produit résolu par id seul côté studio.
   db.prepare(`
     INSERT INTO product_mockup_links
       (shop_id, shopify_product_id, shopify_product_handle, shopify_product_title, mockup_id, updated_at)
@@ -126,7 +160,7 @@ router.put('/:productId', requireAuth, attachShopId, (req, res) => {
 router.delete('/:productId', requireAuth, attachShopId, (req, res) => {
   const db = getDB();
   db.prepare('DELETE FROM product_mockup_links WHERE shopify_product_id = ? AND shop_id = ?')
-    .run(req.params.productId, req.shopId);
+    .run(normalizeProductId(req.params.productId), req.shopId);
   res.json({ ok: true });
 });
 
