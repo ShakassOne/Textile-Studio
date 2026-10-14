@@ -6,7 +6,9 @@
  *
  * Communication iframe ↔ parent via postMessage :
  *   - { type: 'tl-add-to-cart', variantId, quantity, properties, previewUrl } → AJAX cart + drawer
- *   - { type: 'tl-close-modal' }                                               → ferme le modal
+ *   - { type: 'tl-close-modal', designId, designToken }                       → ferme le modal
+ *     (designId/designToken : backlog item 25, lien de reprise par email pour
+ *     un visiteur non connecté — cf. _tlOfferEmailResumeLink ci-dessous)
  */
 
 (function () {
@@ -24,6 +26,30 @@
   // overlays déjà présents quand la réponse arrive (cas où le drawer s'ouvre
   // avant la fin du fetch).
   var _TL_CART_BG = '';
+
+  // Flag item 25 (lien de reprise par email) : lu une fois par _tlLoadStyleSettings,
+  // consommé à la fermeture du studio. false tant que la réponse n'est pas arrivée
+  // (comportement identique à aujourd'hui : rien ne s'affiche).
+  var _TL_EMAIL_RESUME_ENABLED = false;
+
+  // Flag item 26 (bouton "Modifier" sur une ligne de panier déjà personnalisée) :
+  // même mécanique que _TL_EMAIL_RESUME_ENABLED ci-dessus, lu une fois par
+  // _tlLoadStyleSettings. false tant que la réponse n'est pas arrivée.
+  var _TL_CART_EDIT_DESIGN_ENABLED = false;
+
+  // Flag item 23 (panneau partiel desktop, au lieu du plein écran opaque) :
+  // même mécanique, lu une fois par _tlLoadStyleSettings. false tant que la
+  // réponse n'est pas arrivée (comportement identique à aujourd'hui : plein
+  // écran). Consommé par openModal()/closeModal() ci-dessous, desktop
+  // uniquement (mobile toujours en plein écran par construction).
+  var _TL_PANEL_MODE_STUDIO_ENABLED = false;
+
+  // Clé ("<variantId>:<hash>") de la ligne de panier en cours de modification
+  // via le bouton "Modifier" (item 26), le temps que le nouvel ajout soit
+  // confirmé — remise à null après la suppression de l'ancienne ligne OU à la
+  // fermeture du studio sans sauvegarde (sinon un ajout ultérieur sans rapport
+  // supprimerait à tort cette ancienne ligne).
+  var _tlEditingCartKey = null;
 
   // ── Styles injectés ─────────────────────────────────────────────────────────
   // Le bloc CART_FIX_CSS résout le bug de chevauchement image/titre dans les
@@ -170,6 +196,180 @@
     '}',
   ].join('\n');
 
+  // ── Allure du bouton « Personnaliser » ─────────────────────────────────────
+  //
+  // Le bloc ne donne au bouton que sa mise en page : il hérite donc des
+  // couleurs de `.button` du thème, et se retrouvait violet à gros arrondi,
+  // étranger au reste de la page. On l'habille ici plutôt que dans le bloc,
+  // pour couvrir aussi les boutons posés à la main dans un bloc « Liquid
+  // personnalisé » — ils portent la même classe.
+  //
+  // `!important` partout : la règle du thème est plus spécifique que la
+  // nôtre, et les styles en ligne du bloc l'emporteraient de toute façon.
+  var TL_CTA_CSS = '\
+    .tl-personalise-btn {\
+      background: #000 !important;\
+      background-image: none !important;\
+      color: #fff !important;\
+      border: 1px solid #000 !important;\
+      border-radius: 6px !important;\
+      box-shadow: none !important;\
+      transition: background-color .15s ease, color .15s ease !important;\
+    }\
+    .tl-personalise-btn > * { color: inherit !important; }\
+    .tl-personalise-btn:hover,\
+    .tl-personalise-btn:focus-visible {\
+      background: transparent !important;\
+      background-image: none !important;\
+      color: #000 !important;\
+      border-color: #000 !important;\
+    }\
+  ';
+
+  var TL_UPSELL_CSS = '\
+    .tl-upsell {\
+      position: fixed;\
+      left: 50%;\
+      bottom: 16px;\
+      transform: translateX(-50%) translateY(12px);\
+      z-index: 2147483000;\
+      width: calc(100vw - 24px);\
+      max-width: 520px;\
+      box-sizing: border-box;\
+      padding: 12px 14px 14px;\
+      border-radius: 16px;\
+      background: #fff;\
+      color: #16161a;\
+      box-shadow: 0 10px 40px rgba(0,0,0,.22);\
+      font: 400 14px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\
+      opacity: 0;\
+      transition: opacity .25s ease, transform .25s ease;\
+    }\
+    .tl-upsell.tl-on { opacity: 1; transform: translateX(-50%) translateY(0); }\
+    .tl-upsell-t { font-weight: 600; font-size: 14px; margin: 0 28px 10px 2px; }\
+    .tl-upsell-x {\
+      position: absolute; top: 8px; right: 8px;\
+      width: 30px; height: 30px; padding: 0;\
+      border: 0; border-radius: 50%;\
+      background: rgba(0,0,0,.06); color: #16161a;\
+      font-size: 18px; line-height: 1; cursor: pointer;\
+    }\
+    .tl-upsell-g {\
+      display: grid;\
+      grid-template-columns: repeat(auto-fit, minmax(0, 1fr));\
+      gap: 10px;\
+    }\
+    .tl-upsell-c {\
+      display: block;\
+      text-decoration: none;\
+      color: inherit;\
+      min-width: 0;\
+    }\
+    .tl-upsell-i {\
+      display: block;\
+      width: 100%;\
+      aspect-ratio: 1 / 1;\
+      border-radius: 10px;\
+      background: #f2f2f4 center / cover no-repeat;\
+      margin-bottom: 6px;\
+    }\
+    .tl-upsell-n {\
+      display: block;\
+      font-size: 12px;\
+      line-height: 1.25;\
+      overflow: hidden;\
+      display: -webkit-box;\
+      -webkit-line-clamp: 2;\
+      -webkit-box-orient: vertical;\
+    }\
+    .tl-upsell-p { display: block; font-size: 12px; opacity: .6; margin-top: 2px; }\
+    @media (max-width: 480px) {\
+      .tl-upsell { bottom: 8px; padding: 10px 12px 12px; }\
+      .tl-upsell-n { font-size: 11px; }\
+    }\
+  ';
+
+  // Bandeau "Reprendre ma création" (item 24) : discret, posé juste au-dessus
+  // du bouton "Personnaliser" qu'il remplace visuellement en priorité — pas
+  // un popup, pas de fond opaque, pour ne jamais paraître plus intrusif que
+  // le bandeau de réassurance déjà livré dans le studio.
+  var TL_RESUME_CSS = '\
+    .tl-resume {\
+      display: flex;\
+      flex-wrap: wrap;\
+      align-items: center;\
+      justify-content: space-between;\
+      gap: 8px;\
+      margin: 0 0 8px;\
+      padding: 10px 12px;\
+      border-radius: 10px;\
+      border: 1px solid rgba(0,0,0,.12);\
+      background: rgba(0,0,0,.03);\
+      font: 400 13px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\
+      color: inherit;\
+    }\
+    .tl-resume-t { font-weight: 600; }\
+    .tl-resume-a { display: flex; gap: 10px; flex-shrink: 0; }\
+    .tl-resume-r, .tl-resume-z {\
+      border: 0;\
+      background: none;\
+      padding: 0;\
+      font: inherit;\
+      font-weight: 600;\
+      text-decoration: underline;\
+      cursor: pointer;\
+      color: inherit;\
+    }\
+    .tl-resume-z { font-weight: 400; opacity: .7; }\
+  ';
+
+  // Lien "Recevoir un lien pour reprendre ma création" (item 25) : même ton
+  // discret que .tl-resume (item 24), proposé uniquement à un visiteur SANS
+  // jeton client (sinon le bandeau .tl-resume prend le relais). Replié en un
+  // simple lien tant qu'il n'est pas cliqué, pour ne jamais ressembler à un
+  // popup qui s'impose.
+  var TL_EMAIL_RESUME_CSS = '\
+    .tl-email-resume {\
+      margin: 0 0 8px;\
+      padding: 10px 12px;\
+      border-radius: 10px;\
+      border: 1px solid rgba(0,0,0,.12);\
+      background: rgba(0,0,0,.03);\
+      font: 400 13px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\
+      color: inherit;\
+    }\
+    .tl-email-resume-link {\
+      border: 0;\
+      background: none;\
+      padding: 0;\
+      font: inherit;\
+      font-weight: 600;\
+      text-decoration: underline;\
+      cursor: pointer;\
+      color: inherit;\
+    }\
+    .tl-email-resume-form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }\
+    .tl-email-resume-input {\
+      flex: 1 1 180px;\
+      min-width: 0;\
+      padding: 7px 10px;\
+      border-radius: 8px;\
+      border: 1px solid rgba(0,0,0,.2);\
+      font: inherit;\
+    }\
+    .tl-email-resume-send, .tl-email-resume-cancel {\
+      border: 0;\
+      border-radius: 8px;\
+      padding: 7px 12px;\
+      font: inherit;\
+      font-weight: 600;\
+      cursor: pointer;\
+    }\
+    .tl-email-resume-send { background: #111; color: #fff; }\
+    .tl-email-resume-cancel { background: none; opacity: .7; }\
+    .tl-email-resume-msg { display: block; margin-top: 6px; font-size: 12px; opacity: .8; }\
+  ';
+
   // NOTE : ne pas nommer cette variable "CSS" — cela écraserait window.CSS
   // (l'API globale) dans le scope de l'IIFE et ferait planter CSS.escape().
   // ── Sélecteur de support, ouvert depuis un lien de menu ──────────────────
@@ -244,7 +444,22 @@
       border: none;\
       display: block;\
     }\
-  ' + CART_FIX_CSS + TL_CHOIX_CSS;
+    @media (min-width: 769px) {\
+      #tl-modal-overlay.tl-panel-mode {\
+        background: rgba(10, 10, 12, .6);\
+        backdrop-filter: blur(4px);\
+        -webkit-backdrop-filter: blur(4px);\
+      }\
+      #tl-modal-overlay.tl-panel-mode #tl-modal-iframe {\
+        position: absolute;\
+        inset: 5vh 5vw;\
+        width: 90vw;\
+        height: 90vh;\
+        border-radius: 16px;\
+        box-shadow: 0 20px 60px rgba(0, 0, 0, .4);\
+      }\
+    }\
+  ' + CART_FIX_CSS + TL_CTA_CSS + TL_UPSELL_CSS + TL_RESUME_CSS + TL_EMAIL_RESUME_CSS + TL_CHOIX_CSS;
 
   // ── Injection des éléments DOM ──────────────────────────────────────────────
   function injectDOM() {
@@ -282,6 +497,12 @@
     document.body.style.overflow = 'hidden';
     iframe.src = editorUrl;
     overlay.classList.add('tl-open');
+    // Item 23 : panneau partiel sur desktop uniquement (même seuil que le
+    // reste du fichier/du studio) — mobile toujours en plein écran, par
+    // construction, aucune condition JS supplémentaire nécessaire côté mobile.
+    if (_TL_PANEL_MODE_STUDIO_ENABLED && window.innerWidth > 768) {
+      overlay.classList.add('tl-panel-mode');
+    }
   }
 
   // ── Fermeture du modal ──────────────────────────────────────────────────────
@@ -290,6 +511,7 @@
     var iframe  = document.getElementById('tl-modal-iframe');
     if (!overlay) return;
     overlay.classList.remove('tl-open');
+    overlay.classList.remove('tl-panel-mode');
     setTimeout(function() {
       if (iframe) iframe.src = 'about:blank';
       document.body.style.overflow = '';
@@ -534,11 +756,22 @@
         var items = cart.items || [];
         if (!items.length) return;
 
-        // Map: key → { url } (item.key = "<variantId>:<hash>")
+        // Map: key → { url, designId, cartKey } (item.key = "<variantId>:<hash>")
+        // designId (_design_id) est déjà posé en propriété de ligne panier à
+        // chaque ajout (routes/render.js, routes/storefront.js, routes/app-proxy.js)
+        // mais n'était jusqu'ici jamais lu côté drawer — aucun appel réseau
+        // supplémentaire, juste une clé de plus prise sur la même réponse /cart.js
+        // (backlog item 26, bouton "Modifier" sur une ligne déjà personnalisée).
         var byKey = {};
         items.forEach(function(item) {
           var url = (item.properties && item.properties['_preview_img']) || null;
-          if (url) byKey[item.key] = { url: url };
+          if (url) {
+            byKey[item.key] = {
+              url: url,
+              designId: (item.properties && item.properties['_design_id']) || null,
+              cartKey: item.key,
+            };
+          }
         });
 
         // Approche A : matching par data-key (Dawn 2024+, plupart des thèmes modernes)
@@ -550,6 +783,7 @@
           rows.forEach(function(row) {
             _tlInjectOverlay(row, byKey[key].url);
             _tlFixLineItemProps(row);
+            _tlEnsureModifierButton(row, byKey[key]);
           });
         });
 
@@ -568,6 +802,10 @@
             if (!url || !rows[idx]) return;
             _tlInjectOverlay(rows[idx], url);
             _tlFixLineItemProps(rows[idx]);
+            _tlEnsureModifierButton(rows[idx], {
+              designId: (item.properties && item.properties['_design_id']) || null,
+              cartKey: item.key,
+            });
           });
         });
 
@@ -579,6 +817,7 @@
           nodes.forEach(function(node) {
             _tlInjectOverlay(node, byKey[key].url);
             _tlFixLineItemProps(node);
+            _tlEnsureModifierButton(node, byKey[key]);
           });
         });
       })
@@ -609,7 +848,64 @@
     setTimeout(_tlSyncCartImages, 1500);
   }
 
+  // ── Bouton "Modifier" sur une ligne de panier déjà personnalisée (item 26) ─
+  // L'URL du studio est construite à la main (comme le fait déjà
+  // _tlInjectEmailResumeLink plus bas pour un autre besoin) plutôt que via
+  // buildStudioUrl(ref) : une ligne de panier ne porte que _design_id, pas
+  // forcément le handle/id produit — déjà suffisant pour rouvrir le studio
+  // sur cette création précise.
+  function _tlCartEditDesignUrl(designId) {
+    var shop = (window.Shopify && window.Shopify.shop) || window._TL_SHOP || window.location.hostname;
+    var params = new URLSearchParams({ shop: shop, embed: '1', design: String(designId) });
+    if (_tlCustomerToken) params.set('ct', _tlCustomerToken);
+    return TSL_BACKEND_ORIGIN + '/textilelab-studio.html?' + params.toString();
+  }
+
+  // Ajoute le bouton "Modifier" juste après le lien "Voir mon design" déjà
+  // rendu dans `row` — appelé UNIQUEMENT depuis _tlSyncCartImages (ci-dessus),
+  // jamais depuis _tlFixLineItemProps/_tlFixAllLineItems : ces derniers tournent
+  // aussi en amont SANS `extra` (balayage "immédiat" anti-flicker, avant que le
+  // fetch /cart.js n'ait pu résoudre), et leur garde `dataset.tlFixed` rendrait
+  // sinon cette insertion définitivement sautée pour la ligne si elle passait
+  // par le même chemin trop tôt. Idempotent via `data-tl-cart-key` sur le
+  // bouton lui-même (pas de garde dans le DOM parent) → peut être retenté sans
+  // coût à chaque sync tant que "Voir mon design" n'est pas encore rendu.
+  function _tlEnsureModifierButton(row, extra) {
+    if (!_TL_CART_EDIT_DESIGN_ENABLED || !row || !extra || !extra.designId || !extra.cartKey) return;
+    var link = row.querySelector('.tl-voir-design-link');
+    if (!link || !link.parentNode) return; // pas encore rendu → retenté au sync suivant
+    var cartKeyAttr = String(extra.cartKey).replace(/"/g, '');
+    if (link.parentNode.querySelector('.tl-cart-edit-btn[data-tl-cart-key="' + cartKeyAttr + '"]')) return;
+    // Couleur en dur comme les autres boutons injectés ici : ce script
+    // s'injecte dans le thème du marchand, qui n'a aucune de nos variables CSS.
+    link.insertAdjacentHTML('afterend',
+      '<button type="button" class="tl-cart-edit-btn" data-tl-cart-key="' + cartKeyAttr + '" ' +
+      'style="display:inline-flex;align-items:center;gap:6px;' +
+      'padding:6px 12px;margin-top:4px;margin-left:6px;border-radius:8px;' +
+      'background:transparent;color:#111114 !important;border:1px solid #111114;' +
+      'font-size:12px;font-weight:600;cursor:pointer;">' +
+      '<span aria-hidden="true">&#9999;&#65039;</span> Modifier</button>'
+    );
+    var btn = link.parentNode.querySelector('.tl-cart-edit-btn[data-tl-cart-key="' + cartKeyAttr + '"]');
+    if (!btn) return;
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      // Mémorisé pour que le handler 'tl-add-to-cart' retire cette ancienne
+      // ligne une fois le nouvel ajout confirmé (voir plus bas) ; remis à
+      // null sur une fermeture du studio SANS sauvegarde (case 'tl-close-modal').
+      _tlEditingCartKey = extra.cartKey;
+      openModal(_tlCartEditDesignUrl(extra.designId));
+    });
+  }
+
   // ── Nettoyage des propriétés line item dans le drawer ─────────────────────
+  // Le bouton "Modifier" (item 26) n'est PAS injecté ici : cette fonction tourne
+  // aussi en amont sans donnée cart (balayage "immédiat" anti-flicker, avant que
+  // le fetch /cart.js n'ait pu résoudre) et son garde `dataset.tlFixed` rendrait
+  // sinon l'insertion définitivement sautée pour la ligne. Le lien "Voir mon
+  // design" est juste marqué `.tl-voir-design-link`, point d'ancrage que
+  // _tlEnsureModifierButton (ci-dessus, appelée depuis _tlSyncCartImages où la
+  // donnée cart est connue) utilise pour s'insérer après coup, sans course.
   function _tlFixLineItemProps(container) {
     if (!container) return;
     var dts = container.querySelectorAll('dl dt');
@@ -629,7 +925,7 @@
         var url = dd.textContent.trim();
         dt.style.display = 'none'; // masquer la key technique
         if (url.startsWith('http')) {
-          dd.innerHTML = '<a href="' + url + '" target="_blank" rel="noopener" ' +
+          dd.innerHTML = '<a href="' + url + '" target="_blank" rel="noopener" class="tl-voir-design-link" ' +
             'style="display:inline-flex;align-items:center;gap:6px;' +
             'padding:6px 12px;margin-top:4px;border-radius:8px;' +
             'background:#111114;color:#ffffff !important;' +
@@ -674,7 +970,7 @@
       var m = t.match(/^Voir mon design\s*[:=]\s*(https?:\/\/\S+)\s*$/i);
       if (m) {
         el.dataset.tlFixed2 = '1';
-        el.innerHTML = '<a href="' + m[1] + '" target="_blank" rel="noopener" ' +
+        el.innerHTML = '<a href="' + m[1] + '" target="_blank" rel="noopener" class="tl-voir-design-link" ' +
           'style="display:inline-flex;align-items:center;gap:6px;' +
           'padding:6px 12px;margin-top:4px;border-radius:8px;' +
           'background:#111114;color:#ffffff !important;' +
@@ -707,6 +1003,13 @@
 
         case 'tl-close-modal':
           closeModal();
+          // Fermeture SANS sauvegarde après un clic sur "Modifier" (item 26) :
+          // remettre à null pour qu'un ajout ultérieur sans rapport ne
+          // supprime pas à tort l'ancienne ligne modifiée (le cas "fermeture
+          // APRÈS sauvegarde" est géré dans 'tl-add-to-cart' ci-dessous, qui
+          // ne passe jamais par ce message).
+          _tlEditingCartKey = null;
+          _tlMaybeOfferEmailResumeLink(e.data.designId || null, e.data.designToken || null);
           break;
 
         case 'tl-open-product-page':
@@ -822,9 +1125,45 @@
               setTimeout(function() {
                 document.body.classList.remove('tl-cart-loading');
               }, 1800);
+
+              // 5. Si cet ajout remplace une création déjà en panier (bouton
+              //    "Modifier", item 26) : retirer l'ancienne ligne plutôt que
+              //    d'empiler un doublon. Jamais bloquant pour le nouvel ajout
+              //    déjà confirmé ci-dessus, même si cette suppression échoue.
+              if (_tlEditingCartKey) {
+                var _oldKey = _tlEditingCartKey;
+                _tlEditingCartKey = null;
+                fetch('/cart/change.json', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ id: _oldKey, quantity: 0 }),
+                })
+                .then(function() { _tlFixAllLineItems(); _tlSyncCartImages(); })
+                .catch(function() {});
+              }
+
+              // 6. Suggestions curées par le marchand pour ce produit.
+              _tlProposerUpsell(e.data);
             })
-            .catch(function() {
+            .catch(function(err) {
               document.body.classList.remove('tl-cart-loading');
+              // Refus explicite de Shopify après toutes les tentatives : le
+              // renvoyer vers /cart afficherait un panier vide sans rien
+              // expliquer. On le dit, et on laisse le studio ouvert pour
+              // réessayer sans tout refaire.
+              if (err && err.panierRefuse) {
+                try {
+                  var f = document.querySelector('#tl-modal iframe, .tl-modal iframe');
+                  if (f && f.contentWindow) {
+                    f.contentWindow.postMessage({ type: 'tl-add-failed', message: err.message }, '*');
+                  }
+                } catch (e2) {}
+                var _errShop = (window.Shopify && window.Shopify.shop) || window._TL_SHOP || window.location.hostname;
+                _tlTrackCartError(_errShop, _vid, err.message);
+                alert('L\'ajout au panier a été refusé : ' + err.message
+                    + '\n\nRéessayez dans quelques secondes.');
+                return;
+              }
               window.location.href = '/cart';
             });
 
@@ -1140,14 +1479,25 @@
     window.location.assign(_tlProductPageUrl(handle));
   }
 
+  // Variante actuellement sélectionnée sur LA fiche produit qui porte ce
+  // bouton — jamais une autre. Sur une page qui affiche plusieurs produits
+  // (recommandations, upsell, carrousel « vu récemment »), chacun a son
+  // propre formulaire /cart/add : si le bouton n'est pas retrouvé dans une
+  // section scopée à SON produit, on ne doit PAS deviner avec le premier
+  // formulaire du document entier — ce serait potentiellement celui d'un
+  // AUTRE produit, et le client ajouterait au panier un produit différent de
+  // celui qu'il vient de personnaliser (variante sans rapport avec le
+  // product_id déjà correct, transmis par ailleurs dans l'URL). Mieux vaut
+  // ne rien trouver ici : l'appelant retombe alors sur `variant_id` déjà
+  // posé dans l'URL par Liquid pour CE produit (voir personalise-button.liquid).
   function _tlCurrentVariantId(link) {
     var scope = link && link.closest
-      ? (link.closest('.shopify-section, product-info, main') || document)
-      : document;
+      ? link.closest('.shopify-section, product-info, main')
+      : null;
+    if (!scope) return '';
     var input = scope.querySelector('form[action*="/cart/add"] input[name="id"]')
-      || document.querySelector('form[action*="/cart/add"] input[name="id"]')
-      || document.querySelector('product-form input[name="id"]')
-      || document.querySelector('input[name="id"][value]');
+      || scope.querySelector('product-form input[name="id"]')
+      || scope.querySelector('input[name="id"][value]');
     var value = input && input.value ? String(input.value).trim() : '';
     return /^\d+$/.test(value) ? value : '';
   }
@@ -1223,7 +1573,10 @@
       .catch(function () { return null; }); // non connecté ou proxy indisponible
   }
 
-  function buildStudioUrl(idOrHandle) {
+  // `visual` = slug du design choisi dans le sélecteur de la fiche produit
+  // (tl-designs.js le pose en data-tsl-visual sur les boutons). Le studio
+  // l'ouvre avec ce visuel déjà posé dans la zone d'impression.
+  function buildStudioUrl(idOrHandle, visual) {
     var shop = (window.Shopify && window.Shopify.shop)
             || window._TL_SHOP
             || window.location.hostname;
@@ -1235,6 +1588,7 @@
         else                 params.set('product', v);
       }
     }
+    if (visual) params.set('visual', String(visual).trim());
     if (_tlCustomerToken) params.set('ct', _tlCustomerToken);
     return TSL_BACKEND_ORIGIN + '/textilelab-studio.html?' + params.toString();
   }
@@ -1253,7 +1607,8 @@
       // le réclame ici aussi pour couvrir le cas d'une connexion faite entre
       // temps, sans bloquer l'ouverture si le proxy ne répond pas.
       _tlFetchCustomerToken().then(function () {
-        var finalUrl = customUrl ? customUrl : buildStudioUrl(ref);
+        var visual   = String(btn.getAttribute('data-tsl-visual') || '').trim();
+        var finalUrl = customUrl ? customUrl : buildStudioUrl(ref, visual);
         var request  = _tlEditorRequest(finalUrl, btn);
         if (!request.ready) {
           // Un bouton qui désigne un produit : on y va.
@@ -1301,9 +1656,31 @@
         .then(function(data) {
           if (!data) return;
           var bg = String(data.cart_drawer_bg_color || '').trim().toLowerCase();
-          if (!bg || bg === 'transparent') return;
-          _TL_CART_BG = bg;
-          _tlApplyBgToExistingOverlays();
+          if (bg && bg !== 'transparent') {
+            _TL_CART_BG = bg;
+            _tlApplyBgToExistingOverlays();
+          }
+          // Flag item 24 (bandeau "Reprendre ma création") : lu ici plutôt que
+          // sur la route /api/designs/mine elle-même, pour ne faire cet appel
+          // réseau en plus (whoami + designs/mine) que si le marchand l'a activé.
+          if (data.resume_design_enabled) _tlCheckResumeDesign();
+          // Flag item 25 (lien de reprise par email) : simple mémorisation,
+          // consommée à la fermeture du studio (case 'tl-close-modal' ci-dessous) —
+          // pas d'appel réseau supplémentaire ici.
+          _TL_EMAIL_RESUME_ENABLED = !!data.email_resume_enabled;
+          // Flag item 26 (bouton "Modifier" sur une ligne de panier) : simple
+          // mémorisation, consommée par _tlEnsureModifierButton à chaque sync
+          // panier — si la réponse arrive après que des lignes ont déjà été
+          // fixées sans le bouton, le sync suivant (debounce/MutationObserver/
+          // évènements thème) le rattrape, _tlEnsureModifierButton n'étant pas
+          // gardée par le même marqueur "déjà traité" que _tlFixLineItemProps.
+          _TL_CART_EDIT_DESIGN_ENABLED = !!data.cart_edit_design_enabled;
+          if (_TL_CART_EDIT_DESIGN_ENABLED) _tlSyncCartImages();
+          // Flag item 23 (panneau partiel desktop) : simple mémorisation,
+          // consommée par openModal()/closeModal() à la prochaine ouverture —
+          // si le studio est déjà ouvert quand la réponse arrive, il reste en
+          // plein écran jusqu'à la fermeture suivante (pas de bascule à chaud).
+          _TL_PANEL_MODE_STUDIO_ENABLED = !!data.panel_mode_studio_enabled;
         })
         .catch(function() {});
     } catch (e) { /* silencieux */ }
@@ -1376,6 +1753,506 @@
         }
       })
       .catch(function() { _tlRevealCtas(btns); }); // fail-open
+  }
+
+  // ── Reprise de création pour le client connecté (backlog item 24) ─────────
+  //
+  // Un client connecté qui interrompt sa personnalisation avant achat (onglet
+  // fermé, coupure mobile, hésitation) repart aujourd'hui de zéro en revenant
+  // sur le produit. S'il existe une création récente et pas encore commandée,
+  // on le propose discrètement au-dessus du bouton "Personnaliser" plutôt que
+  // d'ouvrir directement un éditeur vierge. V1 lean : client connecté
+  // uniquement (le serveur refuse sans jeton signé), un seul produit (le
+  // premier bouton de perso présent sur la page), pas d'écran "Mes créations".
+  var _TL_RESUME_DONE = false; // un seul essai par chargement de page
+
+  function _tlResumeDismissKey(designId) { return 'tl_resume_dismissed_' + designId; }
+
+  function _tlCheckResumeDesign() {
+    if (_TL_RESUME_DONE) return;
+    _TL_RESUME_DONE = true;
+    var btns = document.querySelectorAll('.tl-personalise-btn');
+    if (!btns.length) return;
+    var btn = null, ref = '';
+    for (var i = 0; i < btns.length; i++) {
+      var p = _tlBtnProduct(btns[i]);
+      if (p.pid || p.ph) { btn = btns[i]; ref = p.pid || p.ph; break; }
+    }
+    if (!btn || !ref) return; // bouton générique (aucun produit ciblé) → rien à reprendre
+
+    _tlFetchCustomerToken().then(function (token) {
+      if (!token) return; // visiteur non connecté : pas de reprise en V1
+
+      var shop = (window.Shopify && window.Shopify.shop) || window._TL_SHOP || window.location.hostname;
+      var url = TSL_BACKEND_ORIGIN
+              + '/api/designs/mine?shop=' + encodeURIComponent(shop)
+              + '&product=' + encodeURIComponent(ref)
+              + '&ct=' + encodeURIComponent(token);
+      fetch(url, { credentials: 'omit', mode: 'cors' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (design) {
+          if (!design || !design.id) return;
+          try { if (sessionStorage.getItem(_tlResumeDismissKey(design.id))) return; } catch (e) { /* stockage indisponible → on propose quand même */ }
+          _tlInjectResumeBanner(btn, ref, design);
+        })
+        .catch(function () {}); // jamais bloquant : pas de design, pas de bandeau
+    });
+  }
+
+  function _tlInjectResumeBanner(btn, ref, design) {
+    var vieux = document.querySelector('.tl-resume');
+    if (vieux && vieux.parentNode) vieux.parentNode.removeChild(vieux);
+
+    var el = document.createElement('div');
+    el.className = 'tl-resume';
+
+    var texte = document.createElement('span');
+    texte.className = 'tl-resume-t';
+    texte.textContent = 'Vous avez une création en cours';
+    el.appendChild(texte);
+
+    var actions = document.createElement('span');
+    actions.className = 'tl-resume-a';
+
+    var reprendre = document.createElement('button');
+    reprendre.type = 'button';
+    reprendre.className = 'tl-resume-r';
+    reprendre.textContent = 'Reprendre';
+    reprendre.addEventListener('click', function () {
+      var studioUrl = new URL(buildStudioUrl(ref));
+      studioUrl.searchParams.set('design', String(design.id));
+      openModal(studioUrl.href);
+    });
+    actions.appendChild(reprendre);
+
+    var zero = document.createElement('button');
+    zero.type = 'button';
+    zero.className = 'tl-resume-z';
+    zero.textContent = 'Repartir de zéro';
+    zero.addEventListener('click', function () {
+      try { sessionStorage.setItem(_tlResumeDismissKey(design.id), '1'); } catch (e) { /* tant pis, pas bloquant */ }
+      if (el.parentNode) el.parentNode.removeChild(el);
+    });
+    actions.appendChild(zero);
+
+    el.appendChild(actions);
+
+    var container = _tlCtaContainer(btn);
+    container.parentNode.insertBefore(el, container);
+  }
+
+  // ── Lien de reprise par email, pour le visiteur NON connecté (item 25) ─────
+  //
+  // Complète le bandeau "Reprendre ma création" ci-dessus (item 24, client
+  // connecté uniquement) : un visiteur anonyme qui ferme le studio sans avoir
+  // acheté peut demander à recevoir par email un lien pour reprendre sa
+  // création plus tard. Déclenché uniquement à la fermeture VOLONTAIRE du
+  // studio (case 'tl-close-modal') — jamais après un ajout au panier (fermé
+  // par le message 'tl-add-to-cart' ci-dessus, qui ne passe pas par ici) :
+  // pas de proposition sur un achat déjà fait.
+  function _tlEmailResumeDismissKey(designId) { return 'tl_email_resume_dismissed_' + designId; }
+
+  function _tlMaybeOfferEmailResumeLink(designId, designToken) {
+    if (!_TL_EMAIL_RESUME_ENABLED || !designId) return;
+    try { if (sessionStorage.getItem(_tlEmailResumeDismissKey(designId))) return; } catch (e) { /* stockage indisponible → on propose quand même */ }
+
+    _tlFetchCustomerToken().then(function (token) {
+      if (token) return; // client connecté : le bandeau .tl-resume (item 24) prend déjà le relais
+      _tlInjectEmailResumeLink(designId, designToken);
+    });
+  }
+
+  function _tlInjectEmailResumeLink(designId, designToken) {
+    var vieux = document.querySelector('.tl-email-resume');
+    if (vieux && vieux.parentNode) vieux.parentNode.removeChild(vieux);
+
+    var btns = document.querySelectorAll('.tl-personalise-btn');
+    var btn = null;
+    for (var i = 0; i < btns.length; i++) {
+      var p = _tlBtnProduct(btns[i]);
+      if (p.pid || p.ph) { btn = btns[i]; break; }
+    }
+    if (!btn) return; // aucun bouton de personnalisation sur cette page → rien à ancrer
+
+    var el = document.createElement('div');
+    el.className = 'tl-email-resume';
+
+    var lien = document.createElement('button');
+    lien.type = 'button';
+    lien.className = 'tl-email-resume-link';
+    lien.textContent = 'Recevoir un lien pour reprendre ma création';
+    el.appendChild(lien);
+
+    var msg = document.createElement('span');
+    msg.className = 'tl-email-resume-msg';
+    msg.style.display = 'none';
+
+    lien.addEventListener('click', function () {
+      if (el.querySelector('.tl-email-resume-form')) return; // déjà ouvert
+      lien.style.display = 'none';
+
+      var form = document.createElement('div');
+      form.className = 'tl-email-resume-form';
+
+      var input = document.createElement('input');
+      input.type = 'email';
+      input.className = 'tl-email-resume-input';
+      input.placeholder = 'votre@email.com';
+      form.appendChild(input);
+
+      var envoyer = document.createElement('button');
+      envoyer.type = 'button';
+      envoyer.className = 'tl-email-resume-send';
+      envoyer.textContent = 'Envoyer';
+      form.appendChild(envoyer);
+
+      var annuler = document.createElement('button');
+      annuler.type = 'button';
+      annuler.className = 'tl-email-resume-cancel';
+      annuler.textContent = 'Annuler';
+      annuler.addEventListener('click', function () {
+        try { sessionStorage.setItem(_tlEmailResumeDismissKey(designId), '1'); } catch (e) { /* tant pis, pas bloquant */ }
+        if (el.parentNode) el.parentNode.removeChild(el);
+      });
+      form.appendChild(annuler);
+
+      el.appendChild(form);
+      el.appendChild(msg);
+      input.focus();
+
+      envoyer.addEventListener('click', function () {
+        var email = String(input.value || '').trim();
+        if (!email || email.indexOf('@') === -1 || email.indexOf('.') === -1) {
+          msg.textContent = 'Adresse email invalide.';
+          msg.style.display = '';
+          return;
+        }
+        envoyer.disabled = true;
+        var shop = (window.Shopify && window.Shopify.shop) || window._TL_SHOP || window.location.hostname;
+        var url = TSL_BACKEND_ORIGIN
+                + '/api/designs/' + encodeURIComponent(designId) + '/email-resume-link'
+                + '?shop=' + encodeURIComponent(shop);
+        fetch(url, {
+          method: 'POST',
+          mode: 'cors',
+          credentials: 'omit',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email, design_token: designToken }),
+        })
+        .then(function (r) { return r.ok; })
+        .then(function (ok) {
+          envoyer.disabled = false;
+          if (ok) {
+            try { sessionStorage.setItem(_tlEmailResumeDismissKey(designId), '1'); } catch (e) { /* non bloquant */ }
+            form.style.display = 'none';
+            msg.textContent = 'Lien envoyé — vérifiez votre boîte mail.';
+          } else {
+            msg.textContent = 'Envoi impossible, réessayez plus tard.';
+          }
+          msg.style.display = '';
+        })
+        .catch(function () {
+          envoyer.disabled = false;
+          msg.textContent = 'Envoi impossible, réessayez plus tard.';
+          msg.style.display = '';
+        });
+      });
+    });
+
+    var container = _tlCtaContainer(btn);
+    container.parentNode.insertBefore(el, container);
+  }
+
+  // ── Suggestions après l'ajout au panier (Upsell V2) ────────────────────────
+  //
+  // Le marchand associe en admin 2 à 4 produits à proposer une fois un
+  // produit ajouté au panier. On les montre dans NOTRE encart, pas dans le
+  // tiroir du thème : son balisage change d'un thème à l'autre, et une
+  // injection dedans casserait au premier changement de thème — on a déjà
+  // assez à faire pour y remettre la bonne vignette.
+  //
+  // Jamais bloquant : pas de suggestion, pas d'identifiant produit, API
+  // muette, réseau coupé → on ne montre rien et le client continue.
+
+
+  /**
+   * Produit dont on vient d'ajouter une personnalisation.
+   *
+   * L'éditeur de fiche le passe dans le message ; le studio, lui, ne le
+   * connaît pas toujours — on retombe alors sur ce que la page sait d'elle
+   * même, et en dernier recours sur le bloc du bouton.
+   */
+  function _tlUpsellSource(data) {
+    var id = (data && data.productId) || '';
+    if (!id) {
+      try {
+        id = (window.ShopifyAnalytics && window.ShopifyAnalytics.meta
+           && window.ShopifyAnalytics.meta.product
+           && window.ShopifyAnalytics.meta.product.id) || '';
+      } catch (e) { /* meta absent sur une page hors fiche produit */ }
+    }
+    if (!id) {
+      var box = document.querySelector('[data-tl-product-id]');
+      if (box) id = box.getAttribute('data-tl-product-id') || '';
+    }
+    return String(id || '').trim();
+  }
+
+  /** Prix formaté dans la devise de la boutique, ou rien si on ne sait pas. */
+  function _tlUpsellPrix(centimes) {
+    if (typeof centimes !== 'number' || !isFinite(centimes)) return '';
+    try {
+      var devise = (window.Shopify && window.Shopify.currency
+                 && window.Shopify.currency.active) || 'EUR';
+      return new Intl.NumberFormat(document.documentElement.lang || 'fr', {
+        style: 'currency', currency: devise,
+      }).format(centimes / 100);
+    } catch (e) { return ''; }
+  }
+
+  /**
+   * Ne remplace une image que si la nouvelle charge vraiment.
+   *
+   * L'aperçu composé est rendu à la demande par le serveur : il peut
+   * manquer (produit non calibré), tarder, ou échouer. On part donc de la
+   * photo nue, et on ne la remplace qu'une fois l'autre prête — jamais de
+   * case vide en attendant.
+   */
+  function _tlImageSiChargeable(url, surSucces) {
+    var img = new Image();
+    var fini = false;
+    var minuteur = setTimeout(function () { fini = true; img.src = ''; }, 8000);
+    img.onload = function () {
+      if (fini) return;
+      clearTimeout(minuteur);
+      surSucces(url);
+    };
+    img.onerror = function () { clearTimeout(minuteur); };
+    img.src = url;
+  }
+
+  /**
+   * La création du client, posée sur le produit suggéré.
+   *
+   * Sans elle, on propose un vêtement vierge à quelqu'un qui vient justement
+   * de dessiner : il doit imaginer le résultat. La photo de référence du
+   * produit cible est utilisée — c'est celle sur laquelle le marchand a
+   * calibré sa zone, donc la seule où le placement est juste. Produit non
+   * calibré : le serveur répond 404 et on garde la photo nue.
+   */
+  function _tlUpsellApercuCompose(c, design, shop) {
+    var cible = String((c && c.product_id) || '').replace(/\D/g, '');
+    if (!cible || !design || !design.id) return '';
+    return TSL_BACKEND_ORIGIN + '/api/products/' + cible + '/composition-preview'
+         + '?design=' + encodeURIComponent(design.id)
+         + '&token=' + encodeURIComponent(design.token || '')
+         + '&shop=' + encodeURIComponent(shop);
+  }
+
+  /**
+   * Impression/clic de l'encart, envoyés sans jamais attendre ni bloquer.
+   *
+   * `sendBeacon` survit à la navigation qui suit immédiatement un clic (un
+   * `fetch` classique serait parfois annulé par le changement de page avant
+   * d'avoir pu partir) ; `keepalive` est le filet de secours sur les
+   * navigateurs qui ne l'ont pas. Échec réseau, CORS, shop inconnu : jamais
+   * d'erreur remontée à l'appelant, l'encart continue comme si de rien.
+   */
+  function _tlTrackUpsell(shop, source, target, event) {
+    try {
+      var url = TSL_BACKEND_ORIGIN
+              + '/api/upsell-candidates/track?shop=' + encodeURIComponent(shop);
+      var payload = JSON.stringify({ source: source, target: target, event: event });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
+      } else {
+        fetch(url, {
+          method: 'POST', mode: 'cors', credentials: 'omit', keepalive: true,
+          headers: { 'Content-Type': 'application/json' }, body: payload,
+        }).catch(function () {});
+      }
+    } catch (e) { /* jamais bloquant */ }
+  }
+
+  /**
+   * Refus de /cart/add déjà détecté par le client (tl-modal.js), envoyé
+   * sans jamais attendre ni bloquer — même mécanique que _tlTrackUpsell().
+   * Backlog item 31 : objectiver le point P0 (trou paiement commencé →
+   * commande) sans dépendre d'un accès live à Shopify Analytics.
+   */
+  function _tlTrackCartError(shop, variantId, reason) {
+    try {
+      var url = TSL_BACKEND_ORIGIN
+              + '/api/cart-add-errors/track?shop=' + encodeURIComponent(shop);
+      var payload = JSON.stringify({ variantId: variantId, reason: reason });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
+      } else {
+        fetch(url, {
+          method: 'POST', mode: 'cors', credentials: 'omit', keepalive: true,
+          headers: { 'Content-Type': 'application/json' }, body: payload,
+        }).catch(function () {});
+      }
+    } catch (e) { /* jamais bloquant */ }
+  }
+
+  function _tlFermerUpsell() {
+    var vieux = document.querySelector('.tl-upsell');
+    if (vieux && vieux.parentNode) vieux.parentNode.removeChild(vieux);
+  }
+
+  /**
+   * Visuel, titre et prix d'un produit, lus sur la boutique elle-même.
+   *
+   * Le backend ne stocke que l'identifiant et le handle : une image ou un
+   * prix recopiés chez nous seraient faux au premier changement en admin.
+   */
+  function _tlUpsellFiche(c) {
+    // Requête de MÊME ORIGINE, donc avec les cookies : sans eux, une boutique
+    // protégée par mot de passe (preview, boutique de dev) renvoie sa page de
+    // garde au lieu du produit — on perdait visuel ET prix, sans la moindre
+    // erreur, et un 200 tout à fait honnête.
+    //
+    // On juge la réponse sur son CONTENU et non sur son type : Shopify sert
+    // cette API en `text/javascript`, pas en `application/json`. Exiger du
+    // JSON dans l'en-tête rejetait toutes les bonnes réponses ; une page de
+    // garde, elle, ne se parse pas.
+    return fetch('/products/' + encodeURIComponent(c.handle) + '.js', {
+      credentials: 'same-origin',
+    })
+      .then(function (r) { return r.ok ? r.text() : ''; })
+      .then(function (txt) {
+        try {
+          var p = JSON.parse(txt);
+          return (p && typeof p === 'object' && p.title) ? p : null;
+        } catch (e) { return null; }
+      })
+      .then(function (p) {
+        if (!p) return c;
+        // Le prix annoncé est celui que le client PAIERA : base du produit
+        // + impression de sa création sur CE support. Afficher le prix nu
+        // lui ferait découvrir l'écart après le clic.
+        var sup = Number(c.surcharge) || 0;
+        return {
+          product_id: c.product_id,
+          handle: c.handle,
+          title:  p.title || c.title,
+          image:  p.featured_image || (p.images && p.images[0]) || '',
+          prix:   _tlUpsellPrix(p.price + Math.round(sup * 100)),
+          avecImpression: sup > 0,
+        };
+      })
+      .catch(function () { return c; });
+  }
+
+  function _tlAfficherUpsell(fiches, design, shop, source) {
+    _tlFermerUpsell();
+    var el = document.createElement('div');
+    el.className = 'tl-upsell';
+    el.setAttribute('role', 'complementary');
+    el.setAttribute('aria-label', 'Suggestions');
+
+    var fermer = document.createElement('button');
+    fermer.type = 'button';
+    fermer.className = 'tl-upsell-x';
+    fermer.setAttribute('aria-label', 'Fermer les suggestions');
+    fermer.textContent = '\u00d7';
+    fermer.addEventListener('click', _tlFermerUpsell);
+
+    var titre = document.createElement('div');
+    titre.className = 'tl-upsell-t';
+    titre.textContent = 'Vous aimeriez aussi';
+
+    var grille = document.createElement('div');
+    grille.className = 'tl-upsell-g';
+    fiches.forEach(function (f) {
+      var a = document.createElement('a');
+      a.className = 'tl-upsell-c';
+      a.href = '/products/' + f.handle;
+      // Juste avant de suivre le lien, jamais après : le clic doit partir
+      // même si la navigation qui suit coupe tout le reste.
+      a.addEventListener('click', function () {
+        _tlTrackUpsell(shop, source, f.product_id, 'click');
+      });
+      // La case est posée même sans visuel : une carte sur deux sans image
+      // désalignerait la grille, et un <img> sans source affiche une icône
+      // de fichier cassé.
+      var vignette = document.createElement('span');
+      vignette.className = 'tl-upsell-i';
+      var poser = function (u) {
+        vignette.style.backgroundImage = 'url("' + String(u).replace(/"/g, '%22') + '")';
+      };
+      if (f.image) poser(f.image);
+      a.appendChild(vignette);
+
+      // Puis, si elle arrive, la même création posée sur CE produit.
+      var compose = _tlUpsellApercuCompose(f, design, shop);
+      if (compose) _tlImageSiChargeable(compose, poser);
+      var nom = document.createElement('span');
+      nom.className = 'tl-upsell-n';
+      nom.textContent = f.title || f.handle;
+      a.appendChild(nom);
+      if (f.prix) {
+        var p = document.createElement('span');
+        p.className = 'tl-upsell-p';
+        p.textContent = f.avecImpression ? f.prix + ' impression comprise' : f.prix;
+        a.appendChild(p);
+      }
+      grille.appendChild(a);
+    });
+
+    // Une impression par fiche réellement montrée, pas par tentative de
+    // chargement d'image (qui peut réessayer en arrière-plan).
+    fiches.forEach(function (f) {
+      _tlTrackUpsell(shop, source, f.product_id, 'impression');
+    });
+
+    el.appendChild(fermer);
+    el.appendChild(titre);
+    el.appendChild(grille);
+    document.body.appendChild(el);
+    // Deux images consécutives : la seconde enclenche la transition, posée
+    // en ligne la classe arriverait dans la même passe de style et rien ne
+    // s'animerait.
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { el.classList.add('tl-on'); });
+    });
+
+    var auClavier = function (ev) {
+      if (ev.key !== 'Escape') return;
+      _tlFermerUpsell();
+      document.removeEventListener('keydown', auClavier);
+    };
+    document.addEventListener('keydown', auClavier);
+  }
+
+  function _tlProposerUpsell(data) {
+    var source = _tlUpsellSource(data);
+    if (!source) return;
+    var shop = (window.Shopify && window.Shopify.shop)
+            || window._TL_SHOP
+            || window.location.hostname;
+    // Le design sert deux fois : à tarifer l'impression sur chaque support,
+    // et à poser la création sur leurs vignettes.
+    var url = TSL_BACKEND_ORIGIN
+            + '/api/upsell-candidates/public?shop=' + encodeURIComponent(shop)
+            + '&source=' + encodeURIComponent(source)
+            + '&design=' + encodeURIComponent((data && data.designId) || '')
+            + '&token=' + encodeURIComponent((data && data.designToken) || '');
+    fetch(url, { credentials: 'omit', mode: 'cors' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (liste) {
+        if (!Array.isArray(liste) || !liste.length) return null;
+        return Promise.all(liste.map(_tlUpsellFiche));
+      })
+      .then(function (fiches) {
+        if (!fiches || !fiches.length) return;
+        var design = { id: (data && data.designId) || '', token: (data && data.designToken) || '' };
+        // Après l'ouverture du tiroir : l'encart doit arriver sur un panier
+        // déjà affiché, sinon il se fait recouvrir sans avoir été lu.
+        setTimeout(function () { _tlAfficherUpsell(fiches, design, shop, source); }, 900);
+      })
+      .catch(function () { /* suggestions absentes : jamais bloquant */ });
   }
 
   // ── Masquage de l'option « Impression » sur la fiche produit ────────────────

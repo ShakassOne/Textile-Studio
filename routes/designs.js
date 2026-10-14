@@ -1,14 +1,36 @@
 'use strict';
 const express = require('express');
+const COMP = require('../utils/composition');
 const router  = express.Router();
 const crypto    = require('crypto');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { requireAuth } = require('./auth');
-const { getDB } = require('../db/database');
+const { getDB, getShopIdByDomain } = require('../db/database');
+const { getSetting } = require('../db/settings');
 const { attachShopIdSoft, attachShopId } = require('./_shop-context');
+const RESUME = require('../utils/design-resume');
+const EMAIL_RESUME = require('../utils/email-resume');
 
 // Colonne secret par design (idempotent) — protège les écritures render/* (audit IMPORTANT).
 try { getDB().prepare('ALTER TABLE designs ADD COLUMN edit_token TEXT').run(); } catch { /* déjà présent */ }
+
+// Colonne client (idempotent, backlog item 24) — identifie le propriétaire d'un
+// design pour permettre sa reprise entre deux visites. NULL = design anonyme
+// (comportement historique inchangé, zéro régression).
+try { getDB().prepare('ALTER TABLE designs ADD COLUMN customer_id TEXT').run(); } catch { /* déjà présent */ }
+
+// Résout l'identité client signée (même mécanisme que _resolveIdentity dans
+// routes/ai.js) : un id client n'est JAMAIS accepté en clair depuis le corps
+// de requête, seulement via le jeton signé émis par /proxy/whoami (Shopify
+// l'a lui-même signé en HMAC avant que app-proxy.js ne le reconvertisse).
+function _resolveCustomerId(req, shopDomain) {
+  const token = req.get('X-TL-Customer') || req.body?.customerToken || req.query?.ct || '';
+  if (!token) return null;
+  try {
+    const { verifyCustomerToken } = require('./app-proxy');
+    return verifyCustomerToken(String(token), shopDomain || req.get('X-Shop-Domain') || '');
+  } catch (e) { console.warn('verifyCustomerToken:', e.message); return null; }
+}
 
 // Anti-spam création (DoS/disque) : 40 créations / heure / IP.
 const createDesignLimiter = rateLimit({
@@ -18,6 +40,18 @@ const createDesignLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders:   false,
   message:         { error: 'Trop de créations de design — réessayez dans une heure' },
+});
+
+// Anti-abus lien de reprise par email (backlog item 25) : plus strict que les
+// créations (40/h), car cette route envoie un email à une adresse arbitraire
+// fournie par l'appelant — surface d'abus différente (spam via l'infra TSL).
+const emailResumeLimiter = rateLimit({
+  windowMs:        60 * 60 * 1000,
+  max:             5,
+  keyGenerator:    (req) => `${req.shopId || '?'}:${ipKeyGenerator(req.ip)}`,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message:         { error: 'Trop de demandes de lien — réessayez dans une heure' },
 });
 
 // Toutes les routes /api/designs sont scopées par shop_id (audit B1).
@@ -32,6 +66,86 @@ router.get('/', attachShopId, (req, res) => {
     .all(req.shopId);
   rows.forEach(r => { delete r.edit_token; }); // ne jamais exposer le secret
   res.json(rows);
+});
+
+// GET /api/designs/mine — dernière création non convertie du client connecté
+// (backlog item 24). PUBLIC (pas d'auth, comme /api/social-proof/public et
+// /api/upsell-candidates/public) — scopé shop via ?shop=, gated serveur par
+// resume_design_enabled, et par un jeton client signé sans lequel on ne sait
+// identifier personne. Placée AVANT /:id : sinon Express la lirait comme un
+// id de design littéral "mine".
+router.get('/mine', (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.set('Cache-Control', 'no-store'); // donnée personnelle, jamais mise en cache
+
+  const shopDomain = String(req.query.shop || '').toLowerCase().trim();
+  const shopId = shopDomain ? getShopIdByDomain(shopDomain) : null;
+  if (!shopId) return res.json(null);
+
+  const enabledVal = getSetting(shopId, 'resume_design_enabled');
+  const enabled = enabledVal === '1' || enabledVal === 'true';
+  if (!enabled) return res.json(null);
+
+  const customerId = _resolveCustomerId(req, shopDomain);
+  const productRef = String(req.query.product || '').trim();
+  if (!customerId || !productRef) return res.json(null);
+
+  res.json(RESUME.findResumable(getDB(), shopId, customerId, productRef));
+});
+
+router.options('/mine', (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  res.sendStatus(204);
+});
+
+// POST /api/designs/:id/email-resume-link — envoie par email un lien pour
+// reprendre une création, pour un visiteur NON connecté (backlog item 25,
+// complète l'item 24 qui ne couvre que le client connecté). PUBLIQUE (scopée
+// shop via ?shop=), gated serveur par le flag email_resume_enabled — pas
+// seulement côté client, même logique que les autres ajouts storefront.
+//
+// Protégée par la possession du design (edit_token, même pattern que
+// _designTokenOk dans routes/render.js lignes 14-22) : sans cette vérité, un
+// id séquentiel permettrait à n'importe qui de faire envoyer par TSL le lien
+// de la création de quelqu'un d'autre à l'adresse email de son choix.
+router.post('/:id/email-resume-link', attachShopId, emailResumeLimiter, express.json(), async (req, res) => {
+  const enabledVal = getSetting(req.shopId, 'email_resume_enabled');
+  const enabled = enabledVal === '1' || enabledVal === 'true';
+  if (!enabled) return res.status(404).json({ error: 'Fonctionnalité désactivée' });
+
+  const db = getDB();
+  const row = db.prepare('SELECT id, edit_token FROM designs WHERE id = ? AND shop_id = ?')
+    .get(req.params.id, req.shopId);
+  if (!row) return res.status(404).json({ error: 'Design not found' });
+
+  const suppliedToken = String(req.body?.design_token || req.headers['x-design-token'] || '');
+  if (!EMAIL_RESUME.designTokenOk(row, suppliedToken)) {
+    return res.status(403).json({ error: 'Jeton de design invalide' });
+  }
+
+  const email = String(req.body?.email || '').trim();
+  if (!EMAIL_RESUME.isValidEmail(email)) {
+    return res.status(400).json({ error: 'Adresse email invalide' });
+  }
+
+  const appUrl = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
+  const link = `${appUrl}/textilelab-studio.html?design=${row.id}&shop=${encodeURIComponent(req.shopDomain || '')}`;
+
+  try {
+    const { sendEmail } = require('./email'); // lazy : pas de cycle au boot
+    await sendEmail({
+      to: email,
+      subject: 'Votre création vous attend',
+      html: EMAIL_RESUME.buildResumeEmailHtml(link),
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(`❌ POST /api/designs/${req.params.id}/email-resume-link :`, e.message);
+    res.status(500).json({ error: 'Envoi impossible' });
+  }
 });
 
 // GET /api/designs/:id — soft scoping (le design ne doit pas appartenir à un autre shop)
@@ -51,25 +165,48 @@ router.get('/:id', attachShopIdSoft, (req, res) => {
 
 // POST /api/designs — create (public — studio auto-saves designs avant checkout)
 // shop_id obligatoire (résolu via header/query/bootstrap)
+/** JSON toléré : une chaîne illisible ne doit pas faire échouer l'enregistrement. */
+function _lireJson(s) {
+  try { return JSON.parse(s); } catch { return null; }
+}
+
 router.post('/', attachShopId, createDesignLimiter, (req, res) => {
   const db = getDB();
   const {
     name = 'Sans titre', product = 'tshirt', color = '#FFFFFF', format = 'A4',
     frame_x = 0, frame_y = 0, frame_w = 200, frame_h = 260,
     layers_json = '[]', ticket_on = 0, ticket_start = 1,
-    ticket_prefix = '', ticket_suffix = '', thumbnail = ''
+    ticket_prefix = '', ticket_suffix = '', thumbnail = '',
+    composition = null
   } = req.body;
 
   const layers = typeof layers_json === 'string' ? layers_json : JSON.stringify(layers_json);
   const editToken = crypto.randomBytes(16).toString('hex');
+  // Optionnel : un design anonyme reste possible (customer_id NULL, comportement
+  // historique inchangé) — seul un client connecté avec jeton signé valide se
+  // voit attribuer son design, pour pouvoir le reprendre plus tard (item 24).
+  const customerId = _resolveCustomerId(req, req.shopDomain);
+
+  // Composition au format partagé (bloc fiche produit ou configurateur).
+  // Elle passe par le normaliseur plutôt que d'être stockée telle quelle :
+  // c'est elle qui produira le fichier d'impression, elle ne peut pas
+  // contenir n'importe quoi. Un corps illisible donne une composition vide,
+  // jamais une erreur — le design reste enregistré.
+  let compJson = null;
+  if (composition) {
+    const c = COMP.normaliser(typeof composition === 'string' ? _lireJson(composition) : composition);
+    if (!COMP.estVide(c)) compJson = JSON.stringify(c);
+  }
 
   const info = db.prepare(`
     INSERT INTO designs
       (shop_id, name, product, color, format, frame_x, frame_y, frame_w, frame_h,
-       layers_json, ticket_on, ticket_start, ticket_prefix, ticket_suffix, thumbnail, edit_token)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       layers_json, ticket_on, ticket_start, ticket_prefix, ticket_suffix, thumbnail,
+       edit_token, composition_json, customer_id)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(req.shopId, name, product, color, format, frame_x, frame_y, frame_w, frame_h,
-         layers, ticket_on, ticket_start, ticket_prefix, ticket_suffix, thumbnail, editToken);
+         layers, ticket_on, ticket_start, ticket_prefix, ticket_suffix, thumbnail,
+         editToken, compJson, customerId);
 
   // Seul endroit qui renvoie edit_token : le créateur le garde en mémoire pour
   // signer les écritures /api/render/* (save, save-views, cart-set).

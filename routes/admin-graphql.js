@@ -30,14 +30,19 @@ const ADMIN_API_VERSION = '2024-01';
  * @param {string} accessToken token OAuth du shop (table shops)
  * @param {string} query       requête ou mutation GraphQL
  * @param {object} variables   variables GraphQL (optionnel)
+ * @param {string} [apiVersion] version d'API à forcer pour CET appel.
+ *        Exception réservée aux champs absents de ADMIN_API_VERSION : les
+ *        pastilles de couleur (`optionValues.swatch`) n'existent qu'à partir
+ *        de 2024-07. Migrer toute l'app pour un champ reviendrait à retester
+ *        chaque requête existante ; on isole donc l'exception ici.
  */
-function adminGraphQL(shopDomain, accessToken, query, variables = {}) {
+function adminGraphQL(shopDomain, accessToken, query, variables = {}, apiVersion = ADMIN_API_VERSION) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({ query, variables });
 
     const options = {
       hostname: shopDomain,
-      path:     `/admin/api/${ADMIN_API_VERSION}/graphql.json`,
+      path:     `/admin/api/${apiVersion}/graphql.json`,
       method:   'POST',
       headers: {
         'Content-Type':           'application/json',
@@ -311,3 +316,4 @@ router.get('/shop', requireShopifySession, async (req, res) => {
 
 module.exports = router;
 module.exports.adminGraphQL = adminGraphQL;
+module.exports.ADMIN_API_VERSION = ADMIN_API_VERSION;

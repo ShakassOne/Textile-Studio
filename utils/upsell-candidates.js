@@ -71,10 +71,141 @@ function upsertCandidate(db, shopId, body) {
   return { ok: true };
 }
 
+/**
+ * Les écritures d'un même produit, telles qu'on peut les croiser.
+ *
+ * L'admin enregistre les paires avec l'identifiant global de Shopify
+ * (`gid://shopify/Product/123`), la vitrine ne connaît que le nombre que
+ * rend `{{ product.id }}`. Sans ce rapprochement, une suggestion curée en
+ * admin ne ressortirait jamais côté client — et le silence serait total.
+ */
+function formesId(id) {
+  const brut = String(id == null ? '' : id).trim();
+  if (!brut) return [];
+  const num = (brut.match(/(\d+)\s*$/) || [])[1];
+  const formes = [brut];
+  if (num) {
+    if (formes.indexOf(num) < 0) formes.push(num);
+    const gid = 'gid://shopify/Product/' + num;
+    if (formes.indexOf(gid) < 0) formes.push(gid);
+  }
+  return formes;
+}
+
+/**
+ * Suggestions affichables par la vitrine, pour un produit source.
+ *
+ * Deux différences avec la vue admin : on accepte les deux écritures de
+ * l'identifiant source, et on écarte les cibles qui ne sont PLUS liées à un
+ * mockup — proposer un produit qu'on ne sait plus personnaliser mènerait le
+ * client sur une fiche sans bouton.
+ */
+function listPublicForSource(db, shopId, sourceId, max) {
+  const formes = formesId(sourceId);
+  if (!formes.length) return [];
+  const trous = formes.map(() => '?').join(', ');
+  const rows = db.prepare(`
+    ${SELECT_WITH_TARGET}
+    WHERE uc.shop_id = ?
+      AND uc.source_shopify_product_id IN (${trous})
+      AND pl.shopify_product_handle IS NOT NULL
+      AND pl.shopify_product_handle <> ''
+    ORDER BY uc.sort_order ASC, uc.id ASC
+  `).all(shopId, ...formes);
+  const plafond = Number.isFinite(Number(max)) && Number(max) > 0 ? Number(max) : 4;
+  return rows.slice(0, plafond).map((r) => ({
+    product_id: r.target_shopify_product_id,
+    handle:     r.target_handle,
+    title:      r.target_title || '',
+  }));
+}
+
 /** Suppression scopée shop : vérifie shop_id dans le WHERE, pas seulement l'id. */
 function deleteCandidate(db, shopId, id) {
   const info = db.prepare('DELETE FROM upsell_candidates WHERE id = ? AND shop_id = ?').run(id, shopId);
   return { ok: true, deleted: info.changes > 0 };
 }
 
-module.exports = { listForSource, listGrouped, upsertCandidate, deleteCandidate };
+const EVENT_TYPES = ['impression', 'click'];
+
+/**
+ * Enregistre une impression ou un clic de l'encart "Vous aimeriez aussi".
+ *
+ * Appelé par un client final sans authentification (sendBeacon depuis
+ * tl-modal.js) : validation stricte plutôt que de faire confiance au body,
+ * et jamais d'erreur bloquante côté appelant (le beacon n'attend pas de
+ * réponse) — on retourne juste un statut, utilisé par la route pour le code
+ * HTTP, mais rien ne casse l'affichage si l'insertion échoue.
+ */
+function logEvent(db, shopId, body) {
+  const source_shopify_product_id = String(body?.source || '').trim();
+  const target_shopify_product_id = String(body?.target || '').trim();
+  const event = String(body?.event || '').trim();
+
+  if (!source_shopify_product_id || !target_shopify_product_id) {
+    return { error: 'source et target sont requis', status: 400 };
+  }
+  if (!EVENT_TYPES.includes(event)) {
+    return { error: `event doit être l'un de : ${EVENT_TYPES.join(', ')}`, status: 400 };
+  }
+
+  db.prepare(`
+    INSERT INTO upsell_events (shop_id, source_shopify_product_id, target_shopify_product_id, event)
+    VALUES (?, ?, ?, ?)
+  `).run(shopId, source_shopify_product_id, target_shopify_product_id, event);
+
+  return { ok: true };
+}
+
+/**
+ * Agrégat impressions/clics des `days` derniers jours pour un produit source.
+ *
+ * Volontairement minimal (pas de taux de conversion réel, qui demanderait de
+ * croiser avec les commandes effectivement passées) — juste assez pour voir
+ * en admin si l'encart est regardé.
+ */
+function eventStats(db, shopId, sourceId, days) {
+  const since = Number.isFinite(Number(days)) && Number(days) > 0 ? Number(days) : 30;
+  const rows = db.prepare(`
+    SELECT event, COUNT(*) AS n
+    FROM upsell_events
+    WHERE shop_id = ? AND source_shopify_product_id = ?
+      AND created_at >= datetime('now', '-' || ? || ' days')
+    GROUP BY event
+  `).all(shopId, String(sourceId || '').trim(), since);
+
+  const stats = { impression: 0, click: 0 };
+  for (const row of rows) {
+    if (row.event in stats) stats[row.event] = row.n;
+  }
+  return stats;
+}
+
+/**
+ * Même agrégat que eventStats, mais pour tous les produits source du shop en
+ * un seul appel (écran admin « Produits suggérés ») — un source sans aucun
+ * événement sur la période n'apparaît simplement pas dans l'objet retourné.
+ */
+function eventStatsGrouped(db, shopId, days) {
+  const since = Number.isFinite(Number(days)) && Number(days) > 0 ? Number(days) : 30;
+  const rows = db.prepare(`
+    SELECT source_shopify_product_id, event, COUNT(*) AS n
+    FROM upsell_events
+    WHERE shop_id = ?
+      AND created_at >= datetime('now', '-' || ? || ' days')
+    GROUP BY source_shopify_product_id, event
+  `).all(shopId, since);
+
+  const grouped = {};
+  for (const row of rows) {
+    if (!EVENT_TYPES.includes(row.event)) continue;
+    const stats = (grouped[row.source_shopify_product_id] ||= { impression: 0, click: 0 });
+    stats[row.event] = row.n;
+  }
+  return grouped;
+}
+
+module.exports = {
+  listForSource, listGrouped, listPublicForSource, formesId,
+  upsertCandidate, deleteCandidate, logEvent, eventStats, eventStatsGrouped,
+};

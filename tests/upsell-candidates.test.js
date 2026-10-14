@@ -40,6 +40,23 @@ try {
   sqliteIndisponible = e.message.split('\n')[0];
 }
 
+// Celui-là ne touche pas la base : il doit tourner même quand le binaire
+// natif manque, car c'est lui qui rapproche l'identifiant global enregistré
+// en admin du nombre que connaît la vitrine.
+const { formesId } = require('../utils/upsell-candidates');
+
+test('formesId rapproche l\'identifiant global et le nombre de la vitrine', () => {
+  assert.deepEqual(formesId('gid://shopify/Product/123'), ['gid://shopify/Product/123', '123']);
+  assert.deepEqual(formesId('123'), ['123', 'gid://shopify/Product/123']);
+  assert.deepEqual(formesId(123), ['123', 'gid://shopify/Product/123']);
+  assert.deepEqual(formesId(''), []);
+  assert.deepEqual(formesId(null), []);
+  assert.deepEqual(formesId(undefined), []);
+  assert.deepEqual(formesId('   '), []);
+  // Pas de nombre en fin de chaîne : on ne fabrique pas de gid farfelu.
+  assert.deepEqual(formesId('handle-sans-chiffre'), ['handle-sans-chiffre']);
+});
+
 if (sqliteIndisponible) {
   test('upsell_candidates — ignoré : better-sqlite3 indisponible sur cette machine',
     { skip: `binaire natif illisible (${sqliteIndisponible}) — lancez \`npm rebuild better-sqlite3\`` },
@@ -48,17 +65,25 @@ if (sqliteIndisponible) {
 }
 
 const {
+  listPublicForSource: listPublicForSourceRaw,
   listForSource: listForSourceRaw,
   listGrouped: listGroupedRaw,
   upsertCandidate: upsertCandidateRaw,
   deleteCandidate: deleteCandidateRaw,
+  logEvent: logEventRaw,
+  eventStats: eventStatsRaw,
+  eventStatsGrouped: eventStatsGroupedRaw,
 } = require('../utils/upsell-candidates');
 
 // db est fixe pour tout le fichier : on allège les appels en le pré-liant.
-const listForSource   = (shopId, sourceId) => listForSourceRaw(db, shopId, sourceId);
-const listGrouped     = (shopId) => listGroupedRaw(db, shopId);
-const upsertCandidate = (shopId, body) => upsertCandidateRaw(db, shopId, body);
-const deleteCandidate = (shopId, id) => deleteCandidateRaw(db, shopId, id);
+const listForSource    = (shopId, sourceId) => listForSourceRaw(db, shopId, sourceId);
+const listPublic       = (shopId, sourceId, max) => listPublicForSourceRaw(db, shopId, sourceId, max);
+const listGrouped      = (shopId) => listGroupedRaw(db, shopId);
+const upsertCandidate  = (shopId, body) => upsertCandidateRaw(db, shopId, body);
+const deleteCandidate  = (shopId, id) => deleteCandidateRaw(db, shopId, id);
+const logEvent         = (shopId, body) => logEventRaw(db, shopId, body);
+const eventStats       = (shopId, sourceId, days) => eventStatsRaw(db, shopId, sourceId, days);
+const eventStatsGrouped = (shopId, days) => eventStatsGroupedRaw(db, shopId, days);
 
 function makeShop(domain) {
   return db.prepare('INSERT INTO shops (shop_domain) VALUES (?)').run(domain).lastInsertRowid;
@@ -170,4 +195,154 @@ test('listGrouped regroupe bien par produit source', () => {
   assert.deepEqual(Object.keys(grouped).sort(), ['src-1', 'src-2']);
   assert.equal(grouped['src-1'].length, 2);
   assert.equal(grouped['src-2'].length, 1);
+});
+
+// ── Vue vitrine ───────────────────────────────────────────────────────────
+
+test('listPublicForSource trouve la curation faite avec l\'identifiant global', () => {
+  const shopId = makeShop('shop-k.myshopify.com');
+  linkProduct(shopId, 'gid://shopify/Product/222', 'Sweat');
+  upsertCandidate(shopId, {
+    source_shopify_product_id: 'gid://shopify/Product/111',
+    target_shopify_product_id: 'gid://shopify/Product/222',
+  });
+
+  // La vitrine n'envoie que le nombre : sans rapprochement, zéro suggestion.
+  const vus = listPublic(shopId, '111');
+  assert.equal(vus.length, 1);
+  assert.equal(vus[0].handle, 'sweat');
+  assert.equal(vus[0].title, 'Sweat');
+});
+
+test('une cible qui n\'est plus liée à un mockup disparaît des suggestions', () => {
+  const shopId = makeShop('shop-l.myshopify.com');
+  linkProduct(shopId, 'tgt-lie', 'Toujours là');
+  upsertCandidate(shopId, { source_shopify_product_id: 'src', target_shopify_product_id: 'tgt-lie' });
+  upsertCandidate(shopId, { source_shopify_product_id: 'src', target_shopify_product_id: 'tgt-delie' });
+
+  // L'admin voit les deux paires, la vitrine une seule : proposer un produit
+  // qu'on ne sait plus personnaliser mène à une fiche sans bouton.
+  assert.equal(listForSource(shopId, 'src').length, 2);
+  const vus = listPublic(shopId, 'src');
+  assert.deepEqual(vus.map(v => v.title), ['Toujours là']);
+});
+
+test('listPublicForSource plafonne à quatre suggestions', () => {
+  const shopId = makeShop('shop-m.myshopify.com');
+  for (let i = 0; i < 6; i++) {
+    linkProduct(shopId, 'tgt-' + i, 'Produit ' + i);
+    upsertCandidate(shopId, {
+      source_shopify_product_id: 'src', target_shopify_product_id: 'tgt-' + i, sort_order: i,
+    });
+  }
+  assert.equal(listPublic(shopId, 'src').length, 4);
+  assert.deepEqual(listPublic(shopId, 'src').map(v => v.title),
+    ['Produit 0', 'Produit 1', 'Produit 2', 'Produit 3']);
+  assert.equal(listPublic(shopId, 'src', 2).length, 2);
+});
+
+test('les suggestions ne traversent pas les boutiques', () => {
+  const a = makeShop('shop-n.myshopify.com');
+  const b = makeShop('shop-o.myshopify.com');
+  linkProduct(a, 'tgt', 'Chez A');
+  upsertCandidate(a, { source_shopify_product_id: 'src', target_shopify_product_id: 'tgt' });
+
+  assert.equal(listPublic(a, 'src').length, 1);
+  assert.equal(listPublic(b, 'src').length, 0);
+});
+
+test('source vide ou inconnue : aucune suggestion, aucune erreur', () => {
+  const shopId = makeShop('shop-p.myshopify.com');
+  assert.deepEqual(listPublic(shopId, ''), []);
+  assert.deepEqual(listPublic(shopId, null), []);
+  assert.deepEqual(listPublic(shopId, 'produit-jamais-vu'), []);
+});
+
+// ── Tracking impression/clic (backlog item 17) ─────────────────────────────
+
+test('logEvent enregistre une impression et un clic', () => {
+  const shopId = makeShop('shop-q.myshopify.com');
+  assert.deepEqual(logEvent(shopId, { source: 'src', target: 'tgt', event: 'impression' }), { ok: true });
+  assert.deepEqual(logEvent(shopId, { source: 'src', target: 'tgt', event: 'click' }), { ok: true });
+
+  const stats = eventStats(shopId, 'src');
+  assert.deepEqual(stats, { impression: 1, click: 1 });
+});
+
+test('logEvent rejette un event hors liste fermée', () => {
+  const shopId = makeShop('shop-r.myshopify.com');
+  const result = logEvent(shopId, { source: 'src', target: 'tgt', event: 'achat' });
+  assert.equal(result.status, 400);
+  assert.match(result.error, /event doit être/);
+  assert.deepEqual(eventStats(shopId, 'src'), { impression: 0, click: 0 });
+});
+
+test('logEvent rejette si source ou target manquant', () => {
+  const shopId = makeShop('shop-s.myshopify.com');
+  assert.equal(logEvent(shopId, { target: 'tgt', event: 'click' }).status, 400);
+  assert.equal(logEvent(shopId, { source: 'src', event: 'click' }).status, 400);
+});
+
+test('eventStats ne compte que les événements du produit source demandé', () => {
+  const shopId = makeShop('shop-t.myshopify.com');
+  logEvent(shopId, { source: 'src-1', target: 'tgt', event: 'impression' });
+  logEvent(shopId, { source: 'src-1', target: 'tgt', event: 'impression' });
+  logEvent(shopId, { source: 'src-2', target: 'tgt', event: 'click' });
+
+  assert.deepEqual(eventStats(shopId, 'src-1'), { impression: 2, click: 0 });
+  assert.deepEqual(eventStats(shopId, 'src-2'), { impression: 0, click: 1 });
+});
+
+test('eventStats ne traverse pas les boutiques', () => {
+  const a = makeShop('shop-u.myshopify.com');
+  const b = makeShop('shop-v.myshopify.com');
+  logEvent(a, { source: 'src', target: 'tgt', event: 'click' });
+
+  assert.deepEqual(eventStats(a, 'src'), { impression: 0, click: 1 });
+  assert.deepEqual(eventStats(b, 'src'), { impression: 0, click: 0 });
+});
+
+test('eventStats sans aucun événement : zéros, aucune erreur', () => {
+  const shopId = makeShop('shop-w.myshopify.com');
+  assert.deepEqual(eventStats(shopId, 'produit-jamais-vu'), { impression: 0, click: 0 });
+});
+
+test('eventStatsGrouped mélange plusieurs sources dans un seul appel', () => {
+  const shopId = makeShop('shop-x.myshopify.com');
+  logEvent(shopId, { source: 'src-1', target: 'tgt', event: 'impression' });
+  logEvent(shopId, { source: 'src-1', target: 'tgt', event: 'impression' });
+  logEvent(shopId, { source: 'src-1', target: 'tgt', event: 'click' });
+  logEvent(shopId, { source: 'src-2', target: 'tgt', event: 'click' });
+
+  assert.deepEqual(eventStatsGrouped(shopId), {
+    'src-1': { impression: 2, click: 1 },
+    'src-2': { impression: 0, click: 1 },
+  });
+});
+
+test('eventStatsGrouped ne traverse pas les boutiques', () => {
+  const a = makeShop('shop-y.myshopify.com');
+  const b = makeShop('shop-z.myshopify.com');
+  logEvent(a, { source: 'src', target: 'tgt', event: 'impression' });
+
+  assert.deepEqual(eventStatsGrouped(a), { src: { impression: 1, click: 0 } });
+  assert.deepEqual(eventStatsGrouped(b), {});
+});
+
+test('eventStatsGrouped respecte la fenêtre de jours demandée', () => {
+  const shopId = makeShop('shop-aa.myshopify.com');
+  logEvent(shopId, { source: 'src', target: 'tgt', event: 'impression' });
+
+  db.prepare(`
+    UPDATE upsell_events SET created_at = datetime('now', '-40 days')
+    WHERE shop_id = ? AND source_shopify_product_id = 'src'
+  `).run(shopId);
+
+  assert.deepEqual(eventStatsGrouped(shopId, 30), {});
+  assert.deepEqual(eventStatsGrouped(shopId, 60), { src: { impression: 1, click: 0 } });
+});
+
+test('eventStatsGrouped sans aucun événement : objet vide, aucune erreur', () => {
+  const shopId = makeShop('shop-bb.myshopify.com');
+  assert.deepEqual(eventStatsGrouped(shopId), {});
 });

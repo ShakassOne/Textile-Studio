@@ -3122,6 +3122,10 @@
 
       <!-- Bouton panier sticky desktop -->
       <div id="desktop-cart-btn-wrap" style="padding:12px 16px;border-top:1px solid var(--border);margin-top:auto;flex-shrink:0">
+        <div id="tl-social-proof" style="display:none;margin-bottom:10px">
+          <div style="font-size:10px;color:var(--text3);text-align:center;margin-bottom:5px;letter-spacing:.02em">✅ Ils l'ont fait</div>
+          <div id="tl-social-proof-items" style="display:flex;gap:6px;justify-content:center"></div>
+        </div>
         <div id="tl-reassurance-banner" style="display:none;margin-bottom:10px;font-size:11px;line-height:1.4;color:var(--text3);text-align:center">
           🔒 Paiement sécurisé via Shopify · 🖨️ Fabriqué à la demande, juste pour vous · 💬 Une question ? Contactez-nous
         </div>
@@ -4908,7 +4912,17 @@ function _syncResolvedProductHandle() {
     return;
   }
   const stillValid = options.some(o => o.handle === _resolvedProductHandle);
-  if (!stillValid) _resolvedProductHandle = options[0].handle || ('id:' + options[0].product_id);
+  if (!stillValid) {
+    // Même garde que chooseShopifyProductHandle() : une variante choisie pour
+    // le PRÉCÉDENT produit (ex. taille d'un sac) ne doit jamais survivre à un
+    // changement de produit silencieux (ex. selectProduct() depuis le panel
+    // Produits) — sinon "Ajouter au panier" (ligne ~8251, mode Shopify direct)
+    // réutilise window._TL_VARIANT_ID tel quel et vend la variante d'un AUTRE
+    // produit que celui visible à l'écran au moment du clic.
+    const previousRef = _resolvedProductHandle || window._TL_PRODUCT_HANDLE || '';
+    _resolvedProductHandle = options[0].handle || ('id:' + options[0].product_id);
+    if (previousRef && previousRef !== _resolvedProductHandle) window._TL_VARIANT_ID = '';
+  }
 }
 
 // Drapeau : true tant que l'utilisateur ne veut pas que le panel produits
@@ -5004,6 +5018,14 @@ async function loadShopifyProductLinks() {
       }
     }
 
+    // Repli : si rien n'a pu appliquer de mockup jusqu'ici (produit d'entrée
+    // sans liaison exploitable, lien sans mockup_id valide, ou pas de handle
+    // du tout), ne JAMAIS laisser le studio sans aucun mockup affiché —
+    // l'ancien défaut [0] reprend la main, mais seulement MAINTENANT, après
+    // avoir vraiment essayé de résoudre le bon produit (voir init() : le
+    // défaut n'y est plus appliqué à l'aveugle quand un produit est attendu).
+    if (!STATE_mockup) applyMockup(STATE.product, 0);
+
     refreshResolvedProductPrice();
     _tlLinksDebug = { lastSource:'public', lastCount: SHOPIFY_PRODUCT_LINKS.length, lastError:'' };
     updateViewSwitcher();
@@ -5014,6 +5036,10 @@ async function loadShopifyProductLinks() {
     _shopifyLinksFailed = true;
     _tlLinksDebug = { lastSource:'public', lastCount:0, lastError:String(e.message || e) };
     console.warn('[TL] loadShopifyProductLinks:', e.message);
+    // Même repli en cas d'échec réseau : un produit d'entrée attendait la
+    // résolution (voir init()), qui n'aura jamais lieu — sans ce filet, le
+    // studio resterait sans aucun mockup affiché.
+    if (!STATE_mockup) applyMockup(STATE.product, 0);
     updateViewSwitcher();
   }
 }
@@ -6363,9 +6389,18 @@ function initPalette() {
 // palette générique + picker libre. Nuancier défini → seules CES couleurs,
 // picker libre masqué, et bascule sur la 1re couleur si l'actuelle n'y est pas.
 function _setPaletteForMockup(mockup) {
-  const colors = Array.isArray(mockup?.colors)
+  // Ordre de priorité : les coloris RÉELLEMENT vendus par le produit Shopify
+  // lié, puis le nuancier du mockup, puis la palette générique.
+  //
+  // Le produit fait autorité parce qu'il est la vérité commerciale : proposer
+  // 36 teintes textile sur un sac qui n'en vend que quatorze laisse le client
+  // composer dans un coloris inexistant, et personne ne s'en aperçoit avant
+  // la commande.
+  const duProduit = Array.isArray(window._TL_PRODUCT_COLORS) ? window._TL_PRODUCT_COLORS : [];
+  const duMockup = Array.isArray(mockup?.colors)
     ? mockup.colors.filter(c => c && /^#[0-9a-fA-F]{3,6}$/.test(String(c.hex || '')))
     : [];
+  const colors = duProduit.length ? duProduit : duMockup;
   const restricted = colors.length > 0;
   const next = restricted ? colors : TOPTEX_COLORS;
 
@@ -6378,12 +6413,21 @@ function _setPaletteForMockup(mockup) {
   if (customSection) customSection.style.display = restricted ? 'none' : '';
   const title = document.getElementById('palette-title');
   if (title) title.textContent = restricted
-    ? `Couleurs disponibles (${_activePalette.length})`
+    ? (duProduit.length
+        ? `Coloris du produit (${_activePalette.length})`
+        : `Couleurs disponibles (${_activePalette.length})`)
     : 'Palette textile (36 couleurs)';
 
-  // Couleur courante indisponible sur ce produit → prendre la 1re du nuancier.
+  // Couleur courante indisponible sur ce produit → le blanc si ce produit le
+  // vend (c'est l'attente par défaut, un vêtement/accessoire "vierge"), sinon
+  // seulement la 1re du nuancier. Sans cette préférence explicite, un produit
+  // dont Shopify liste un autre coloris en premier (ex. "Beige" avant "Blanc"
+  // dans l'ordre des variantes) retombait sur ce premier coloris par pur hasard
+  // d'ordre — signalé par Alan sur un sac dont le blanc existe bien, mais
+  // n'est pas la 1re variante Shopify.
   if (restricted && !_activePalette.some(c => c.hex.toLowerCase() === String(STATE.textileColor || '').toLowerCase())) {
-    selectPaletteColor(_activePalette[0].hex);
+    const blanc = _activePalette.find(c => c.hex.toLowerCase() === '#ffffff');
+    selectPaletteColor((blanc || _activePalette[0]).hex);
   }
 }
 
@@ -7267,6 +7311,30 @@ function _revealPhotoStylesUI() {
   if (mcard) mcard.style.display = '';
 }
 
+// Preuve sociale visuelle ("Ils l'ont fait") : charge jusqu'à 4 vignettes
+// curées par l'admin (/api/social-proof/public) et révèle le bloc uniquement
+// si au moins une vignette existe — pas de bloc vide même si le flag est actif.
+function _loadSocialProofItems() {
+  fetch(`${window.location.origin}/api/social-proof/public?shop=${encodeURIComponent(window._TL_SHOP)}&_=${Date.now()}`, { cache: 'no-store' })
+    .then(r => r.ok ? r.json() : [])
+    .then(items => {
+      if (!Array.isArray(items) || items.length === 0) return;
+      const wrap = document.getElementById('tl-social-proof-items');
+      const block = document.getElementById('tl-social-proof');
+      if (!wrap || !block) return;
+      const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+      wrap.innerHTML = items.map(it => `
+        <img src="${esc(it.image_url)}"
+             alt="${esc(it.caption)}"
+             title="${esc(it.caption)}"
+             style="width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid var(--border)"
+             loading="lazy">
+      `).join('');
+      block.style.display = '';
+    })
+    .catch(() => {});
+}
+
 function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === `tab-${tab}`));
@@ -7791,6 +7859,18 @@ function addMobileTicketBatch() {
 // ============================================
 // CART
 // ============================================
+// ── Réveil des boutons si le parent n'a pas réussi l'ajout ────────────────
+// Le studio désactive ses boutons avant de confier l'ajout à tl-modal.js. Si
+// le panier refuse, personne ne les réactivait : le client se retrouvait
+// devant un bouton mort et devait recharger pour réessayer.
+window.addEventListener('message', (e) => {
+  if (e.data?.type !== 'tl-add-failed') return;
+  document.querySelectorAll('.btn-cart-big, [onclick*="addToCart"]').forEach(b => {
+    if (b.tagName === 'BUTTON') { b.disabled = false; b.textContent = '🛒 Ajouter au panier'; }
+  });
+  showToast('⚠️ ' + (e.data.message || 'Ajout au panier refusé — réessayez'));
+});
+
 // ── Checkout Shopify direct (depuis fiche produit via bouton Personnaliser) ──
 async function _checkoutShopifyDirect() {
   const allBtns = document.querySelectorAll('.btn-cart-big, [onclick*="addToCart"]');
@@ -8061,6 +8141,9 @@ async function _checkoutShopifyDirect() {
           quantity:   1,
           properties: propsObj,
           previewUrl: _previewImgUrl || null,
+          // Pour poser la création du client sur les produits suggérés.
+          designId:    _currentDesignId || null,
+          designToken: _currentDesignToken || null,
         }, '*');
       }, 800);
     } else {
@@ -8105,19 +8188,103 @@ function _returnToShopifyProductPage(ref) {
   window.location.assign(base + '/products/' + encodeURIComponent(targetHandle));
 }
 
+// Taille manquante (changement de produit dans TSL sans nouvelle variante
+// résolue) : on la redemande dans un petit popup plutôt que de renvoyer sur
+// la fiche produit, ce qui perdrait la création en cours. Même filtre de
+// variantes « de base » (sans l'option Impression) que tl-modal.js::_tlVariantesDeBase().
+function _tlVariantesDeBaseStudio(product) {
+  if (!product || !Array.isArray(product.variants)) return [];
+  const noms = (product.options || []).map(o => String((o && o.name) || o || ''));
+  let iImpr = -1;
+  for (let i = 0; i < noms.length; i++) {
+    if (/impr|print|perso|finition/i.test(noms[i])) { iImpr = i; break; }
+  }
+  return product.variants.filter(v => {
+    if (iImpr < 0) return true;
+    const val = String((v.options || [])[iImpr] || '').toLowerCase();
+    return val.indexOf('sans') === 0 || !val;
+  }).map(v => {
+    const etiquette = (v.options || []).filter((_, i) => i !== iImpr).filter(Boolean).join(' / ');
+    return { id: v.id, nom: etiquette || v.title, dispo: v.available !== false };
+  });
+}
+
+async function _tlDemanderTailleEtContinuer(ref) {
+  const handle = String(ref || '').startsWith('id:') ? '' : String(ref || '');
+  if (!handle) {
+    showToast('⚠️ Choisissez d’abord votre taille sur la fiche produit.');
+    setTimeout(() => _returnToShopifyProductPage(ref), 500);
+    return;
+  }
+  let product = null;
+  try {
+    const base = (window._TL_SHOP_URL || ('https://' + window._TL_SHOP)).replace(/\/+$/, '');
+    const res  = await fetch(`${base}/products/${encodeURIComponent(handle)}.json`);
+    product = res.ok ? (await res.json())?.product : null;
+  } catch (_) { /* réseau indisponible : repli sur la fiche produit */ }
+
+  const variantes = _tlVariantesDeBaseStudio(product);
+  if (!variantes.length) {
+    showToast('⚠️ Choisissez d’abord votre taille sur la fiche produit.');
+    setTimeout(() => _returnToShopifyProductPage(ref), 500);
+    return;
+  }
+  _tlAfficherPopupTaille(variantes);
+}
+
+function _tlAfficherPopupTaille(variantes) {
+  const ancien = document.getElementById('taille-popup-modal');
+  if (ancien) ancien.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'taille-popup-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:650;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.75);backdrop-filter:blur(4px)';
+  modal.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:20px;width:min(360px,92vw);padding:28px;position:relative">
+      <button onclick="document.getElementById('taille-popup-modal').remove()" style="position:absolute;top:16px;right:16px;background:transparent;border:none;color:var(--text2);font-size:22px;cursor:pointer;line-height:1">×</button>
+      <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:18px;margin-bottom:4px">Choisissez votre taille</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:20px">Votre création est conservée, il ne manque que la taille.</div>
+      <div id="taille-popup-grid" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  const grille = document.getElementById('taille-popup-grid');
+  variantes.forEach(v => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = v.nom;
+    b.disabled = !v.dispo;
+    b.style.cssText = `padding:10px 16px;border-radius:10px;border:1px solid var(--border);background:${v.dispo ? 'var(--bg3)' : 'transparent'};color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;cursor:${v.dispo ? 'pointer' : 'not-allowed'};opacity:${v.dispo ? '1' : '.4'}`;
+    if (!v.dispo) {
+      b.title = 'Épuisé';
+    } else {
+      b.addEventListener('click', () => {
+        window._TL_VARIANT_ID = String(v.id);
+        modal.remove();
+        _checkoutShopifyDirect();
+      });
+    }
+    grille.appendChild(b);
+  });
+}
+
 async function addToCart() {
   const product = PRODUCTS[STATE.product];
   if (!product) return showToast('❌ Produit introuvable');
 
   // Sur Shopify, l'ancien panier interne ne doit jamais prendre le relais : il
-  // ne connaît ni le produit ni la taille réels. Sans contexte complet, retour
-  // à la fiche produit pour sélectionner la variante avant personnalisation.
+  // ne connaît ni le produit ni la taille réels. Sans variante connue (ex. le
+  // client a changé de produit EN COURS DE SESSION dans TSL — _syncResolvedProductHandle()
+  // efface alors délibérément l'ancienne variante, qui ne doit pas survivre à
+  // un changement de produit), on demande la taille ICI, dans un popup, sans
+  // renvoyer à la fiche produit : un aller-retour perdrait la création en
+  // cours (applyMockup() réinitialise les calques à chaque changement de
+  // produit, voir STATE.viewLayers = {} plus haut). Un handle vraiment
+  // introuvable (_tlDemanderTailleEtContinuer) retombe sur l'ancien comportement.
   if (window._TL_SHOP) {
     const ref = _resolvedProductHandle || window._TL_PRODUCT_HANDLE || '';
     if (!ref || !window._TL_VARIANT_ID) {
-      showToast('⚠️ Choisissez d’abord votre taille sur la fiche produit.');
-      setTimeout(() => _returnToShopifyProductPage(ref), 500);
-      return;
+      return _tlDemanderTailleEtContinuer(ref);
     }
     return _checkoutShopifyDirect();
   }
@@ -8337,7 +8504,7 @@ async function checkout() {
         closeCart();
         if (window.self !== window.top) {
           // tl-modal.js appelle /cart/add.json puis ouvre le drawer
-          setTimeout(() => { window.parent.postMessage({ type: 'tl-add-to-cart', variantId: String(_variant.id), quantity: 1, properties: _propsObj }, '*'); }, 500);
+          setTimeout(() => { window.parent.postMessage({ type: 'tl-add-to-cart', variantId: String(_variant.id), quantity: 1, properties: _propsObj, designId: _currentDesignId || null, designToken: _currentDesignToken || null }, '*'); }, 500);
         } else {
           // Hors iframe : form POST vers /cart/add (les query params properties[] sont invalides avec Shopify)
           setTimeout(() => {
@@ -9413,9 +9580,17 @@ function showToast(msg) {
 // INIT
 // ============================================
 // Fermeture du modal parent (depuis tl-modal.js)
+// designId/designToken (backlog item 25) : seule donnée déjà calculée par
+// l'iframe que la page parente n'a aujourd'hui aucun moyen de connaître
+// pendant l'édition — permet de proposer un lien de reprise par email à la
+// fermeture, sans toucher à la logique Fabric.js/moteur de rendu.
 function closeTLModal() {
   if (window.self !== window.top) {
-    window.parent.postMessage({ type: 'tl-close-modal' }, '*');
+    window.parent.postMessage({
+      type:        'tl-close-modal',
+      designId:    _currentDesignId || null,
+      designToken: _currentDesignToken || null,
+    }, '*');
   }
 }
 
@@ -9500,6 +9675,9 @@ function init() {
             _priceBar.style.display = '';
             _priceBar.classList.add('tl-visible');
           }
+          // Preuve sociale visuelle ("Ils l'ont fait") : désactivée par défaut,
+          // vide tant que l'admin n'a pas curé de vignettes (voir ROADMAP §2bis).
+          if (cfg && cfg.social_proof_enabled) _loadSocialProofItems();
         })
         .catch(() => {});
     }
@@ -9521,9 +9699,26 @@ function init() {
       } else {
         applyMockup(STATE.product, 0);
       }
-    } else {
+    } else if (!window._TL_PRODUCT_HANDLE || !window._TL_SHOP) {
+      // Entrée générique (pas de produit connu, ou pas de contexte boutique
+      // pour le résoudre) : mockup par défaut immédiat, rien d'autre ne
+      // l'appliquera.
       applyMockup(STATE.product, 0);
     }
+    // Sinon (entrée via ?product=/?product_id= sans ?mockup=, le cas normal
+    // d'un clic « Personnaliser ») : AUCUN mockup par défaut n'est appliqué
+    // ici. L'appliquer à l'aveugle avant même de savoir à quel produit on a
+    // affaire cassait deux choses en cascade, trouvé en creusant un bug
+    // signalé par Alan (mockup Femme systématique, y compris en entrant par
+    // un Sac) : (1) le mauvais mockup s'affichait tant que la résolution
+    // réelle n'avait pas eu le temps d'arriver, et (2) loadShopifyProductLinks()
+    // (déjà lancé plus haut) validait alors le produit d'ORIGINE contre les
+    // produits liés à CE mockup par défaut (_syncResolvedProductHandle lit
+    // STATE_mockup.id), le jugeait invalide et le remplaçait par un autre
+    // produit — persistant, pas un simple flash. loadShopifyProductLinks()
+    // applique désormais lui-même le bon mockup via son bloc « Auto-bascule »,
+    // avec son propre repli si le produit d'entrée n'a aucune liaison
+    // exploitable (voir cette fonction, juste avant refreshResolvedProductPrice()).
     showMockupStatus();
 
     // ── Templates produit ────────────────────────────────────────────────
@@ -9531,8 +9726,22 @@ function init() {
     // template. Le template est appliqué APRÈS la résolution automatique et
     // la remplace (produit, couleur, mockup, format).
     _tplInitAdminBar();
+    // Coloris réellement vendus par le produit : ils remplacent la palette
+    // générique dès qu'ils sont connus (cf. _setPaletteForMockup).
+    _tlChargerColorisProduit(_up.get('product_id') || '');
     const _tplProductId = _up.get('product_id') || '';
-    if (_tplProductId) _tplLoadForProduct(_tplProductId);
+    // ?visual=<slug|id> — le client a choisi son design sur la fiche produit
+    // (sélecteur du thème) et arrive ici pour le personnaliser.
+    const _visualRef = _up.get('visual') || '';
+    if (_tplProductId) {
+      // Un produit templaté porte déjà son design : on ne superpose pas le
+      // visuel choisi par-dessus, le template fait foi.
+      _tplLoadForProduct(_tplProductId).then(applique => {
+        if (!applique && _visualRef) _tlChargerVisuelDemande(_visualRef);
+      });
+    } else if (_visualRef) {
+      _tlChargerVisuelDemande(_visualRef);
+    }
   });
   initCanvas();
   initPalette();
@@ -10005,16 +10214,67 @@ function _tplApply(tpl) {
   return true;
 }
 
+/** @returns {Promise<boolean>} true si un template a été appliqué. */
 async function _tplLoadForProduct(productId) {
-  if (!productId) return;
+  if (!productId) return false;
   const data = await apiFetch(`/api/products/${encodeURIComponent(productId)}/template`);
-  if (!data?.exists || !data.template) return; // produit sans template → flux normal
+  if (!data?.exists || !data.template) return false; // produit sans template → flux normal
   // Coût d'impression déjà payé dans le prix Shopify : seul le surcoût au-delà
   // sera facturé (cf. _tplExtraDue).
   const ref = Number(data.referenceAmount);
   TPL_REFERENCE_AMOUNT = Number.isFinite(ref) && ref > 0 ? Math.round(ref * 100) / 100 : 0;
-  if (_tplApply(data.template)) showToast('🎨 Design chargé — personnalisez-le');
+  const applique = _tplApply(data.template);
+  if (applique) showToast('🎨 Design chargé — personnalisez-le');
   try { updatePrice(); } catch (_) {}
+  return applique;
+}
+
+/**
+ * Coloris réellement vendus par le produit Shopify lié.
+ *
+ * Sans eux, le studio propose sa palette textile générique — y compris des
+ * teintes que le produit ne vend pas. Le client composait alors un sac dans
+ * un coloris inexistant.
+ *
+ * Non bloquant : une erreur laisse simplement la palette générique en place.
+ */
+async function _tlChargerColorisProduit(productId) {
+  if (!productId) return;
+  try {
+    const d = await apiFetch(`/api/products/${encodeURIComponent(productId)}/colors`);
+    if (!d?.exists || !Array.isArray(d.colors) || !d.colors.length) return;
+    window._TL_PRODUCT_COLORS = d.colors;
+    // Le mockup est déjà appliqué à ce stade : on repasse la palette.
+    try { _setPaletteForMockup(STATE_mockup); } catch (_) {}
+  } catch (_) { /* palette générique conservée */ }
+}
+
+// ── Visuel choisi sur la fiche produit (?visual=) ──────────────────────────
+// Le client a cliqué un design dans le sélecteur du thème ; le studio s'ouvre
+// avec ce visuel déjà posé dans la zone d'impression, prêt à être déplacé.
+//
+// Le délai est la vraie difficulté : la zone d'impression (STATE.frameCoords)
+// n'existe qu'une fois le mockup appliqué ET son image chargée. Poser le
+// visuel trop tôt le centrerait sur un cadre par défaut, hors du vêtement.
+// On attend donc le cadre, avec une limite — même raison d'être que la
+// cascade d'ancrage des templates.
+async function _tlChargerVisuelDemande(ref) {
+  const v = await apiFetch(`/api/library/by-ref/${encodeURIComponent(ref)}`);
+  if (!v?.url) { showToast('⚠️ Ce design n\'est plus disponible'); return; }
+  _tlQuandCadrePret(() => {
+    addLibraryImageToCanvas(v.url, v.nom || '');
+    showToast(`🖼 ${v.nom || 'Design'} — à vous de jouer`);
+  });
+}
+
+/**
+ * Exécute `action` dès que la zone d'impression est connue.
+ * Abandonne au bout de ~8 s et exécute quand même : mieux vaut un visuel
+ * mal centré, que le client peut déplacer, qu'un studio vide sans explication.
+ */
+function _tlQuandCadrePret(action, essais = 0) {
+  if (STATE.frameCoords?.w > 0 || essais > 53) { action(); return; }
+  setTimeout(() => _tlQuandCadrePret(action, essais + 1), 150);
 }
 
 // ── Charger les catégories produit depuis l'API et mettre à jour les noms dans l'UI ──

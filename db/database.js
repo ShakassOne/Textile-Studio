@@ -128,16 +128,35 @@ function initDB() {
   try { db.exec("ALTER TABLE shops ADD COLUMN is_active INTEGER DEFAULT 1"); } catch {}
   try { db.exec("ALTER TABLE library ADD COLUMN thumb_url TEXT DEFAULT NULL"); } catch {}
 
-  // ── Bibliothèque : le visuel devient une fiche, pas un fichier ─────────
-  // Le marchand renomme, classe, étiquette, et retire de la vente sans
-  // supprimer. Colonnes ajoutées à chaud : une base déjà en service les
-  // reçoit au démarrage, et une relance ne refait rien (le catch avale le
-  // « duplicate column »).
+  // ── Migration library — métadonnées « vitrine » de la bibliothèque ───────
+  // La fiche produit affichera ces visuels au client final (« Choisissez un
+  // design »), ce qu'un simple nom de fichier ne permet pas. Voir
+  // utils/design-library.js pour les règles (slug figé, exclusions plutôt
+  // qu'autorisations).
   try { db.exec("ALTER TABLE library ADD COLUMN slug TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE library ADD COLUMN display_name TEXT DEFAULT ''"); } catch {}
+  try { db.exec("ALTER TABLE library ADD COLUMN sort_order INTEGER DEFAULT 0"); } catch {}
   try { db.exec("ALTER TABLE library ADD COLUMN is_active INTEGER DEFAULT 1"); } catch {}
   try { db.exec("ALTER TABLE library ADD COLUMN tags TEXT DEFAULT '[]'"); } catch {}
   try { db.exec("ALTER TABLE library ADD COLUMN excluded_mockups TEXT DEFAULT '[]'"); } catch {}
+  // Dimensions en pixels : indispensables pour décider si un visuel tient
+  // correctement dans la zone d'impression d'un support (lot B). NULL tant
+  // qu'on ne les connaît pas — et un visuel aux dimensions inconnues est
+  // toujours considéré comme compatible, jamais écarté faute de données.
+  try { db.exec("ALTER TABLE library ADD COLUMN width INTEGER DEFAULT NULL"); } catch {}
+  try { db.exec("ALTER TABLE library ADD COLUMN height INTEGER DEFAULT NULL"); } catch {}
+  // Index non unique : l'unicité du slug est tenue côté route (uniqueSlug),
+  // car un index UNIQUE échouerait sur les bases existantes où toutes les
+  // lignes ont encore slug=''.
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_library_shop_slug ON library(shop_id, slug)"); } catch {}
+  backfillLibraryMetadata(db);
+
+  // Lot E — achat direct d'un visuel de bibliothèque, sans passer par le
+  // studio. Référence séparée de `design_id` (qui pointe vers `designs`, un
+  // historique de canvas Fabric) : une commande directe n'a jamais ce
+  // format-là, donc jamais ce champ-là. `design_id` et `library_id` sont
+  // mutuellement exclusifs sur une même commande.
+  try { db.exec("ALTER TABLE orders ADD COLUMN library_id INTEGER DEFAULT NULL"); } catch {}
 
   // ── Table: categories (catégories de bibliothèque sans placeholder SVG) ────
   db.exec(`
@@ -243,6 +262,111 @@ function initDB() {
     )
   `);
 
+  // ── Migration designs — composition au format partagé ───────────────────
+  // Le bloc de la fiche produit et le configurateur écrivent désormais la
+  // même structure (cf. utils/composition.js) : faces nommées, positions
+  // relatives à la zone d'impression. `layers_json` reste en place pour les
+  // designs déjà enregistrés et pour le rendu du configurateur actuel ; les
+  // deux cohabiteront le temps du raccordement.
+  try { db.exec("ALTER TABLE designs ADD COLUMN composition_json TEXT DEFAULT NULL"); } catch {}
+
+  // ── Table: product_display_zones (zone d'affichage sur la PHOTO produit) ──
+  // ──────────────────────────────────────────────────────────────────────────
+  // À NE PAS CONFONDRE avec la zone d'impression des mockups
+  // (mockups.views_json[i].zone, que le code appelle « studio_print_zone ») :
+  //
+  //   studio_print_zone     — un RECTANGLE dans le repère du back-office
+  //                           (440×340), sur le packshot à plat. Sert à
+  //                           produire le FICHIER D'IMPRESSION.
+  //   product_display_zone  — un QUADRILATÈRE en pourcentage de la photo
+  //                           commerciale du produit, où le vêtement est porté
+  //                           de biais. Sert uniquement à l'AFFICHAGE sur la
+  //                           fiche produit.
+  //
+  // Formes différentes, repères différents, usages différents : deux tables
+  // distinctes, aucun champ partagé, aucun chemin de code commun. Un produit
+  // peut avoir l'une sans l'autre.
+  //
+  // Les coins sont en POURCENTAGE de l'image : le CDN Shopify sert la même
+  // photo en plusieurs définitions, une zone en pixels ne vaudrait que pour
+  // l'une d'elles.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS product_display_zones (
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      shop_id             INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+      shopify_product_id  TEXT    NOT NULL,
+      zone_type           TEXT    NOT NULL DEFAULT 'product_display_zone',
+      reference_media_id  TEXT    NOT NULL DEFAULT '',
+      reference_width     INTEGER DEFAULT NULL,
+      reference_height    INTEGER DEFAULT NULL,
+      corners_json        TEXT    NOT NULL DEFAULT '[]',
+      is_master           INTEGER NOT NULL DEFAULT 1,
+      updated_at          TEXT    DEFAULT (datetime('now')),
+      UNIQUE(shop_id, shopify_product_id, zone_type, reference_media_id)
+    )
+  `);
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_display_zones_product ON product_display_zones(shop_id, shopify_product_id)"); } catch {}
+
+  // ── Migration : une zone par photo, avec une zone « master » ────────────
+  // Première version : une seule zone par produit. Mais sur le sac Kimood,
+  // certaines photos de coloris cadrent le produit un peu plus haut ou plus
+  // bas — la zone du Naturel tombe alors légèrement à côté. Il faut donc
+  // pouvoir corriger UNE photo sans toucher aux autres.
+  //
+  // Le modèle : une zone master qui vaut par défaut pour toutes les photos,
+  // et des zones propres à une photo qui la remplacent pour celle-là.
+  //
+  // SQLite ne sait pas modifier une contrainte UNIQUE : il faut reconstruire
+  // la table. On ne le fait qu'une fois, détecté par l'absence de la colonne
+  // is_master.
+  try {
+    const cols = db.prepare('PRAGMA table_info(product_display_zones)').all();
+    if (cols.length && !cols.some(c => c.name === 'is_master')) {
+      db.exec('BEGIN');
+      db.exec(`
+        CREATE TABLE product_display_zones_v2 (
+          id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+          shop_id             INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+          shopify_product_id  TEXT    NOT NULL,
+          zone_type           TEXT    NOT NULL DEFAULT 'product_display_zone',
+          reference_media_id  TEXT    NOT NULL DEFAULT '',
+          reference_width     INTEGER DEFAULT NULL,
+          reference_height    INTEGER DEFAULT NULL,
+          corners_json        TEXT    NOT NULL DEFAULT '[]',
+          is_master           INTEGER NOT NULL DEFAULT 1,
+          updated_at          TEXT    DEFAULT (datetime('now')),
+          UNIQUE(shop_id, shopify_product_id, zone_type, reference_media_id)
+        )
+      `);
+      // Les zones existantes deviennent les master de leur produit.
+      db.exec(`
+        INSERT INTO product_display_zones_v2
+          (shop_id, shopify_product_id, zone_type, reference_media_id,
+           reference_width, reference_height, corners_json, is_master, updated_at)
+        SELECT shop_id, shopify_product_id, zone_type, reference_media_id,
+               reference_width, reference_height, corners_json, 1, updated_at
+        FROM product_display_zones
+      `);
+      db.exec('DROP TABLE product_display_zones');
+      db.exec('ALTER TABLE product_display_zones_v2 RENAME TO product_display_zones');
+      db.exec("CREATE INDEX IF NOT EXISTS idx_display_zones_product ON product_display_zones(shop_id, shopify_product_id)");
+      db.exec('COMMIT');
+      console.log('[DB] Zones produit : migration vers une zone par photo');
+    }
+  } catch (e) {
+    try { db.exec('ROLLBACK'); } catch {}
+    console.warn('[DB] Migration des zones produit ignorée :', e.message);
+  }
+
+  // Face de la zone : recto par défaut.
+  // ────────────────────────────────────────────────────────────────────────
+  // Une zone posée sur une AUTRE photo sert de remplacement — même face,
+  // cadrage différent : c'est le cas des coloris du sac Kimood. Rien ne
+  // permettait d'y distinguer « cette photo est le dos du vêtement », qui
+  // demande un second fichier d'impression. Sans cette colonne, toute
+  // surcharge de cadrage serait prise pour un verso.
+  try { db.exec("ALTER TABLE product_display_zones ADD COLUMN face TEXT DEFAULT 'front'"); } catch {}
+
   // ── Table: upsell_candidates (suggestions "vous aimeriez aussi" curées par shop) ──
   // Spec Upsell V2 étape 1 (docs/ROADMAP-DEV.md §2) : pas d'algorithme automatique,
   // l'admin associe à la main 2-4 produits cibles déjà liés à un mockup pour un
@@ -259,6 +383,61 @@ function initDB() {
     )
   `);
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_upsell_candidates_source ON upsell_candidates(shop_id, source_shopify_product_id)"); } catch {}
+
+  // ── Table: upsell_events (tracking impression/clic de l'encart "Vous aimeriez aussi") ──
+  // Backlog item 17, tracking (docs/ROADMAP-DEV.md §2) : l'encart upsell est en
+  // prod depuis le 06/10 (commit 5f06ca1) sans aucune mesure — impossible de
+  // savoir s'il convertit ou si les clients le ferment sans le regarder.
+  // `event` ∈ 'impression'/'click', validé en code (utils/upsell-candidates.js),
+  // pas par une contrainte CHECK SQLite (older better-sqlite3/SQLite builds
+  // n'acceptent pas toujours CHECK dans CREATE TABLE IF NOT EXISTS de façon
+  // homogène ; la validation applicative suffit, la table reste scopée shop).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS upsell_events (
+      id                         INTEGER PRIMARY KEY AUTOINCREMENT,
+      shop_id                    INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+      source_shopify_product_id  TEXT NOT NULL,
+      target_shopify_product_id  TEXT NOT NULL,
+      event                      TEXT NOT NULL,
+      created_at                 TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_upsell_events_source ON upsell_events(shop_id, source_shopify_product_id, created_at)"); } catch {}
+
+  // ── Table: cart_add_errors (refus silencieux de /cart/add, backlog item 31) ──
+  // Spec du 13/10 18h (docs/ROADMAP-DEV.md §2, item 31) : le point P0 (trou
+  // paiement commencé → commande) n'est pas mesurable sans accès live Shopify
+  // depuis cet environnement — on trace donc côté serveur TSL les refus que
+  // tl-modal.js détecte déjà (`err.panierRefuse`) mais ne faisait jusqu'ici
+  // que logger en `console.error`/`alert()` côté client, invisible pour nous.
+  // Même forme que upsell_events ci-dessus (copie conforme du pattern).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS cart_add_errors (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      shop_id     INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+      variant_id  TEXT NOT NULL DEFAULT '',
+      reason      TEXT NOT NULL DEFAULT '',
+      created_at  TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_cart_add_errors_shop ON cart_add_errors(shop_id, created_at)"); } catch {}
+
+  // ── Table: social_proof_items (vignettes "Ils l'ont fait" curées par shop) ──
+  // Backlog item 18 (docs/ROADMAP-DEV.md §2) : preuve sociale visuelle dans le
+  // studio (photos de vraies réalisations clients), en complément du bandeau
+  // de réassurance textuel déjà livré. Curation manuelle par l'admin (URL
+  // d'image + légende), pas d'algorithme automatique ni d'upload de fichier.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS social_proof_items (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      shop_id     INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+      image_url   TEXT NOT NULL,
+      caption     TEXT NOT NULL DEFAULT '',
+      sort_order  INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_social_proof_items_shop ON social_proof_items(shop_id, sort_order)"); } catch {}
 
   // ── Table: ai_styles (styles visuels appliqués aux photos clients via OpenAI) ──
   // Scopée par shop. Les styles "built-in" sont créés au démarrage pour chaque
@@ -437,6 +616,55 @@ function getShopIdByDomain(shopDomain) {
     .prepare('SELECT id FROM shops WHERE shop_domain = ? AND is_active = 1')
     .get(String(shopDomain).toLowerCase().trim());
   return row?.id || null;
+}
+
+/**
+ * Remplit slug / display_name pour les visuels créés avant le lot « vitrine ».
+ * ──────────────────────────────────────────────────────────────────────────
+ * Idempotent : ne touche que les lignes dont le champ est encore vide, donc
+ * sans effet au deuxième démarrage, et sans jamais écraser une saisie admin.
+ *
+ * Le slug part dans l'URL publique de la boutique : il doit être unique PAR
+ * BOUTIQUE, d'où le traitement shop par shop.
+ */
+function backfillLibraryMetadata(database) {
+  const DL = require('../utils/design-library');
+  try {
+    const rows = database.prepare(`
+      SELECT id, shop_id, filename, slug, display_name
+      FROM library
+      WHERE (slug IS NULL OR slug = '') OR (display_name IS NULL OR display_name = '')
+      ORDER BY id
+    `).all();
+    if (!rows.length) return;
+
+    // Slugs déjà attribués, par boutique, pour ne pas en recréer un identique.
+    const pris = new Map();
+    for (const r of database.prepare("SELECT shop_id, slug FROM library WHERE slug <> ''").all()) {
+      const cle = String(r.shop_id);
+      if (!pris.has(cle)) pris.set(cle, new Set());
+      pris.get(cle).add(r.slug);
+    }
+
+    const maj = database.prepare('UPDATE library SET slug=?, display_name=? WHERE id=?');
+    const tout = database.transaction(() => {
+      for (const r of rows) {
+        // Un upload local porte un nom horodaté qui ne dit rien : on retombe
+        // alors sur « Visuel 42 », que l'admin renommera.
+        const nom  = r.display_name || DL.displayNameFromFilename(r.filename) || `Visuel ${r.id}`;
+        const cle  = String(r.shop_id);
+        if (!pris.has(cle)) pris.set(cle, new Set());
+        const slug = r.slug || DL.uniqueSlug(nom, pris.get(cle), `visuel-${r.id}`);
+        pris.get(cle).add(slug);
+        maj.run(slug, nom, r.id);
+      }
+    });
+    tout();
+    console.log(`[DB] Bibliothèque : ${rows.length} visuel(s) complété(s) (slug + nom affiché)`);
+  } catch (e) {
+    // Non bloquant : l'app doit démarrer même si le rattrapage échoue.
+    console.warn('[DB] backfillLibraryMetadata ignoré :', e.message);
+  }
 }
 
 function getDB() {

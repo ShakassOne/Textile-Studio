@@ -241,6 +241,45 @@ function handleAppUninstalled(payload, shopDomain) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Lot E — fichier d'impression d'un achat direct de bibliothèque (sans studio)
+// ─────────────────────────────────────────────────────────────────────────────
+// Le format n'est jamais lu sur la commande : il se retrouve via le produit
+// (resoudreFormatProduit, même logique que la fiche produit) — c'est la
+// décision prise avec Alan le 2026-10-03, pour ne pas avoir à saisir une
+// taille par produit en plus de poser les visuels.
+async function _genererFichierImpressionBibliotheque(shopId, orderId, libraryId, productId) {
+  const db     = getDB();
+  const visuel = db.prepare('SELECT * FROM library WHERE id=? AND shop_id=?').get(libraryId, shopId);
+  if (!visuel) {
+    console.warn(`⚠️  orders/paid : visuel bibliothèque #${libraryId} introuvable (commande #${orderId})`);
+    return;
+  }
+
+  const { resoudreFormatProduit, octetsDuVisuel } = require('./product-designs');
+  const { genererFichierImpression }              = require('../utils/print-file');
+  const fs   = require('fs');
+  const path = require('path');
+
+  const { format }    = resoudreFormatProduit(db, shopId, productId);
+  const visuelBuffer  = await octetsDuVisuel(visuel.url);
+  const { buffer }    = await genererFichierImpression({ visuelBuffer, format });
+
+  const dir = path.join(process.env.DATA_DIR || path.join(__dirname, '..'), 'uploads', 'generated', 'print');
+  fs.mkdirSync(dir, { recursive: true });
+  const filename = `order${orderId}_lib${libraryId}.png`;
+  fs.writeFileSync(path.join(dir, filename), buffer);
+
+  // orders.render_url existe déjà (champ générique, édité à la main depuis
+  // l'admin jusqu'ici) : on le réutilise plutôt que d'ajouter une colonne de
+  // plus pour la même idée. `format` est corrigé avec la vraie valeur retenue
+  // (la commande entrait avec le défaut 'A4' faute de propriété de ligne).
+  db.prepare("UPDATE orders SET render_url=?, format=? WHERE id=? AND shop_id=?")
+    .run(`/uploads/generated/print/${filename}`, format, orderId, shopId);
+
+  console.log(`🖨️  Fichier d'impression généré pour la commande #${orderId} (visuel #${libraryId}, ${format})`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Handler — orders/paid
 // ─────────────────────────────────────────────────────────────────────────────
 function handleOrderPaid(payload, shopDomain) {
@@ -275,6 +314,13 @@ function handleOrderPaid(payload, shopDomain) {
   const color    = getP('color')    || '#FFFFFF';
   const quantity = lineItem.quantity || 1;
 
+  // Lot E — achat direct d'un visuel de bibliothèque, sans studio. Clé
+  // séparée de design_id/_design_id : elle ne pointe JAMAIS vers la table
+  // designs (historique de canvas Fabric), seulement vers library. Posée par
+  // tl-designs.js au moment de l'ajout au panier.
+  const libraryIdRaw = getP('_library_id') || getP('library_id');
+  const library_id   = libraryIdRaw ? (parseInt(libraryIdRaw, 10) || null) : null;
+
   const customer     = payload.customer || {};
   const address      = payload.billing_address || {};
   const customerName  = `${customer.first_name || ''} ${customer.last_name  || ''}`.trim();
@@ -286,18 +332,28 @@ function handleOrderPaid(payload, shopDomain) {
 
   const info = db.prepare(`
     INSERT INTO orders
-      (shop_id, shopify_id, design_id, product, color, format, quantity,
+      (shop_id, shopify_id, design_id, library_id, product, color, format, quantity,
        unit_price, format_price, total_price,
        customer_name, customer_email, status)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'confirmed')
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'confirmed')
   `).run(
-    shopId, String(payload.id), design_id, product, color, format, quantity,
+    shopId, String(payload.id), design_id, library_id, product, color, format, quantity,
     unitPrice, formatPrice, totalPrice,
     customerName, customerEmail
   );
 
   const newOrderId = info.lastInsertRowid;
   console.log(`✅  Order #${newOrderId} (shop ${shopId}) from ${customerEmail} saved (design #${design_id})`);
+
+  // ── Lot E : fichier d'impression pour un achat direct de bibliothèque ──
+  // Pas de studio ⇒ pas de PNG déjà exporté côté navigateur : on le compose
+  // ici, côté serveur, avec le moteur de utils/print-file.js. Asynchrone et
+  // non attendu, comme l'email plus bas : Shopify veut un 200 rapide, et
+  // cette commande est déjà enregistrée quoi qu'il arrive à la génération.
+  if (library_id && lineItem.product_id) {
+    _genererFichierImpressionBibliotheque(shopId, newOrderId, library_id, String(lineItem.product_id))
+      .catch(err => console.error(`❌  fichier d'impression commande #${newOrderId} :`, err.message));
+  }
 
   // ── Recharger le quota IA : un achat redonne des générations ──────────
   // Deux identités possibles — le compte client s'il était connecté, et

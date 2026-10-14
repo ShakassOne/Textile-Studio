@@ -175,7 +175,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
       res.setHeader('Expires', '0');
     }
     // tl-modal.js chargé depuis n'importe quel domaine Shopify via <script src>
-    if (filePath.endsWith('tl-modal.js')) {
+    if (filePath.endsWith('tl-modal.js') || filePath.endsWith('tl-designs.js') || filePath.endsWith('tl-editor.js') || filePath.endsWith('tsl-engine.js')) {
       res.setHeader('Access-Control-Allow-Origin', '*');
     }
   },
@@ -232,7 +232,7 @@ initDB();
 setImmediate(async () => {
   try {
     const db     = require('./db/database').getDB();
-    const shops  = db.prepare('SELECT shop_domain, access_token FROM shops WHERE access_token IS NOT NULL AND access_token != ""').all();
+    const shops  = db.prepare("SELECT shop_domain, access_token FROM shops WHERE access_token IS NOT NULL AND access_token != ''").all();
     const appUrl = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
     if (!shops.length || !appUrl) {
       console.log('🪝  reRegisterWebhooks — aucun shop en DB ou APP_URL absent');
@@ -509,12 +509,28 @@ app.use((req, res, next) => {
     // ?shop=, mais tout appel avec ?shop= tombait dedans.)
     '/api/products/',
     '/api/shop-settings/style/public',
+    '/api/social-proof/public',
+    '/api/upsell-candidates/public', // ← suggestions après ajout au panier : un CLIENT ne souscrit pas
+    '/api/upsell-candidates/track',  // ← tracking impression/clic de l'encart : même raison
+    '/api/cart-add-errors/track',   // ← tracking des refus /cart/add (item 31) : même raison
+    '/api/designs/mine',    // ← bandeau "Reprendre ma création" : même raison (item 24)
+    // (lien de reprise par email, item 25 : /api/designs/:id/email-resume-link,
+    // exemptée juste au-dessous via emailResumeLinkPath — id variable, pas de
+    // préfixe fixe possible avec startsWith)
     '/textilelab-studio.html',
     '/tl-modal.js',
+    '/tl-designs.js',
+    '/tl-editor.js',
+    '/tsl-engine.js',
     '/uploads',
     '/assets',
   ];
-  if (exempted.some(p => req.path.startsWith(p))) return next();
+  // Chemin à id variable (/api/designs/123/email-resume-link) : pas de préfixe
+  // fixe possible avec startsWith, d'où une regex dédiée plutôt qu'une entrée
+  // dans `exempted` (item 25 — un visiteur anonyme ne souscrit pas, même
+  // raison que /api/designs/mine juste au-dessus).
+  const emailResumeLinkPath = /^\/api\/designs\/\d+\/email-resume-link$/;
+  if (exempted.some(p => req.path.startsWith(p)) || emailResumeLinkPath.test(req.path)) return next();
   return checkSubscription(req, res, next);
 });
 
@@ -539,6 +555,8 @@ app.use('/api/mockup-gen', express.json({ limit: '10mb' }), require('./routes/mo
 app.use('/api/product-categories', require('./routes/product-categories'));
 app.use('/api/product-links',      require('./routes/product-links'));
 app.use('/api/upsell-candidates',  require('./routes/upsell-candidates'));
+app.use('/api/cart-add-errors',    require('./routes/cart-add-errors'));
+app.use('/api/social-proof',       require('./routes/social-proof'));
 app.use('/api/email',              require('./routes/email'));
 app.use('/api/shopify',    require('./routes/storefront'));
 // Audit M4 — override 10 Mo : /api/ai/transform (photo → style IA) et
@@ -554,6 +572,10 @@ app.use('/api/shop-settings',  require('./routes/shop-settings'));
 // Templates produit — monté sur /api car il sert deux préfixes :
 //   POST /api/admin/products/:id/template (admin)  et  GET /api/products/:id/template (public)
 app.use('/api',                require('./routes/product-templates'));
+// Catalogue de visuels proposés sur une fiche produit (public, via App Proxy).
+app.use('/api',                require('./routes/product-designs'));
+// Zone d'affichage calibrée sur la photo commerciale d'un produit vierge.
+app.use('/api',                require('./routes/product-display-zones'));
 app.use('/proxy',             require('./routes/app-proxy'));
 
 // ── Fix webhooks : réenregistre orders/paid sur tous les shops actifs ─────────
@@ -621,6 +643,14 @@ app.get('/api/version', (_req, res) => {
     commit:    sha ? sha.slice(0, 7) : null,
     branch:    process.env.RAILWAY_GIT_BRANCH || null,
     startedAt: _BOOT_TS,
+    // État des polices du rendu serveur. Un conteneur sans police sort les
+    // fichiers d'impression entièrement en carrés, et rien ne le signale
+    // depuis l'extérieur — d'où ce relevé, qui évite d'avoir à fouiller les
+    // journaux pour s'en apercevoir.
+    polices: (() => {
+      try { return require('./utils/print-composition').etatPolices(); }
+      catch (e) { return { erreur: e.message }; }
+    })(),
   });
 });
 

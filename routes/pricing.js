@@ -138,3 +138,12 @@ module.exports.getFormatExtra   = (key)    => PRICING.formatList.find(f => f.key
 // Clés connues — exposées pour la validation des entrées (audit N3).
 module.exports.getProductKeys   = ()       => PRICING.products.map(p => p.key);
 module.exports.getFormatKeys    = ()       => PRICING.formatList.map(f => f.key);
+
+/**
+ * Barème des surcharges de format pour une boutique, défauts compris.
+ * ──────────────────────────────────────────────────────────────────────────
+ * Exposé pour que la fiche produit facture avec EXACTEMENT les mêmes
+ * montants que le studio, qui lit déjà ces valeurs. Deux barèmes qui
+ * divergeraient donneraient deux prix pour le même visuel.
+ */
+module.exports.lireBaremeFormats = (shopId) => ({ ...buildFormatsObj(), ...readShopSurcharges(shopId) });

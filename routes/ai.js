@@ -9,6 +9,17 @@ const { requireShopifySession, verifyJWT, setReauthHeaders } = require('./shopif
 const { getDB, getShop } = require('../db/database');
 const { attachShopId } = require('./_shop-context');
 const { getSetting, setSetting, deleteSetting } = require('../db/settings');
+const { buildGenerationPrompt, buildTransformPrompt } = require('../utils/ai-prompts');
+
+// Flag `ai_generic_identity_prompt_enabled` (pattern readBoolSetting/setSetting
+// de routes/shop-settings.js, dupliqué ici pour ne pas dépendre de ce module) —
+// voir utils/ai-prompts.js pour le détail des deux formulations.
+function readBoolSetting(shopId, key, defaultVal) {
+  const v = getSetting(shopId, key);
+  if (v === '' || v == null) return defaultVal;
+  return v === '1' || v === 'true';
+}
+const GENERIC_IDENTITY_PROMPT_DEFAULT = false;
 
 // ── Middleware hybride : Bearer JWT (App Bridge) OU X-Shop-Domain (storefront iframe) ──
 // Permet aux requêtes frontend sans App Bridge (standalone Railway) de fonctionner.
@@ -241,66 +252,10 @@ async function loadStyleCoverInput(imageUrl) {
 }
 
 // ── Construction du prompt de transformation ──
-// hasStyleReference=true → prompt structuré Image A (identité) / Image B (style),
-// sinon fallback texte seul (point 5). Le prompt custom du style est conservé
-// puis enrichi (point 9) avec les contraintes d'identité et de rendu.
-// Règles de rendu communes à TOUTES les générations, quelle que soit la route.
-// Le cadrage est le premier point : sans consigne explicite, gpt-image-1 cadre
-// serré et rogne systématiquement le sujet (tête, pieds, bords du dessin).
-const COMMON_RENDER_RULES = [
-  'CRITICAL — FRAMING: the ENTIRE subject must be fully visible inside the image, nothing cropped.',
-  'Do NOT crop or cut off any part of the artwork: no cropped head, hair, ears, feet, hands, wings, tails, weapons or lettering.',
-  'Leave a comfortable empty margin on ALL FOUR sides (roughly 10% of the image): headroom above, footroom below, and space left and right.',
-  'Compose the subject fully zoomed out and centered. Never bleed off the edges, never let any element touch the border.',
-  'Clean illustration: avoid any greasy, oily, waxy or pasty over-rendered look — keep crisp, clean edges.',
-  'Fully transparent background (PNG alpha): no background scene, no backdrop, no canvas, no drop shadow.',
-  'Deliver a print-ready DTF transfer: high contrast, clean separated colors, no semi-transparent halo around the edges.',
-];
-
-// Prompt des générations de zéro (POST /dalle). On enrobe la demande du client
-// des mêmes règles que la transformation de photo — notamment le cadrage, qui
-// manquait ici : les visuels revenaient rognés sur les bords.
-function buildGenerationPrompt(userPrompt) {
-  const base = String(userPrompt || '').trim();
-  return [
-    base,
-    '',
-    'Strict requirements:',
-    ...COMMON_RENDER_RULES.map((r) => '- ' + r),
-  ].join('\n');
-}
-
-function buildTransformPrompt(customPrompt, hasStyleReference, userPrompt) {
-  // La consigne libre du client prime sur le prompt du style : c'est elle qui
-  // exprime son intention (« transforme cette photo en affiche vintage »).
-  // Sans consigne, on retombe sur le prompt du style, comportement historique.
-  const free = String(userPrompt || '').trim();
-  const base = free || (customPrompt || STYLE_PROMPTS_FALLBACK.cartoon).trim();
-  const commonRules = [
-    'Keep the EXACT number of people present in the source photo.',
-    "Preserve each person's likeness: face, glasses, beard, hairstyle and hair length, and smile/expression.",
-    ...COMMON_RENDER_RULES,
-  ];
-  if (hasStyleReference) {
-    return [
-      'You are given TWO reference images.',
-      'IMAGE A (the FIRST image) = SOURCE IDENTITY. The people, their count and their likeness must come EXCLUSIVELY from IMAGE A.',
-      'IMAGE B (the SECOND image) = STYLE REFERENCE. Use IMAGE B ONLY as a strict graphic-style reference (line work, shading, color treatment, finish). Do NOT copy the people, faces, objects, composition or background of IMAGE B.',
-      '',
-      'Redraw the subject of IMAGE A in this style: ' + base,
-      '',
-      'Strict requirements:',
-      '- Use IMAGE B as a STRICT style reference only; identity and number of people come solely from IMAGE A.',
-      ...commonRules.map((r) => '- ' + r),
-    ].join('\n');
-  }
-  return [
-    base,
-    '',
-    'Strict requirements:',
-    ...commonRules.map((r) => '- ' + r),
-  ].join('\n');
-}
+// Construction des prompts (buildGenerationPrompt/buildTransformPrompt) extraite
+// dans utils/ai-prompts.js — module pur, testable sans charger routes/auth.js.
+// Voir ce module pour le détail des deux formulations d'identité (people vs
+// subject générique) et le flag qui choisit entre les deux.
 
 // ── GET  /api/ai/settings — Lire la config IA (admin, scopé shop) ───────────────
 router.get('/settings', requireAuth, attachShopId, (req, res) => {
@@ -554,6 +509,84 @@ router.post('/dalle', requireAIContext, attachShopId, aiIpRateLimiter, aiRateLim
   }
 });
 
+// ── POST /api/ai/questions — ce qu'il manque pour bien générer ─────────────
+//
+// Le client décrit son visuel en une phrase et oublie presque toujours une
+// décision que le modèle devra prendre à sa place : la couleur du texte, le
+// fond, le cadrage. Il découvre le choix de l'IA après coup, sur son quota.
+//
+// On demande donc au modèle de LIRE la demande et de ne poser que les
+// questions réellement manquantes — jamais plus de deux, jamais une question
+// dont la réponse est déjà dans la phrase. C'est la différence avec la
+// question de style, qui était la même pour tout le monde.
+//
+// Appel volontairement bon marché, et jamais bloquant : une panne ici ne
+// doit pas empêcher de générer, elle fait seulement sauter les questions.
+router.post('/questions', requireAIContext, attachShopId, aiIpRateLimiter, async (req, res) => {
+  const demande = String(req.body?.prompt || '').trim();
+  if (!demande) return res.json({ questions: [] });
+
+  const apiKey = resolveOpenAIKey(req.shopId);
+  if (!apiKey) return res.json({ questions: [] });
+
+  const consigne = [
+    'Tu prépares la génération d\'un visuel destiné à être imprimé sur un vêtement.',
+    'On te donne la demande d\'un client. Trouve ce qui MANQUE vraiment pour produire',
+    'le visuel qu\'il a en tête, et pose au maximum deux questions courtes, en français,',
+    'tutoiement exclu (vouvoiement).',
+    '',
+    'Règles :',
+    '- ne pose JAMAIS une question dont la réponse figure déjà dans la demande ;',
+    '- une question doit changer le résultat (couleur, fond, cadrage, ambiance, texte exact) ;',
+    '- pas de question sur le format, la taille, le support ni la technique d\'impression ;',
+    '- si la demande se suffit à elle-même, renvoie une liste vide ;',
+    '- propose pour chaque question 3 à 4 réponses courtes, cliquables.',
+    '',
+    'Réponds UNIQUEMENT par du JSON de la forme :',
+    '{"questions":[{"id":"couleur_texte","label":"De quelle couleur voulez-vous le texte ?",',
+    '"suggestions":["Noir","Blanc","Rouge vif"]}]}',
+  ].join('\n');
+
+  try {
+    const r = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        temperature: 0.3,
+        max_tokens: 300,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: consigne },
+          { role: 'user', content: demande },
+        ],
+      }),
+    });
+    const data = await r.json();
+    if (data.error) throw new Error(data.error.message);
+
+    let parsed = {};
+    try { parsed = JSON.parse(data.choices?.[0]?.message?.content || '{}'); } catch { parsed = {}; }
+
+    // On ne fait jamais confiance à la forme renvoyée : deux questions au
+    // plus, quatre suggestions au plus, et tout est ramené à du texte.
+    const questions = (Array.isArray(parsed.questions) ? parsed.questions : [])
+      .slice(0, 2)
+      .map((q, i) => ({
+        id: String(q?.id || 'q' + i).slice(0, 40),
+        label: String(q?.label || '').slice(0, 160),
+        suggestions: (Array.isArray(q?.suggestions) ? q.suggestions : [])
+          .slice(0, 4).map(v => String(v).slice(0, 40)),
+      }))
+      .filter(q => q.label);
+
+    res.json({ questions });
+  } catch (e) {
+    console.warn('/api/ai/questions :', e.message);
+    res.json({ questions: [] });   // jamais bloquant
+  }
+});
+
 // ── POST /api/ai/transform — Photo → Art (scopé shop) ─────────────
 // Auth Shopify session token (App Bridge 4) + rate-limit par shop (audit B3)
 router.post('/transform', requireAIContext, attachShopId, aiIpRateLimiter, aiRateLimiter, checkAiQuota, async (req, res) => {
@@ -589,7 +622,11 @@ router.post('/transform', requireAIContext, attachShopId, aiIpRateLimiter, aiRat
     const styleReferenceUsed = !!cover;
 
     // Point 3, 4, 5, 9 : prompt structuré (Image A/Image B) si cover, sinon texte seul.
-    const prompt = buildTransformPrompt(customPrompt, styleReferenceUsed, userPrompt);
+    // Backlog item 16 : formulation d'identité générique (pas "face/beard/hairstyle")
+    // derrière un flag, pour ne pas dégrader les photos sans visage (animal, objet,
+    // logo, paysage) tant qu'elle n'a pas été comparée sur un échantillon réel.
+    const genericIdentityPrompt = readBoolSetting(req.shopId, 'ai_generic_identity_prompt_enabled', GENERIC_IDENTITY_PROMPT_DEFAULT);
+    const prompt = buildTransformPrompt(customPrompt, styleReferenceUsed, userPrompt, genericIdentityPrompt);
 
     // FormData natif (Node 22) + Blob.
     const form = new FormData();

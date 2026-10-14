@@ -1,0 +1,163 @@
+{% comment %}
+  Textile Studio Lab — Éditeur sur la page produit
+
+  Barre d'outils + tiroir de personnalisation, directement sur la fiche
+  produit : le client compose sans ouvrir le configurateur plein écran.
+
+  PLACEMENT : indifférent. La barre d'outils est déplacée sous la photo et
+  le panneau occupe la colonne d'informations, quel que soit l'endroit où ce
+  bloc est déclaré. Il ne sert plus qu'à transporter les réglages.
+
+  PRODUITS CONCERNÉS : un produit vendu tel quel, déjà imprimé, ne doit pas
+  proposer de personnalisation. Deux filtres, du plus explicite au plus
+  automatique : un tag d'exclusion, et l'exigence d'une zone d'impression
+  calibrée dans TSL — un support non calibré ne saurait de toute façon pas
+  où poser un visuel.
+
+  APPAREILS CONCERNÉS : sur téléphone, la zone d'impression n'occupe qu'un
+  tiers de la largeur dès que le thème enferme une photo en portrait dans
+  une boîte carrée — ce que fait la plupart des galeries. Le cadre est juste,
+  mais trop petit pour travailler au doigt. Le configurateur plein écran, lui,
+  part de mockups cadrés pour ça. D'où le réglage « ordinateur seulement » :
+  sur téléphone, c'est le bouton « Personnaliser » qui prend la main.
+
+  Les variantes sont sérialisées en JSON ici plutôt que lues dans le DOM :
+  le balisage d'un sélecteur de variantes change d'un thème à l'autre, alors
+  que `product.variants` est stable.
+{% endcomment %}
+
+{%- liquid
+  assign tsle_affiche = true
+  assign tsle_exclu = block.settings.tag_exclusion | strip
+  if product and tsle_exclu != blank
+    for t in product.tags
+      if t == tsle_exclu
+        assign tsle_affiche = false
+      endif
+    endfor
+  endif
+-%}
+
+{%- if product and tsle_affiche -%}
+  {%- assign tsle_id = 'tsle-' | append: product.id -%}
+
+  <div
+    id="{{ tsle_id }}"
+    class="tsle"
+    data-tsl-editor="{{ product.id }}"
+    data-tsl-accent="{{ block.settings.accent }}"
+    data-tsl-tools="{% if block.settings.tool_text %}text,{% endif %}{% if block.settings.tool_image %}image,{% endif %}{% if block.settings.tool_ai %}ai,{% endif %}{% if block.settings.tool_qr %}qr,{% endif %}{% if block.settings.tool_layers %}layers,{% endif %}"
+    data-tsl-default-tool="{{ block.settings.default_tool }}"
+    data-tsl-cart-label="{{ block.settings.cart_label | escape }}"
+    data-tsl-exiger-zone="{% if block.settings.exiger_zone %}1{% else %}0{% endif %}"
+    data-tsl-bureau-seulement="{% if block.settings.bureau_seulement %}1{% else %}0{% endif %}"
+    {{ block.shopify_attributes }}
+  >
+    <noscript>
+      <p>La personnalisation nécessite JavaScript.</p>
+    </noscript>
+  </div>
+
+  <script type="application/json" data-tsl-editor-data="{{ product.id }}">
+    {
+      "productId": {{ product.id | json }},
+      "handle": {{ product.handle | json }},
+      "moneyFormat": {{ shop.money_format | json }},
+      "optionNames": {{ product.options | json }},
+      "selected": {{ product.selected_or_first_available_variant.id | json }},
+      "variants": [
+        {%- for v in product.variants -%}
+          {
+            "id": {{ v.id | json }},
+            "title": {{ v.title | json }},
+            "options": {{ v.options | json }},
+            "price": {{ v.price | json }},
+            "available": {{ v.available | json }}
+          }{%- unless forloop.last -%},{%- endunless -%}
+        {%- endfor -%}
+      ]
+    }
+  </script>
+
+  {% # theme-check-disable RemoteAsset %}
+  <script src="/apps/textilelab/tl-editor.js" defer></script>
+  {% # theme-check-enable RemoteAsset %}
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Éditeur personnalisation",
+  "target": "section",
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "L'emplacement du bloc n'a pas d'importance : la barre se place sous la photo et le panneau remplace la colonne d'informations."
+    },
+    {
+      "type": "header",
+      "content": "Sur quels produits"
+    },
+    {
+      "type": "checkbox",
+      "id": "exiger_zone",
+      "label": "Seulement si le produit a une zone calibrée dans TSL",
+      "default": true,
+      "info": "Un produit vendu tel quel, déjà imprimé, n'a pas de zone calibrée : la personnalisation ne s'y affiche donc pas."
+    },
+    {
+      "type": "checkbox",
+      "id": "bureau_seulement",
+      "label": "Uniquement sur ordinateur",
+      "default": true,
+      "info": "Sur téléphone, la zone d'impression est trop petite pour travailler au doigt dès que la galerie du thème recadre la photo. Le bouton « Personnaliser » et le configurateur plein écran prennent alors le relais. Décochez pour proposer la personnalisation sur la fiche y compris sur téléphone."
+    },
+    {
+      "type": "text",
+      "id": "tag_exclusion",
+      "label": "Tag qui désactive la personnalisation",
+      "info": "Laissez vide pour n'exclure aucun produit par tag."
+    },
+    {
+      "type": "text",
+      "id": "cart_label",
+      "label": "Texte du bouton panier",
+      "default": "Ajouter au panier",
+      "info": "Le prix est ajouté automatiquement après un tiret."
+    },
+    {
+      "type": "select",
+      "id": "accent",
+      "label": "Couleur d'accent",
+      "options": [
+        { "value": "dark",  "label": "Noir" },
+        { "value": "light", "label": "Blanc" },
+        { "value": "theme", "label": "Couleur du thème" }
+      ],
+      "default": "dark"
+    },
+    {
+      "type": "header",
+      "content": "Outils proposés"
+    },
+    { "type": "checkbox", "id": "tool_text",   "label": "Textes",   "default": true },
+    { "type": "checkbox", "id": "tool_image",  "label": "Images",   "default": true },
+    { "type": "checkbox", "id": "tool_ai",     "label": "IA",       "default": true },
+    { "type": "checkbox", "id": "tool_qr",     "label": "QR code",  "default": true },
+    { "type": "checkbox", "id": "tool_layers", "label": "Calques",  "default": true },
+    {
+      "type": "select",
+      "id": "default_tool",
+      "label": "Outil ouvert au chargement",
+      "options": [
+        { "value": "",       "label": "Aucun — barre seule" },
+        { "value": "text",   "label": "Textes" },
+        { "value": "image",  "label": "Images" },
+        { "value": "ai",     "label": "IA" },
+        { "value": "qr",     "label": "QR code" },
+        { "value": "layers", "label": "Calques" }
+      ],
+      "default": ""
+    }
+  ]
+}
+{% endschema %}

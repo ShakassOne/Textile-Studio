@@ -22,6 +22,65 @@
  *      aujourd'hui, aucun total n'est visible hors ouverture d'un drawer).
  *      Désactivée par défaut : c'est un changement de mise en page mobile,
  *      à valider sur un vrai téléphone avant diffusion large.
+ *    social_proof_enabled       bool  — bloc "Ils l'ont fait" (vignettes de
+ *      vraies réalisations clients, curées en admin via /api/social-proof)
+ *      affiché au-dessus du bouton panier. Désactivé par défaut : vide tant
+ *      qu'aucune vignette n'a été ajoutée par l'admin.
+ *    ai_generic_identity_prompt_enabled bool — formulation d'identité générique
+ *      ("preserve the subject's key identifying features") dans le prompt IA
+ *      Photo → Illustration (routes/ai.js), au lieu de la formulation historique
+ *      centrée visage/barbe/coiffure. Désactivé par défaut : à comparer sur un
+ *      échantillon de photos (portraits ET non-portraits) avant diffusion large.
+ *      Comportement 100% serveur (construction du prompt) : pas exposé sur la
+ *      route publique, inutile au storefront.
+ *    upsell_tracking_enabled    bool  — enregistrement des impressions/clics de
+ *      l'encart "Vous aimeriez aussi" (POST /api/upsell-candidates/track).
+ *      Activé par défaut : seule mesure existante de cet encart (en prod sans
+ *      tracking depuis le 06/10), coupable en un clic si un souci apparaît.
+ *      Comportement 100% serveur (gate l'écriture en DB) : pas exposé sur la
+ *      route publique, le client appelle /track sans condition.
+ *    resume_design_enabled      bool  — bandeau "Vous avez une création en
+ *      cours" sur la fiche produit pour un client connecté qui a interrompu
+ *      sa personnalisation (GET /api/designs/mine, backlog item 24). Exposé
+ *      sur la route publique : tl-modal.js n'appelle /api/designs/mine que si
+ *      ce flag est actif, pour éviter un appel réseau inutile par défaut.
+ *      Désactivé par défaut : nouveau changement visuel sur la fiche produit
+ *      (hors studio), à valider avant diffusion large, même logique prudente
+ *      que mobile_price_bar_enabled/social_proof_enabled.
+ *    email_resume_enabled       bool  — lien "Recevoir un lien pour reprendre
+ *      ma création" proposé à la fermeture du studio pour un visiteur NON
+ *      connecté (POST /api/designs/:id/email-resume-link, backlog item 25,
+ *      complète resume_design_enabled qui ne couvre que le client connecté).
+ *      Exposé sur la route publique : tl-modal.js n'affiche le lien que si ce
+ *      flag est actif ET qu'aucun jeton client n'est présent (jamais les deux
+ *      bandeaux en même temps). Désactivé par défaut, même logique prudente.
+ *    cart_edit_design_enabled   bool  — bouton "Modifier" sur une ligne de
+ *      panier déjà personnalisée (tl-modal.js, backlog item 26), à côté du
+ *      lien "Voir mon design" existant. Rouvre le studio sur la création déjà
+ *      en panier (?design=<_design_id>) puis remplace l'ancienne ligne par la
+ *      nouvelle au lieu d'empiler un doublon. Exposé sur la route publique :
+ *      tl-modal.js n'affiche le bouton que si ce flag est actif. Désactivé
+ *      par défaut, même logique prudente que les autres changements visuels
+ *      storefront (pas de navigateur avec session Shopify dans cet
+ *      environnement pour valider le rendu avant diffusion large).
+ *    panel_mode_studio_enabled  bool  — sur desktop uniquement (mobile
+ *      inchangé), ouvre le studio dans un panneau centré ~90vw/90vh avec un
+ *      fond semi-transparent flouté plutôt qu'en plein écran opaque
+ *      (tl-modal.js, backlog item 23) — laisse deviner la page produit
+ *      (prix, réassurance, preuve sociale) derrière pendant l'édition. Pur
+ *      CSS/dimensionnement, ne touche à aucun fichier gelé par le chantier
+ *      "Bibliothèque de designs". Exposé sur la route publique : tl-modal.js
+ *      n'applique le mode panneau que si ce flag est actif. Désactivé par
+ *      défaut, même logique prudente que les autres changements visuels
+ *      storefront desktop (pas de navigateur dans cet environnement pour
+ *      valider le rendu avant diffusion large).
+ *    cart_error_tracking_enabled bool — refus silencieux de /cart/add
+ *      détectés côté client (tl-modal.js, backlog item 31), enregistrés via
+ *      POST /api/cart-add-errors/track. Activé par défaut : mesure
+ *      diagnostique pure du point P0 (trou paiement commencé → commande),
+ *      coupable en un clic si un souci apparaît. Comportement 100% serveur
+ *      (gate l'écriture en DB) : pas exposé sur la route publique, le client
+ *      appelle /track sans condition (même raison que upsell_tracking_enabled).
  *
  *  Cors public : Cross-origin (shop_domain.myshopify.com → textile-studio-production)
  *    → le storefront fait fetch direct, on autorise tout origin sur le GET public.
@@ -68,6 +127,32 @@ const REASSURANCE_BANNER_DEFAULT = true;
 // Barre de prix mobile désactivée par défaut (changement de mise en page,
 // activation manuelle une fois vérifiée sur un vrai mobile).
 const MOBILE_PRICE_BAR_DEFAULT = false;
+// Preuve sociale désactivée par défaut : vide tant que l'admin n'a pas curé
+// au moins une vignette (pas de fallback automatique, cf. ROADMAP §2bis).
+const SOCIAL_PROOF_DEFAULT = false;
+// Formulation d'identité générique du prompt IA désactivée par défaut : à
+// comparer sur un échantillon réel avant diffusion large (backlog item 16).
+const AI_GENERIC_IDENTITY_PROMPT_DEFAULT = false;
+// Tracking impression/clic de l'encart upsell activé par défaut : c'est la
+// seule mesure de cette fonctionnalité déjà en prod (backlog item 17).
+const UPSELL_TRACKING_DEFAULT = true;
+// Bandeau de reprise de création désactivé par défaut : changement visuel
+// sur la fiche produit, à valider avant diffusion large (backlog item 24).
+const RESUME_DESIGN_DEFAULT = false;
+// Lien de reprise par email (visiteur non connecté) désactivé par défaut :
+// même logique prudente, à valider avant diffusion large (backlog item 25).
+const EMAIL_RESUME_DEFAULT = false;
+// Bouton "Modifier" sur une ligne de panier déjà personnalisée désactivé par
+// défaut : nouveau changement visuel dans le drawer panier, à valider avant
+// diffusion large (backlog item 26).
+const CART_EDIT_DESIGN_DEFAULT = false;
+// Mode panneau partiel du studio sur desktop désactivé par défaut : nouveau
+// changement visuel desktop (plein écran → panneau centré), à valider avant
+// diffusion large (backlog item 23).
+const PANEL_MODE_STUDIO_DEFAULT = false;
+// Tracking des refus /cart/add activé par défaut : mesure diagnostique pure
+// du point P0, zéro impact visuel/fonctionnel (backlog item 31).
+const CART_ERROR_TRACKING_DEFAULT = true;
 
 // ── GET /api/shop-settings/style — lecture admin ────────────────────────────
 router.get('/style', requireAuth, attachShopId, (req, res) => {
@@ -76,6 +161,14 @@ router.get('/style', requireAuth, attachShopId, (req, res) => {
     ai_photo_styles_enabled:    readBoolSetting(req.shopId, 'ai_photo_styles_enabled', AI_PHOTO_STYLES_DEFAULT),
     reassurance_banner_enabled: readBoolSetting(req.shopId, 'reassurance_banner_enabled', REASSURANCE_BANNER_DEFAULT),
     mobile_price_bar_enabled:   readBoolSetting(req.shopId, 'mobile_price_bar_enabled', MOBILE_PRICE_BAR_DEFAULT),
+    social_proof_enabled:       readBoolSetting(req.shopId, 'social_proof_enabled', SOCIAL_PROOF_DEFAULT),
+    ai_generic_identity_prompt_enabled: readBoolSetting(req.shopId, 'ai_generic_identity_prompt_enabled', AI_GENERIC_IDENTITY_PROMPT_DEFAULT),
+    upsell_tracking_enabled:    readBoolSetting(req.shopId, 'upsell_tracking_enabled', UPSELL_TRACKING_DEFAULT),
+    resume_design_enabled:      readBoolSetting(req.shopId, 'resume_design_enabled', RESUME_DESIGN_DEFAULT),
+    email_resume_enabled:       readBoolSetting(req.shopId, 'email_resume_enabled', EMAIL_RESUME_DEFAULT),
+    cart_edit_design_enabled:   readBoolSetting(req.shopId, 'cart_edit_design_enabled', CART_EDIT_DESIGN_DEFAULT),
+    panel_mode_studio_enabled:  readBoolSetting(req.shopId, 'panel_mode_studio_enabled', PANEL_MODE_STUDIO_DEFAULT),
+    cart_error_tracking_enabled: readBoolSetting(req.shopId, 'cart_error_tracking_enabled', CART_ERROR_TRACKING_DEFAULT),
   });
 });
 
@@ -106,12 +199,52 @@ router.post('/style', requireAuth, attachShopId, express.json(), (req, res) => {
     setSetting(req.shopId, 'mobile_price_bar_enabled', coerceBool(body.mobile_price_bar_enabled) ? '1' : '0');
   }
 
+  if ('social_proof_enabled' in body) {
+    setSetting(req.shopId, 'social_proof_enabled', coerceBool(body.social_proof_enabled) ? '1' : '0');
+  }
+
+  if ('ai_generic_identity_prompt_enabled' in body) {
+    setSetting(req.shopId, 'ai_generic_identity_prompt_enabled', coerceBool(body.ai_generic_identity_prompt_enabled) ? '1' : '0');
+  }
+
+  if ('upsell_tracking_enabled' in body) {
+    setSetting(req.shopId, 'upsell_tracking_enabled', coerceBool(body.upsell_tracking_enabled) ? '1' : '0');
+  }
+
+  if ('resume_design_enabled' in body) {
+    setSetting(req.shopId, 'resume_design_enabled', coerceBool(body.resume_design_enabled) ? '1' : '0');
+  }
+
+  if ('email_resume_enabled' in body) {
+    setSetting(req.shopId, 'email_resume_enabled', coerceBool(body.email_resume_enabled) ? '1' : '0');
+  }
+
+  if ('cart_edit_design_enabled' in body) {
+    setSetting(req.shopId, 'cart_edit_design_enabled', coerceBool(body.cart_edit_design_enabled) ? '1' : '0');
+  }
+
+  if ('panel_mode_studio_enabled' in body) {
+    setSetting(req.shopId, 'panel_mode_studio_enabled', coerceBool(body.panel_mode_studio_enabled) ? '1' : '0');
+  }
+
+  if ('cart_error_tracking_enabled' in body) {
+    setSetting(req.shopId, 'cart_error_tracking_enabled', coerceBool(body.cart_error_tracking_enabled) ? '1' : '0');
+  }
+
   res.json({
     ok: true,
     cart_drawer_bg_color:       getSetting(req.shopId, 'cart_drawer_bg_color') || '',
     ai_photo_styles_enabled:    readBoolSetting(req.shopId, 'ai_photo_styles_enabled', AI_PHOTO_STYLES_DEFAULT),
     reassurance_banner_enabled: readBoolSetting(req.shopId, 'reassurance_banner_enabled', REASSURANCE_BANNER_DEFAULT),
     mobile_price_bar_enabled:   readBoolSetting(req.shopId, 'mobile_price_bar_enabled', MOBILE_PRICE_BAR_DEFAULT),
+    social_proof_enabled:       readBoolSetting(req.shopId, 'social_proof_enabled', SOCIAL_PROOF_DEFAULT),
+    ai_generic_identity_prompt_enabled: readBoolSetting(req.shopId, 'ai_generic_identity_prompt_enabled', AI_GENERIC_IDENTITY_PROMPT_DEFAULT),
+    upsell_tracking_enabled:    readBoolSetting(req.shopId, 'upsell_tracking_enabled', UPSELL_TRACKING_DEFAULT),
+    resume_design_enabled:      readBoolSetting(req.shopId, 'resume_design_enabled', RESUME_DESIGN_DEFAULT),
+    email_resume_enabled:       readBoolSetting(req.shopId, 'email_resume_enabled', EMAIL_RESUME_DEFAULT),
+    cart_edit_design_enabled:   readBoolSetting(req.shopId, 'cart_edit_design_enabled', CART_EDIT_DESIGN_DEFAULT),
+    panel_mode_studio_enabled:  readBoolSetting(req.shopId, 'panel_mode_studio_enabled', PANEL_MODE_STUDIO_DEFAULT),
+    cart_error_tracking_enabled: readBoolSetting(req.shopId, 'cart_error_tracking_enabled', CART_ERROR_TRACKING_DEFAULT),
   });
 });
 
@@ -129,6 +262,11 @@ router.get('/style/public', (req, res) => {
       ai_photo_styles_enabled: AI_PHOTO_STYLES_DEFAULT,
       reassurance_banner_enabled: REASSURANCE_BANNER_DEFAULT,
       mobile_price_bar_enabled: MOBILE_PRICE_BAR_DEFAULT,
+      social_proof_enabled: SOCIAL_PROOF_DEFAULT,
+      resume_design_enabled: RESUME_DESIGN_DEFAULT,
+      email_resume_enabled: EMAIL_RESUME_DEFAULT,
+      cart_edit_design_enabled: CART_EDIT_DESIGN_DEFAULT,
+      panel_mode_studio_enabled: PANEL_MODE_STUDIO_DEFAULT,
     });
   }
   const shopId = getShopIdByDomain(shopDomain);
@@ -138,6 +276,11 @@ router.get('/style/public', (req, res) => {
       ai_photo_styles_enabled: AI_PHOTO_STYLES_DEFAULT,
       reassurance_banner_enabled: REASSURANCE_BANNER_DEFAULT,
       mobile_price_bar_enabled: MOBILE_PRICE_BAR_DEFAULT,
+      social_proof_enabled: SOCIAL_PROOF_DEFAULT,
+      resume_design_enabled: RESUME_DESIGN_DEFAULT,
+      email_resume_enabled: EMAIL_RESUME_DEFAULT,
+      cart_edit_design_enabled: CART_EDIT_DESIGN_DEFAULT,
+      panel_mode_studio_enabled: PANEL_MODE_STUDIO_DEFAULT,
     });
   }
   res.json({
@@ -145,6 +288,11 @@ router.get('/style/public', (req, res) => {
     ai_photo_styles_enabled:    readBoolSetting(shopId, 'ai_photo_styles_enabled', AI_PHOTO_STYLES_DEFAULT),
     reassurance_banner_enabled: readBoolSetting(shopId, 'reassurance_banner_enabled', REASSURANCE_BANNER_DEFAULT),
     mobile_price_bar_enabled:   readBoolSetting(shopId, 'mobile_price_bar_enabled', MOBILE_PRICE_BAR_DEFAULT),
+    social_proof_enabled:       readBoolSetting(shopId, 'social_proof_enabled', SOCIAL_PROOF_DEFAULT),
+    resume_design_enabled:      readBoolSetting(shopId, 'resume_design_enabled', RESUME_DESIGN_DEFAULT),
+    email_resume_enabled:       readBoolSetting(shopId, 'email_resume_enabled', EMAIL_RESUME_DEFAULT),
+    cart_edit_design_enabled:   readBoolSetting(shopId, 'cart_edit_design_enabled', CART_EDIT_DESIGN_DEFAULT),
+    panel_mode_studio_enabled:  readBoolSetting(shopId, 'panel_mode_studio_enabled', PANEL_MODE_STUDIO_DEFAULT),
   });
 });
 
