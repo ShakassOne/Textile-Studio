@@ -204,6 +204,13 @@ router.get('/editor', requireProxyHMAC, (req, res) => {
     parent_domain: req.query.parent_domain || '', // domaine storefront (frame-ancestors)
     embed:         '1',
   });
+  // Diagnostic temporaire (bug mockup croisé signalé par Alan, 14/10) : confirme
+  // ce que Shopify App Proxy a réellement transmis à CE hop précis — avant tout
+  // traitement côté textilelab-studio.html. À retirer une fois le bug localisé.
+  console.info('[TSL][proxy/editor]', JSON.stringify({
+    product: req.query.product || '', product_id: req.query.product_id || '',
+    variant_id: req.query.variant_id || '', shop: req.query.shop || '',
+  }));
   res.redirect(`${appUrl}/textilelab-studio.html?${params}`);
 });
 
