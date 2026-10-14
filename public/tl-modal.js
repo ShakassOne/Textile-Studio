@@ -550,21 +550,40 @@
   // ── Section Rendering API : id de la section du drawer panier ───────────────
   // Permet de demander à Shopify le HTML frais du drawer lors de /cart/add, et
   // de l'injecter → le produit apparaît dès la 1re ouverture (fini le "2 fois").
+  // Certains thèmes (dont Dawn et ses dérivés) ne montent le markup du
+  // drawer panier dans le DOM qu'une fois le panier non-vide, ou seulement
+  // après une première ouverture — jamais au tout premier chargement de
+  // page d'une session neuve, cart.item_count valant alors 0. Sans repli,
+  // le tout 1er ajout au panier d'un nouveau visiteur ne trouvait aucun
+  // élément à sonder : aucun id de section déterminé, donc aucune section
+  // demandée à /cart/add.json, donc rien à injecter — le panier semblait
+  // vide jusqu'à un 2e ajout (le drawer existe alors enfin) ou un rechargement
+  // complet (rendu serveur, cart.item_count à jour). "cart-drawer" est le nom
+  // de section quasi universel des thèmes Shopify 2.0 : tenté par défaut
+  // même si rien n'est encore visible dans le DOM, pour toujours demander
+  // la bonne donnée au serveur dès le premier ajout.
   function _tlCartDrawerSectionId() {
     var el = document.querySelector(
       'cart-drawer-component, cart-drawer, #CartDrawer, #cart-drawer, .cart-drawer, .drawer--cart'
     );
     var sec = el && el.closest ? el.closest('.shopify-section') : null;
     if (sec && sec.id) return sec.id.replace(/^shopify-section-/, '');
-    if (document.getElementById('shopify-section-cart-drawer')) return 'cart-drawer';
-    return null;
+    return 'cart-drawer';
   }
   function _tlInjectSectionHTML(sectionId, html) {
     try {
-      var wrap = document.getElementById('shopify-section-' + sectionId);
-      if (!wrap || !html) return;
+      if (!html) return;
       var parsed = new DOMParser().parseFromString(html, 'text/html');
       var fresh  = parsed.getElementById('shopify-section-' + sectionId);
+      var wrap   = document.getElementById('shopify-section-' + sectionId);
+      if (!wrap) {
+        // Le wrapper n'existe pas encore (1er ajout d'une session neuve, cart
+        // vide au chargement) : l'insérer tel que rendu par le serveur plutôt
+        // que de perdre ce rendu — c'est précisément ce qui manquait pour
+        // que le drawer existe dès le premier ajout, pas seulement le 2e.
+        if (fresh) document.body.appendChild(fresh);
+        return;
+      }
       wrap.innerHTML = fresh ? fresh.innerHTML : (parsed.body ? parsed.body.innerHTML : wrap.innerHTML);
     } catch (e) { /* silencieux — on garde l'ancien contenu */ }
   }
