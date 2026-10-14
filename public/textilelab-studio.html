@@ -4902,18 +4902,6 @@ async function loadShopifyProductLinks() {
         l.handle === _initialHandle ||
         ('id:' + l.product_id) === _initialHandle
       );
-      // Diagnostic temporaire (bug mockup croisé signalé par Alan, 14/10) : à
-      // comparer avec le log [TSL][init] — si _initialHandle est déjà faux ici,
-      // le hop serveur (App Proxy/redirect) est en cause ; s'il est correct mais
-      // que _link/mockup_id pointe sur l'autre genre, la donnée product_mockup_links
-      // elle-même est en cause (pas ce code de résolution). À retirer une fois localisé.
-      console.info('[TSL][auto-bascule]', JSON.stringify({
-        _initialHandle,
-        lienTrouve: !!_link,
-        lienHandle: _link ? _link.handle : null,
-        lienProductId: _link ? _link.product_id : null,
-        lienMockupId: _link ? _link.mockup_id : null,
-      }));
       if (_link) {
         // Verrouiller le handle résolu sur le produit d'arrivée — évite que
         // le panel "Produits disponibles" se ré-ouvre quand on change de
@@ -9520,16 +9508,6 @@ function init() {
     }
     const _urlMockupId = _up.get('mockup');
     _resolvedProductHandle = window._TL_PRODUCT_HANDLE || '';
-    // Diagnostic temporaire (bug mockup croisé signalé par Alan, 14/10) : ce que
-    // CE document (textilelab-studio.html) a réellement reçu dans son URL, après
-    // le hop App Proxy/redirect — à comparer avec le log [TSL][proxy/editor]
-    // côté serveur pour localiser où une éventuelle divergence apparaît.
-    // À retirer une fois le bug localisé.
-    console.info('[TSL][init] URL reçue par le studio', JSON.stringify({
-      href: window.location.href,
-      product: _up.get('product') || '', product_id: _up.get('product_id') || '',
-      variant_id: _up.get('variant_id') || '', shop: _up.get('shop') || '',
-    }));
     // Si l'utilisateur arrive depuis une fiche produit Shopify (handle ou
     // product_id en URL), on considère le produit déjà sélectionné → le panel
     // "Produits disponibles" ne doit pas s'auto-ouvrir, ni au load, ni quand
