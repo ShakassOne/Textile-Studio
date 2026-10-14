@@ -1288,6 +1288,30 @@ la commande de test réelle d'Alan) ni sur le lot G (après E dans le tableau).
 Identique au dernier relevé. Aucune régression. Aucun fichier de code
 modifié.
 
+### 2026-10-14 — Repassage du matin : 46h49 sans commit sur le trio, sous le seuil, rien touché
+
+Arbre de travail propre, toujours sur `dev`, HEAD toujours sur `1ce9332` (le
+commit de l'entrée précédente, horodaté 14/10 08h59 malgré son intitulé
+« 13/10 ») : aucun commit n'est arrivé entre les deux passages. Dernier
+commit sur `tl-editor.js`/`tsl-engine.js`/`textilelab-studio.html` toujours
+`07a684b`, le 2026-10-12 à 10h11.
+
+Calcul demandé par l'entrée précédente (maintenant − 2026-10-12 10h11) :
+**46 h 49**, soit encore sous le seuil de 48 h posé le 13/10 pour reprendre
+le raccordement configurateur ↔ moteur partagé. Même consigne, je n'y
+touche pas. Le prochain passage qui recalcule cet écart et le trouve
+supérieur à 48 h doit reprendre le fil, sans reconduire cette prudence une
+fois de plus.
+
+Rien de neuf sur les 3 questions du lot E (tranchées le 04/10, en attente de
+la commande de test réelle d'Alan) ni sur le lot G (après E dans le
+tableau).
+
+`npm test` : 185 tests, 182 passent, 3 ignorés (`social_proof_items`,
+`upsell_candidates`, `design-resume` — cause machine connue, inchangée).
+Identique au dernier relevé. Aucune régression. Aucun fichier de code
+modifié.
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.
