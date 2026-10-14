@@ -1255,6 +1255,39 @@ la commande de test réelle d'Alan) ni sur le lot G (après E dans le tableau).
 Identique au dernier relevé. Aucune régression. Aucun fichier de code
 modifié.
 
+### 2026-10-13 — Repassage de l'après-midi : 30h sans commit sur le trio, correction d'un calcul, rien touché
+
+Arbre de travail propre, toujours sur `dev`, HEAD toujours sur `b09b169` (le
+commit de l'entrée précédente, 13/10 12h27) : aucun commit n'est arrivé entre
+les deux passages. Dernier commit sur
+`tl-editor.js`/`tsl-engine.js`/`textilelab-studio.html` toujours `07a684b`,
+le 2026-10-12 à 10h12 — environ **30 h** d'écart avec ce passage (13/10
+16h14).
+
+**Correction de l'entrée précédente.** Elle annonçait que si le prochain
+passage retrouvait ce même état, l'écart « franchirait nettement deux
+jours ». C'est faux : les passages de cette tâche planifiée se succèdent à
+quelques heures d'intervalle (26 h → 30 h ici, soit +3h47, pas +24h), donc
+l'écart ne peut pas sauter d'un coup à 48 h — il grossit par petits paliers.
+30 h, c'est un jour et six heures : plus qu'« une journée pleine » constatée
+hier, mais toujours loin des « plusieurs jours » (pluriel, donc 48 h et plus)
+qui définissent le seuil posé le 09/10 pour reprendre le raccordement
+configurateur ↔ moteur partagé. Même consigne, je n'y touche pas.
+
+**Pour la prochaine session automatique : ne pas se fier à « le prochain
+passage franchira le seuil » écrit a priori — recalculer l'écart réel
+(maintenant − 2026-10-12 10h12) à chaque passage et comparer directement à
+48 h.** Si ce calcul dépasse 48 h au moment du passage, c'est le moment de
+reprendre le fil ; sinon, continuer cette même vérification.
+
+Rien de neuf sur les 3 questions du lot E (tranchées le 04/10, en attente de
+la commande de test réelle d'Alan) ni sur le lot G (après E dans le tableau).
+
+`npm test` : 185 tests, 182 passent, 3 ignorés (`social_proof_items`,
+`upsell_candidates`, `design-resume` — cause machine connue, inchangée).
+Identique au dernier relevé. Aucune régression. Aucun fichier de code
+modifié.
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.
