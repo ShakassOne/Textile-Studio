@@ -409,6 +409,7 @@
     }\
     .tl-other-size-z { font-weight: 400; opacity: .7; }\
     .tl-other-size-b[disabled] { opacity: .5; cursor: default; text-decoration: none; }\
+    .tl-other-size-msg { flex-basis: 100%; font-size: 12px; opacity: .8; color: #b42318; }\
   ';
 
   // NOTE : ne pas nommer cette variable "CSS" — cela écraserait window.CSS
@@ -2116,7 +2117,28 @@
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
           body: JSON.stringify({ items: [{ id: v.id, quantity: 1, properties: props }] }),
         })
-        .then(function (r) { return r.json(); })
+        // Même piège déjà corrigé le 13/10 pour l'ajout principal : un refus
+        // Shopify (422, variante épuisée entre-temps, etc.) répond souvent un
+        // JSON {status,message,description} avec un code HTTP non-200 — jamais
+        // lire juste r.json() sans vérifier r.ok/data.status, sous peine de
+        // traiter un refus silencieux comme un succès (image injectée pour une
+        // ligne jamais ajoutée, encart masqué, plus jamais reproposé).
+        .then(function (r) {
+          return r.text().then(function (txt) {
+            var data = null;
+            try { data = txt ? JSON.parse(txt) : null; } catch (e) { /* pas du JSON */ }
+            var echec = !r.ok || !data || data.status >= 400;
+            if (echec) {
+              var raison = (data && (data.description || data.message))
+                || String(txt || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)
+                || ('HTTP ' + r.status);
+              var err = new Error(raison);
+              err.panierRefuse = true;
+              throw err;
+            }
+            return data;
+          });
+        })
         .then(function () {
           if (previewUrl) {
             _tlInjectCartImage(v.id, previewUrl);
@@ -2128,7 +2150,21 @@
           try { sessionStorage.setItem(_tlOtherSizeDismissKey(designId, vid), '1'); } catch (e) { /* non bloquant */ }
           if (el.parentNode) el.parentNode.removeChild(el);
         })
-        .catch(function () { b.disabled = false; }); // jamais bloquant : le 1er ajout reste acquis
+        .catch(function (err) {
+          // Jamais bloquant pour le 1er ajout (déjà acquis) : on réactive le
+          // bouton et on le dit, plutôt que de laisser croire que le 2e
+          // exemplaire a été ajouté alors que rien n'est au panier.
+          b.disabled = false;
+          var shop = (window.Shopify && window.Shopify.shop) || window._TL_SHOP || window.location.hostname;
+          _tlTrackCartError(shop, v.id, (err && err.message) || 'other-size-add-failed');
+          var msg = el.querySelector('.tl-other-size-msg');
+          if (!msg) {
+            msg = document.createElement('div');
+            msg.className = 'tl-other-size-msg';
+            el.appendChild(msg);
+          }
+          msg.textContent = 'Ajout impossible pour l\'instant, réessayez.';
+        });
       });
       actions.appendChild(b);
     });

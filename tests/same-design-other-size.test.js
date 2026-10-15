@@ -111,6 +111,23 @@ test('tl-modal.js : CSS de la famille .tl-other-size injecté (même famille vis
   assert.match(modalSrc, /\+ TL_OTHER_SIZE_CSS \+/);
 });
 
+test('tl-modal.js : le clic sur une taille ne traite pas un refus Shopify (422/HTTP non-ok) comme un succès (bug trouvé le 15/10, même piège déjà corrigé le 13/10 pour l\'ajout principal)', () => {
+  const start = modalSrc.indexOf('function _tlInjectOtherSizeOffer(');
+  const end   = modalSrc.indexOf('var fermer = document.createElement', start);
+  assert.ok(start > -1 && end > start, 'bornes de fonction introuvables');
+  const section = modalSrc.slice(start, end);
+  // Doit lire le corps en texte et vérifier r.ok/data.status avant de
+  // considérer l'ajout comme réussi — jamais un simple r.json() non vérifié.
+  assert.match(section, /!r\.ok \|\| !data \|\| data\.status >= 400/);
+  assert.match(section, /err\.panierRefuse = true;/);
+  // En cas d'échec : bouton réactivé (jamais de blocage du 1er ajout), un
+  // message visible au client (pas un simple throw silencieux), et le refus
+  // tracké comme pour l'ajout principal (item 31, cart_add_errors).
+  assert.match(section, /b\.disabled = false;/);
+  assert.match(section, /_tlTrackCartError\(shop, v\.id,/);
+  assert.match(section, /tl-other-size-msg/);
+});
+
 test('tl-modal.js : ne touche à aucun fichier gelé par le chantier "Bibliothèque de designs"', () => {
   const studioPath = path.join(__dirname, '../public/textilelab-studio.html');
   const editorPath = path.join(__dirname, '../public/tl-editor.js');
