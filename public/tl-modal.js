@@ -44,6 +44,12 @@
   // uniquement (mobile toujours en plein écran par construction).
   var _TL_PANEL_MODE_STUDIO_ENABLED = false;
 
+  // Flag item 32 (même création, dans une autre taille, sans repasser par le
+  // studio) : même mécanique, lu une fois par _tlLoadStyleSettings. false
+  // tant que la réponse n'est pas arrivée (comportement identique à
+  // aujourd'hui : rien ne s'affiche après l'ajout au panier).
+  var _TL_SAME_DESIGN_OTHER_SIZE_ENABLED = false;
+
   // Clé ("<variantId>:<hash>") de la ligne de panier en cours de modification
   // via le bouton "Modifier" (item 26), le temps que le nouvel ajout soit
   // confirmé — remise à null après la suppression de l'ancienne ligne OU à la
@@ -370,6 +376,41 @@
     .tl-email-resume-msg { display: block; margin-top: 6px; font-size: 12px; opacity: .8; }\
   ';
 
+  // Encart "Vous voulez aussi cette création en [taille] ?" (item 32) : même
+  // famille visuelle discrète que .tl-resume/.tl-email-resume ci-dessus,
+  // posé juste au-dessus du bouton "Personnaliser" après un ajout au panier
+  // réussi — jamais un popup qui s'impose.
+  var TL_OTHER_SIZE_CSS = '\
+    .tl-other-size {\
+      display: flex;\
+      flex-wrap: wrap;\
+      align-items: center;\
+      justify-content: space-between;\
+      gap: 8px;\
+      margin: 0 0 8px;\
+      padding: 10px 12px;\
+      border-radius: 10px;\
+      border: 1px solid rgba(0,0,0,.12);\
+      background: rgba(0,0,0,.03);\
+      font: 400 13px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\
+      color: inherit;\
+    }\
+    .tl-other-size-t { font-weight: 600; }\
+    .tl-other-size-a { display: flex; gap: 10px; flex-shrink: 0; flex-wrap: wrap; }\
+    .tl-other-size-b, .tl-other-size-z {\
+      border: 0;\
+      background: none;\
+      padding: 0;\
+      font: inherit;\
+      font-weight: 600;\
+      text-decoration: underline;\
+      cursor: pointer;\
+      color: inherit;\
+    }\
+    .tl-other-size-z { font-weight: 400; opacity: .7; }\
+    .tl-other-size-b[disabled] { opacity: .5; cursor: default; text-decoration: none; }\
+  ';
+
   // NOTE : ne pas nommer cette variable "CSS" — cela écraserait window.CSS
   // (l'API globale) dans le scope de l'IIFE et ferait planter CSS.escape().
   // ── Sélecteur de support, ouvert depuis un lien de menu ──────────────────
@@ -459,7 +500,7 @@
         box-shadow: 0 20px 60px rgba(0, 0, 0, .4);\
       }\
     }\
-  ' + CART_FIX_CSS + TL_CTA_CSS + TL_UPSELL_CSS + TL_RESUME_CSS + TL_EMAIL_RESUME_CSS + TL_CHOIX_CSS;
+  ' + CART_FIX_CSS + TL_CTA_CSS + TL_UPSELL_CSS + TL_RESUME_CSS + TL_EMAIL_RESUME_CSS + TL_OTHER_SIZE_CSS + TL_CHOIX_CSS;
 
   // ── Injection des éléments DOM ──────────────────────────────────────────────
   function injectDOM() {
@@ -1163,6 +1204,10 @@
 
               // 6. Suggestions curées par le marchand pour ce produit.
               _tlProposerUpsell(e.data);
+
+              // 7. Même création, dans une autre taille (item 32) — sous flag,
+              //    jamais bloquant pour l'ajout déjà confirmé ci-dessus.
+              _tlOfferOtherSize(_vid, _props, _previewUrl);
             })
             .catch(function(err) {
               document.body.classList.remove('tl-cart-loading');
@@ -1700,6 +1745,10 @@
           // si le studio est déjà ouvert quand la réponse arrive, il reste en
           // plein écran jusqu'à la fermeture suivante (pas de bascule à chaud).
           _TL_PANEL_MODE_STUDIO_ENABLED = !!data.panel_mode_studio_enabled;
+          // Flag item 32 (même création, autre taille) : simple mémorisation,
+          // consommée par _tlOfferOtherSize() juste après un ajout au panier
+          // réussi — pas d'appel réseau supplémentaire ici.
+          _TL_SAME_DESIGN_OTHER_SIZE_ENABLED = !!data.same_design_other_size_enabled;
         })
         .catch(function() {});
     } catch (e) { /* silencieux */ }
@@ -1977,6 +2026,124 @@
         });
       });
     });
+
+    var container = _tlCtaContainer(btn);
+    container.parentNode.insertBefore(el, container);
+  }
+
+  // ── Même création, dans une autre taille, sans repasser par le studio (item 32) ─
+  //
+  // Un client qui vient d'ajouter sa création au panier dans une taille peut
+  // vouloir la même création dans une 2e taille (pour lui-même ou pour un
+  // proche) — aujourd'hui il doit fermer le studio, changer la taille sur la
+  // fiche, le rouvrir et tout redessiner de zéro. Le fichier d'impression
+  // (design_id/layers_json) n'est jamais lié à une variant_id Shopify : la
+  // même création reste valide quelle que soit la taille, il suffit de poser
+  // une 2e ligne panier avec les mêmes `properties` (donc le même
+  // `_design_id`/`_preview_img`) et une `id` de variante différente — jamais
+  // de réouverture du studio, jamais de nouveau rendu Fabric.js.
+  //
+  // Ce n'est PAS la "commande groupée" rejetée par Alan : un seul acheteur,
+  // une seule création, un 2e exemplaire pour lui-même/un proche dans une
+  // autre taille — pas plusieurs personnes différentes dans une commande
+  // partagée.
+  function _tlOtherSizeDismissKey(designId, variantId) {
+    return 'tl_other_size_dismissed_' + (designId || 'na') + '_' + variantId;
+  }
+
+  function _tlOfferOtherSize(vid, props, previewUrl) {
+    if (!_TL_SAME_DESIGN_OTHER_SIZE_ENABLED || !vid) return;
+    var designId = (props && props['_design_id']) || '';
+    try { if (sessionStorage.getItem(_tlOtherSizeDismissKey(designId, vid))) return; } catch (e) { /* stockage indisponible → on propose quand même */ }
+
+    // Même mécanisme que _tlCheckResumeDesign/_tlInjectEmailResumeLink pour
+    // retrouver le produit courant sans appel réseau supplémentaire — ici il
+    // faut un handle (pas seulement un id) pour pouvoir lire /products/<h>.js,
+    // comme le fait déjà _tlFicheSupport pour l'upsell.
+    var btns = document.querySelectorAll('.tl-personalise-btn');
+    var btn = null, ph = '';
+    for (var i = 0; i < btns.length; i++) {
+      var p = _tlBtnProduct(btns[i]);
+      if (p.ph) { btn = btns[i]; ph = p.ph; break; }
+    }
+    if (!btn || !ph) return; // pas de handle connu sur cette page → rien à proposer
+
+    fetch('/products/' + encodeURIComponent(ph) + '.js', { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.text() : ''; })
+      .then(function (txt) {
+        var d = null;
+        try { d = JSON.parse(txt); } catch (e) { /* page de garde, pas un produit */ }
+        if (!d) return;
+        var vidNum = parseInt(vid, 10);
+        // Les autres tailles DISPONIBLES de ce même produit, sans la variante
+        // qui vient d'être ajoutée — au plus 2, pour rester discret.
+        var autres = _tlVariantesDeBase(d).filter(function (v) {
+          return v.id !== vidNum && v.dispo !== false;
+        }).slice(0, 2);
+        if (!autres.length) return;
+        _tlInjectOtherSizeOffer(btn, autres, designId, vid, props, previewUrl);
+      })
+      .catch(function () {}); // jamais bloquant : pas de suggestion, le client continue
+  }
+
+  function _tlInjectOtherSizeOffer(btn, autres, designId, vid, props, previewUrl) {
+    var vieux = document.querySelector('.tl-other-size');
+    if (vieux && vieux.parentNode) vieux.parentNode.removeChild(vieux);
+
+    var el = document.createElement('div');
+    el.className = 'tl-other-size';
+
+    var texte = document.createElement('span');
+    texte.className = 'tl-other-size-t';
+    texte.textContent = autres.length > 1
+      ? 'Vous voulez aussi cette création dans une autre taille ?'
+      : 'Vous voulez aussi cette création en ' + autres[0].nom + ' ?';
+    el.appendChild(texte);
+
+    var actions = document.createElement('span');
+    actions.className = 'tl-other-size-a';
+
+    autres.forEach(function (v) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'tl-other-size-b';
+      b.textContent = v.nom;
+      b.addEventListener('click', function () {
+        if (b.disabled) return;
+        b.disabled = true;
+        fetch('/cart/add.json', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ items: [{ id: v.id, quantity: 1, properties: props }] }),
+        })
+        .then(function (r) { return r.json(); })
+        .then(function () {
+          if (previewUrl) {
+            _tlInjectCartImage(v.id, previewUrl);
+            setTimeout(function () { _tlInjectCartImage(v.id, previewUrl); }, 200);
+            setTimeout(function () { _tlInjectCartImage(v.id, previewUrl); }, 600);
+          }
+          _tlFixAllLineItems();
+          setTimeout(_tlFixAllLineItems, 300);
+          try { sessionStorage.setItem(_tlOtherSizeDismissKey(designId, vid), '1'); } catch (e) { /* non bloquant */ }
+          if (el.parentNode) el.parentNode.removeChild(el);
+        })
+        .catch(function () { b.disabled = false; }); // jamais bloquant : le 1er ajout reste acquis
+      });
+      actions.appendChild(b);
+    });
+
+    var fermer = document.createElement('button');
+    fermer.type = 'button';
+    fermer.className = 'tl-other-size-z';
+    fermer.textContent = 'Non merci';
+    fermer.addEventListener('click', function () {
+      try { sessionStorage.setItem(_tlOtherSizeDismissKey(designId, vid), '1'); } catch (e) { /* tant pis, pas bloquant */ }
+      if (el.parentNode) el.parentNode.removeChild(el);
+    });
+    actions.appendChild(fermer);
+
+    el.appendChild(actions);
 
     var container = _tlCtaContainer(btn);
     container.parentNode.insertBefore(el, container);
