@@ -50,6 +50,12 @@
   // aujourd'hui : rien ne s'affiche après l'ajout au panier).
   var _TL_SAME_DESIGN_OTHER_SIZE_ENABLED = false;
 
+  // Flag item 33 (2e exemplaire identique, spec de repli du 15/10 — sans
+  // aucun pourcentage de remise calculé/affiché par TSL) : même mécanique,
+  // lu une fois par _tlLoadStyleSettings. Complète _TL_SAME_DESIGN_OTHER_SIZE_
+  // ENABLED sans le chevaucher (autre taille vs même variante).
+  var _TL_SAME_DESIGN_SECOND_UNIT_ENABLED = false;
+
   // Clé ("<variantId>:<hash>") de la ligne de panier en cours de modification
   // via le bouton "Modifier" (item 26), le temps que le nouvel ajout soit
   // confirmé — remise à null après la suppression de l'ancienne ligne OU à la
@@ -412,6 +418,43 @@
     .tl-other-size-msg { flex-basis: 100%; font-size: 12px; opacity: .8; color: #b42318; }\
   ';
 
+  // Encart "Ajouter un 2e exemplaire identique" (item 33, spec de repli du
+  // 15/10 — sans aucun pourcentage de remise calculé/affiché par TSL) : même
+  // famille visuelle que .tl-other-size ci-dessus, classe racine distincte
+  // pour ne pas être effacé par le "var vieux = querySelector('.tl-other-size')"
+  // de _tlInjectOtherSizeOffer (les deux encarts peuvent coexister, empilés).
+  var TL_SECOND_UNIT_CSS = '\
+    .tl-second-unit {\
+      display: flex;\
+      flex-wrap: wrap;\
+      align-items: center;\
+      justify-content: space-between;\
+      gap: 8px;\
+      margin: 0 0 8px;\
+      padding: 10px 12px;\
+      border-radius: 10px;\
+      border: 1px solid rgba(0,0,0,.12);\
+      background: rgba(0,0,0,.03);\
+      font: 400 13px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\
+      color: inherit;\
+    }\
+    .tl-second-unit-t { font-weight: 600; }\
+    .tl-second-unit-a { display: flex; gap: 10px; flex-shrink: 0; flex-wrap: wrap; }\
+    .tl-second-unit-b, .tl-second-unit-z {\
+      border: 0;\
+      background: none;\
+      padding: 0;\
+      font: inherit;\
+      font-weight: 600;\
+      text-decoration: underline;\
+      cursor: pointer;\
+      color: inherit;\
+    }\
+    .tl-second-unit-z { font-weight: 400; opacity: .7; }\
+    .tl-second-unit-b[disabled] { opacity: .5; cursor: default; text-decoration: none; }\
+    .tl-second-unit-msg { flex-basis: 100%; font-size: 12px; opacity: .8; color: #b42318; }\
+  ';
+
   // NOTE : ne pas nommer cette variable "CSS" — cela écraserait window.CSS
   // (l'API globale) dans le scope de l'IIFE et ferait planter CSS.escape().
   // ── Sélecteur de support, ouvert depuis un lien de menu ──────────────────
@@ -501,7 +544,7 @@
         box-shadow: 0 20px 60px rgba(0, 0, 0, .4);\
       }\
     }\
-  ' + CART_FIX_CSS + TL_CTA_CSS + TL_UPSELL_CSS + TL_RESUME_CSS + TL_EMAIL_RESUME_CSS + TL_OTHER_SIZE_CSS + TL_CHOIX_CSS;
+  ' + CART_FIX_CSS + TL_CTA_CSS + TL_UPSELL_CSS + TL_RESUME_CSS + TL_EMAIL_RESUME_CSS + TL_OTHER_SIZE_CSS + TL_SECOND_UNIT_CSS + TL_CHOIX_CSS;
 
   // ── Injection des éléments DOM ──────────────────────────────────────────────
   function injectDOM() {
@@ -1209,6 +1252,10 @@
               // 7. Même création, dans une autre taille (item 32) — sous flag,
               //    jamais bloquant pour l'ajout déjà confirmé ci-dessus.
               _tlOfferOtherSize(_vid, _props, _previewUrl);
+
+              // 8. 2e exemplaire identique, même variante (item 33) — sous
+              //    flag, aucune remise calculée/affichée, jamais bloquant.
+              _tlOfferSecondUnit(_vid, _props, _previewUrl);
             })
             .catch(function(err) {
               document.body.classList.remove('tl-cart-loading');
@@ -1750,6 +1797,10 @@
           // consommée par _tlOfferOtherSize() juste après un ajout au panier
           // réussi — pas d'appel réseau supplémentaire ici.
           _TL_SAME_DESIGN_OTHER_SIZE_ENABLED = !!data.same_design_other_size_enabled;
+          // Flag item 33 (2e exemplaire identique) : simple mémorisation,
+          // consommée par _tlOfferSecondUnit() juste après un ajout au panier
+          // réussi — pas d'appel réseau supplémentaire ici.
+          _TL_SAME_DESIGN_SECOND_UNIT_ENABLED = !!data.same_design_second_unit_enabled;
         })
         .catch(function() {});
     } catch (e) { /* silencieux */ }
@@ -2175,6 +2226,122 @@
     fermer.textContent = 'Non merci';
     fermer.addEventListener('click', function () {
       try { sessionStorage.setItem(_tlOtherSizeDismissKey(designId, vid), '1'); } catch (e) { /* tant pis, pas bloquant */ }
+      if (el.parentNode) el.parentNode.removeChild(el);
+    });
+    actions.appendChild(fermer);
+
+    el.appendChild(actions);
+
+    var container = _tlCtaContainer(btn);
+    container.parentNode.insertBefore(el, container);
+  }
+
+  // ── "Ajouter un 2e exemplaire identique" (item 33) ──────────────────────────
+  //
+  // Spec de repli du 15/10 (veille CPB) : la V1 originale envisageait une
+  // remise affichée ("-10%"), mais aucune API panier Shopify ni aucun code de
+  // ce dépôt ne sait aujourd'hui créer/piloter une remise réelle — promettre
+  // un pourcentage non tenu au checkout serait un bug de confiance. Cette
+  // version ne calcule ni n'affiche AUCUN pourcentage : juste la même
+  // variante/properties que l'ajout qui vient d'avoir lieu (pas une autre
+  // taille, voir _tlOfferOtherSize ci-dessus), posée une 2e fois au panier —
+  // Shopify fusionne alors les deux lignes identiques en une seule quantité 2,
+  // aucun nouveau rendu Fabric.js nécessaire. Si Alan configure un jour une
+  // remise automatique native Shopify sur ce produit/cette collection, elle
+  // s'appliquera d'elle-même au panier/checkout sans que TSL ait besoin de la
+  // connaître ni de la promettre.
+  function _tlSecondUnitDismissKey(designId, variantId) {
+    return 'tl_second_unit_dismissed_' + (designId || 'na') + '_' + variantId;
+  }
+
+  function _tlOfferSecondUnit(vid, props, previewUrl) {
+    if (!_TL_SAME_DESIGN_SECOND_UNIT_ENABLED || !vid) return;
+    var designId = (props && props['_design_id']) || '';
+    try { if (sessionStorage.getItem(_tlSecondUnitDismissKey(designId, vid))) return; } catch (e) { /* stockage indisponible → on propose quand même */ }
+
+    var btn = document.querySelector('.tl-personalise-btn');
+    if (!btn) return; // aucun bouton sur cette page → rien où ancrer l'encart
+
+    _tlInjectSecondUnitOffer(btn, vid, props, previewUrl, designId);
+  }
+
+  function _tlInjectSecondUnitOffer(btn, vid, props, previewUrl, designId) {
+    var vieux = document.querySelector('.tl-second-unit');
+    if (vieux && vieux.parentNode) vieux.parentNode.removeChild(vieux);
+
+    var el = document.createElement('div');
+    el.className = 'tl-second-unit';
+
+    var texte = document.createElement('span');
+    texte.className = 'tl-second-unit-t';
+    texte.textContent = 'Vous en voulez un 2e exemplaire identique ?';
+    el.appendChild(texte);
+
+    var actions = document.createElement('span');
+    actions.className = 'tl-second-unit-a';
+
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tl-second-unit-b';
+    b.textContent = 'Ajouter un 2e exemplaire';
+    b.addEventListener('click', function () {
+      if (b.disabled) return;
+      b.disabled = true;
+      fetch('/cart/add.json', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ items: [{ id: vid, quantity: 1, properties: props }] }),
+      })
+      // Même détection de refus silencieux que _tlInjectOtherSizeOffer
+      // (bug trouvé le 15/10) : jamais un r.json() non vérifié.
+      .then(function (r) {
+        return r.text().then(function (txt) {
+          var data = null;
+          try { data = txt ? JSON.parse(txt) : null; } catch (e) { /* pas du JSON */ }
+          var echec = !r.ok || !data || data.status >= 400;
+          if (echec) {
+            var raison = (data && (data.description || data.message))
+              || String(txt || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)
+              || ('HTTP ' + r.status);
+            var err = new Error(raison);
+            err.panierRefuse = true;
+            throw err;
+          }
+          return data;
+        });
+      })
+      .then(function () {
+        if (previewUrl) {
+          _tlInjectCartImage(vid, previewUrl);
+          setTimeout(function () { _tlInjectCartImage(vid, previewUrl); }, 200);
+          setTimeout(function () { _tlInjectCartImage(vid, previewUrl); }, 600);
+        }
+        _tlFixAllLineItems();
+        setTimeout(_tlFixAllLineItems, 300);
+        try { sessionStorage.setItem(_tlSecondUnitDismissKey(designId, vid), '1'); } catch (e) { /* non bloquant */ }
+        if (el.parentNode) el.parentNode.removeChild(el);
+      })
+      .catch(function (err) {
+        b.disabled = false;
+        var shop = (window.Shopify && window.Shopify.shop) || window._TL_SHOP || window.location.hostname;
+        _tlTrackCartError(shop, vid, (err && err.message) || 'second-unit-add-failed');
+        var msg = el.querySelector('.tl-second-unit-msg');
+        if (!msg) {
+          msg = document.createElement('div');
+          msg.className = 'tl-second-unit-msg';
+          el.appendChild(msg);
+        }
+        msg.textContent = 'Ajout impossible pour l\'instant, réessayez.';
+      });
+    });
+    actions.appendChild(b);
+
+    var fermer = document.createElement('button');
+    fermer.type = 'button';
+    fermer.className = 'tl-second-unit-z';
+    fermer.textContent = 'Non merci';
+    fermer.addEventListener('click', function () {
+      try { sessionStorage.setItem(_tlSecondUnitDismissKey(designId, vid), '1'); } catch (e) { /* tant pis, pas bloquant */ }
       if (el.parentNode) el.parentNode.removeChild(el);
     });
     actions.appendChild(fermer);

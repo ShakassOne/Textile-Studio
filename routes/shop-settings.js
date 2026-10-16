@@ -89,6 +89,16 @@
  *      route publique : tl-modal.js n'appelle /products/<handle>.js pour
  *      cette offre que si ce flag est actif. Désactivé par défaut, même
  *      logique prudente que les autres changements visuels storefront.
+ *    same_design_second_unit_enabled bool — encart "Ajouter un 2e exemplaire
+ *      identique" affiché juste après un ajout au panier réussi (tl-modal.js,
+ *      backlog item 33, spec de repli du 15/10 — sans aucun pourcentage de
+ *      remise calculé/affiché par TSL, voir ROADMAP §2 item 33 pour le point
+ *      bloquant qui a mené à cette version sans remise). Propose une 2e ligne
+ *      panier avec la MÊME variante/properties que l'ajout qui vient d'avoir
+ *      lieu (pas une autre taille — complète same_design_other_size_enabled
+ *      sans le chevaucher). Exposé sur la route publique : tl-modal.js ne
+ *      propose cette offre que si ce flag est actif. Désactivé par défaut,
+ *      même logique prudente que les autres changements visuels storefront.
  *
  *  Cors public : Cross-origin (shop_domain.myshopify.com → textile-studio-production)
  *    → le storefront fait fetch direct, on autorise tout origin sur le GET public.
@@ -165,6 +175,10 @@ const CART_ERROR_TRACKING_DEFAULT = true;
 // changement visuel storefront après l'ajout au panier, à valider avant
 // diffusion large (backlog item 32).
 const SAME_DESIGN_OTHER_SIZE_DEFAULT = false;
+// Encart "2e exemplaire identique" désactivé par défaut : nouveau changement
+// visuel storefront après l'ajout au panier, à valider avant diffusion large
+// (backlog item 33, spec de repli sans remise calculée/affichée par TSL).
+const SAME_DESIGN_SECOND_UNIT_DEFAULT = false;
 
 // ── GET /api/shop-settings/style — lecture admin ────────────────────────────
 router.get('/style', requireAuth, attachShopId, (req, res) => {
@@ -182,6 +196,7 @@ router.get('/style', requireAuth, attachShopId, (req, res) => {
     panel_mode_studio_enabled:  readBoolSetting(req.shopId, 'panel_mode_studio_enabled', PANEL_MODE_STUDIO_DEFAULT),
     cart_error_tracking_enabled: readBoolSetting(req.shopId, 'cart_error_tracking_enabled', CART_ERROR_TRACKING_DEFAULT),
     same_design_other_size_enabled: readBoolSetting(req.shopId, 'same_design_other_size_enabled', SAME_DESIGN_OTHER_SIZE_DEFAULT),
+    same_design_second_unit_enabled: readBoolSetting(req.shopId, 'same_design_second_unit_enabled', SAME_DESIGN_SECOND_UNIT_DEFAULT),
   });
 });
 
@@ -248,6 +263,10 @@ router.post('/style', requireAuth, attachShopId, express.json(), (req, res) => {
     setSetting(req.shopId, 'same_design_other_size_enabled', coerceBool(body.same_design_other_size_enabled) ? '1' : '0');
   }
 
+  if ('same_design_second_unit_enabled' in body) {
+    setSetting(req.shopId, 'same_design_second_unit_enabled', coerceBool(body.same_design_second_unit_enabled) ? '1' : '0');
+  }
+
   res.json({
     ok: true,
     cart_drawer_bg_color:       getSetting(req.shopId, 'cart_drawer_bg_color') || '',
@@ -263,6 +282,7 @@ router.post('/style', requireAuth, attachShopId, express.json(), (req, res) => {
     panel_mode_studio_enabled:  readBoolSetting(req.shopId, 'panel_mode_studio_enabled', PANEL_MODE_STUDIO_DEFAULT),
     cart_error_tracking_enabled: readBoolSetting(req.shopId, 'cart_error_tracking_enabled', CART_ERROR_TRACKING_DEFAULT),
     same_design_other_size_enabled: readBoolSetting(req.shopId, 'same_design_other_size_enabled', SAME_DESIGN_OTHER_SIZE_DEFAULT),
+    same_design_second_unit_enabled: readBoolSetting(req.shopId, 'same_design_second_unit_enabled', SAME_DESIGN_SECOND_UNIT_DEFAULT),
   });
 });
 
@@ -286,6 +306,7 @@ router.get('/style/public', (req, res) => {
       cart_edit_design_enabled: CART_EDIT_DESIGN_DEFAULT,
       panel_mode_studio_enabled: PANEL_MODE_STUDIO_DEFAULT,
       same_design_other_size_enabled: SAME_DESIGN_OTHER_SIZE_DEFAULT,
+      same_design_second_unit_enabled: SAME_DESIGN_SECOND_UNIT_DEFAULT,
     });
   }
   const shopId = getShopIdByDomain(shopDomain);
@@ -301,6 +322,7 @@ router.get('/style/public', (req, res) => {
       cart_edit_design_enabled: CART_EDIT_DESIGN_DEFAULT,
       panel_mode_studio_enabled: PANEL_MODE_STUDIO_DEFAULT,
       same_design_other_size_enabled: SAME_DESIGN_OTHER_SIZE_DEFAULT,
+      same_design_second_unit_enabled: SAME_DESIGN_SECOND_UNIT_DEFAULT,
     });
   }
   res.json({
@@ -314,6 +336,7 @@ router.get('/style/public', (req, res) => {
     cart_edit_design_enabled:   readBoolSetting(shopId, 'cart_edit_design_enabled', CART_EDIT_DESIGN_DEFAULT),
     panel_mode_studio_enabled:  readBoolSetting(shopId, 'panel_mode_studio_enabled', PANEL_MODE_STUDIO_DEFAULT),
     same_design_other_size_enabled: readBoolSetting(shopId, 'same_design_other_size_enabled', SAME_DESIGN_OTHER_SIZE_DEFAULT),
+    same_design_second_unit_enabled: readBoolSetting(shopId, 'same_design_second_unit_enabled', SAME_DESIGN_SECOND_UNIT_DEFAULT),
   });
 });
 
