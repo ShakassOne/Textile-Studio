@@ -1,20 +1,22 @@
 'use strict';
 
 /**
- * Interrupteurs Admin pour 4 flags déjà livrés mais encore invisibles de
- * l'écran Paramètres (backlog item 29) — public/textilelab-admin.html
+ * Interrupteurs Admin pour les flags déjà livrés mais encore invisibles de
+ * l'écran Paramètres (backlog items 29 et 34) — public/textilelab-admin.html
  * uniquement.
  * ──────────────────────────────────────────────────────────────────────────
  * resume_design_enabled / email_resume_enabled / cart_edit_design_enabled /
- * panel_mode_studio_enabled étaient pilotables uniquement via
- * POST /api/shop-settings/style en direct : 0 occurrence des 4 noms de flag
- * dans ce fichier avant ce lot. V1 lean : reproduit à l'identique le triplet
- * HTML/JS déjà posé pour reassurance_banner_enabled/mobile_price_bar_enabled/
- * social_proof_enabled/ai_generic_identity_prompt_enabled — pas de nouvelle
- * route, pas de nouvelle colonne, ces 4 flags sont déjà lus/écrits par
- * routes/shop-settings.js (voir panel-mode-studio.test.js,
- * cart-edit-design.test.js, email-resume.test.js, design-resume.test.js pour
- * la couverture backend de chacun).
+ * panel_mode_studio_enabled (item 29) puis same_design_other_size_enabled /
+ * same_design_second_unit_enabled (item 34, 17/10) étaient pilotables
+ * uniquement via POST /api/shop-settings/style en direct : 0 occurrence de
+ * ces noms de flag dans ce fichier avant ces lots. V1 lean : reproduit à
+ * l'identique le triplet HTML/JS déjà posé pour reassurance_banner_enabled/
+ * mobile_price_bar_enabled/social_proof_enabled/ai_generic_identity_prompt_enabled
+ * — pas de nouvelle route, pas de nouvelle colonne, ces flags sont déjà
+ * lus/écrits par routes/shop-settings.js (voir panel-mode-studio.test.js,
+ * cart-edit-design.test.js, email-resume.test.js, design-resume.test.js,
+ * same-design-other-size.test.js, same-design-second-unit.test.js pour la
+ * couverture backend de chacun).
  *
  * Pas de DOM dans ces tests (pas de navigateur) : on vérifie la cohérence du
  * câblage source (regex sur le texte du fichier), même approche que
@@ -33,6 +35,8 @@ const FLAGS = [
   { key: 'email_resume_enabled', id: 'email-resume', fn: 'EmailResume' },
   { key: 'cart_edit_design_enabled', id: 'cart-edit-design', fn: 'CartEditDesign' },
   { key: 'panel_mode_studio_enabled', id: 'panel-mode-studio', fn: 'PanelModeStudio' },
+  { key: 'same_design_other_size_enabled', id: 'same-design-other-size', fn: 'SameDesignOtherSize' },
+  { key: 'same_design_second_unit_enabled', id: 'same-design-second-unit', fn: 'SameDesignSecondUnit' },
 ];
 
 for (const { key, id, fn } of FLAGS) {

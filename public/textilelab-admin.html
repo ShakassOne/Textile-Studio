@@ -1062,6 +1062,40 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
           </div>
         </div>
 
+        <!-- Panier — Même création, autre taille -->
+        <div class="table-card" style="padding:20px">
+          <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px">📐 Panier — Même création, autre taille</h3>
+          <p style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5">Après l'ajout au panier, propose d'ajouter la même création déjà personnalisée dans une autre taille, sans repasser par tout le studio. <strong style="color:var(--text2)">Désactivé par défaut</strong> — non vérifié visuellement sur une vraie fiche WinShirt dans l'environnement de dev, à activer après vérification visuelle réelle. Prise en compte côté boutique en ~1 min.</p>
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+            <label class="tl-switch">
+              <input type="checkbox" id="same-design-other-size-toggle" onchange="_applySameDesignOtherSizeToggle(this.checked)">
+              <span class="tl-switch-slider"></span>
+            </label>
+            <span id="same-design-other-size-state" style="font-size:13px;color:var(--text3)">…</span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+            <button class="btn btn-primary" id="same-design-other-size-save-btn" onclick="saveSameDesignOtherSize()">💾 Enregistrer</button>
+            <span id="same-design-other-size-result" style="font-size:12px;color:var(--text3);align-self:center;min-height:16px"></span>
+          </div>
+        </div>
+
+        <!-- Panier — 2e exemplaire identique -->
+        <div class="table-card" style="padding:20px">
+          <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px">🧍‍♂️🧍‍♂️ Panier — 2ᵉ exemplaire identique</h3>
+          <p style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5">Après l'ajout au panier, propose d'ajouter un 2ᵉ exemplaire identique de la création qu'on vient d'ajouter (même variante, pas une autre taille) — aucune remise calculée ou affichée par TSL. <strong style="color:var(--text2)">Désactivé par défaut</strong> — non vérifié visuellement sur une vraie fiche WinShirt dans l'environnement de dev, à activer après vérification visuelle réelle. Prise en compte côté boutique en ~1 min.</p>
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+            <label class="tl-switch">
+              <input type="checkbox" id="same-design-second-unit-toggle" onchange="_applySameDesignSecondUnitToggle(this.checked)">
+              <span class="tl-switch-slider"></span>
+            </label>
+            <span id="same-design-second-unit-state" style="font-size:13px;color:var(--text3)">…</span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+            <button class="btn btn-primary" id="same-design-second-unit-save-btn" onclick="saveSameDesignSecondUnit()">💾 Enregistrer</button>
+            <span id="same-design-second-unit-result" style="font-size:12px;color:var(--text3);align-self:center;min-height:16px"></span>
+          </div>
+        </div>
+
         <!-- IA — Formulation d'identité générique du prompt Photo → Illustration -->
         <div class="table-card" style="padding:20px">
           <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px">🧩 IA — Formulation d'identité générique</h3>
@@ -4388,6 +4422,8 @@ async function loadSettingsInfo() {
   loadEmailResume();
   loadCartEditDesign();
   loadPanelModeStudio();
+  loadSameDesignOtherSize();
+  loadSameDesignSecondUnit();
   const [aiStatus, shopStatus] = await Promise.all([api('/api/ai/status'), api('/api/shopify/status')]);
   const svcEl = document.getElementById('services-status');
   if (svcEl) {
@@ -4771,6 +4807,80 @@ async function savePanelModeStudio() {
     _applyPanelModeStudioToggle(!!data.panel_mode_studio_enabled);
     if (out) { out.textContent = '✅ Enregistré — visible côté boutique dans ~1 min'; out.style.color = 'var(--success)'; }
     showToast('✅ Panneau partiel desktop ' + (data.panel_mode_studio_enabled ? 'activé' : 'désactivé'));
+  } else {
+    if (out) { out.textContent = '❌ ' + (data?.error || 'Erreur inconnue'); out.style.color = 'var(--danger)'; }
+  }
+}
+
+// ── Panier : même création, autre taille ─────────────────────────────────────
+function _applySameDesignOtherSizeToggle(enabled) {
+  const tog = document.getElementById('same-design-other-size-toggle');
+  const st  = document.getElementById('same-design-other-size-state');
+  if (tog) tog.checked = !!enabled;
+  if (st) {
+    st.textContent  = enabled ? 'Activé — encart « autre taille » visible après l\'ajout au panier' : 'Désactivé — pas d\'encart « autre taille »';
+    st.style.color  = enabled ? 'var(--success)' : 'var(--text3)';
+  }
+}
+
+async function loadSameDesignOtherSize() {
+  const data = await api('/api/shop-settings/style');
+  _applySameDesignOtherSizeToggle(!!(data && data.same_design_other_size_enabled));
+}
+
+async function saveSameDesignOtherSize() {
+  const tog = document.getElementById('same-design-other-size-toggle');
+  const out = document.getElementById('same-design-other-size-result');
+  const btn = document.getElementById('same-design-other-size-save-btn');
+  const enabled = !!(tog && tog.checked);
+  if (out) { out.textContent = '⏳ Sauvegarde…'; out.style.color = 'var(--text3)'; }
+  if (btn) btn.disabled = true;
+  const data = await api('/api/shop-settings/style', {
+    method: 'POST',
+    body:   JSON.stringify({ same_design_other_size_enabled: enabled }),
+  });
+  if (btn) btn.disabled = false;
+  if (data?.ok) {
+    _applySameDesignOtherSizeToggle(!!data.same_design_other_size_enabled);
+    if (out) { out.textContent = '✅ Enregistré — visible côté boutique dans ~1 min'; out.style.color = 'var(--success)'; }
+    showToast('✅ Encart « autre taille » ' + (data.same_design_other_size_enabled ? 'activé' : 'désactivé'));
+  } else {
+    if (out) { out.textContent = '❌ ' + (data?.error || 'Erreur inconnue'); out.style.color = 'var(--danger)'; }
+  }
+}
+
+// ── Panier : 2ᵉ exemplaire identique ─────────────────────────────────────────
+function _applySameDesignSecondUnitToggle(enabled) {
+  const tog = document.getElementById('same-design-second-unit-toggle');
+  const st  = document.getElementById('same-design-second-unit-state');
+  if (tog) tog.checked = !!enabled;
+  if (st) {
+    st.textContent  = enabled ? 'Activé — encart « 2e exemplaire » visible après l\'ajout au panier' : 'Désactivé — pas d\'encart « 2e exemplaire »';
+    st.style.color  = enabled ? 'var(--success)' : 'var(--text3)';
+  }
+}
+
+async function loadSameDesignSecondUnit() {
+  const data = await api('/api/shop-settings/style');
+  _applySameDesignSecondUnitToggle(!!(data && data.same_design_second_unit_enabled));
+}
+
+async function saveSameDesignSecondUnit() {
+  const tog = document.getElementById('same-design-second-unit-toggle');
+  const out = document.getElementById('same-design-second-unit-result');
+  const btn = document.getElementById('same-design-second-unit-save-btn');
+  const enabled = !!(tog && tog.checked);
+  if (out) { out.textContent = '⏳ Sauvegarde…'; out.style.color = 'var(--text3)'; }
+  if (btn) btn.disabled = true;
+  const data = await api('/api/shop-settings/style', {
+    method: 'POST',
+    body:   JSON.stringify({ same_design_second_unit_enabled: enabled }),
+  });
+  if (btn) btn.disabled = false;
+  if (data?.ok) {
+    _applySameDesignSecondUnitToggle(!!data.same_design_second_unit_enabled);
+    if (out) { out.textContent = '✅ Enregistré — visible côté boutique dans ~1 min'; out.style.color = 'var(--success)'; }
+    showToast('✅ Encart « 2e exemplaire » ' + (data.same_design_second_unit_enabled ? 'activé' : 'désactivé'));
   } else {
     if (out) { out.textContent = '❌ ' + (data?.error || 'Erreur inconnue'); out.style.color = 'var(--danger)'; }
   }
