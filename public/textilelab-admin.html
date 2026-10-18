@@ -450,6 +450,7 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
           <div class="stat-card"><div class="stat-label">Images bibliothèque</div><div class="stat-value" id="s-library">—</div><div class="stat-delta neutral">Visuels disponibles</div></div>
           <div class="stat-card"><div class="stat-label">Mockups</div><div class="stat-value" id="s-mockups">—</div><div class="stat-delta neutral">Produits configurés</div></div>
           <div class="stat-card"><div class="stat-label">Catégories</div><div class="stat-value" id="s-categories">—</div><div class="stat-delta neutral">Types de produits</div></div>
+          <div class="stat-card"><div class="stat-label">Refus panier silencieux (30j)</div><div class="stat-value" id="s-cart-errors">—</div><div class="stat-delta neutral" id="s-cart-errors-delta">—</div></div>
         </div>
         <div class="product-bars" id="product-bars" style="display:none"></div>
       </div>
@@ -1846,16 +1847,22 @@ async function api(path, opts = {}) {
 async function loadDashboard() {
   const d = new Date();
   document.getElementById('dash-date').textContent = d.toLocaleDateString('fr-FR',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
-  const [stats, libData, mockupData, catData] = await Promise.all([
+  const [stats, libData, mockupData, catData, cartErrorsStats] = await Promise.all([
     api('/api/stats'),
     api('/api/library'),
     api('/api/mockups'),
     api('/api/product-categories'),
+    api('/api/cart-add-errors/stats?days=30'),
   ]);
   document.getElementById('s-designs').textContent   = stats?.designs?.count ?? '—';
   document.getElementById('s-library').textContent   = Array.isArray(libData) ? libData.filter(i => !i.filename?.startsWith('__cat_placeholder_')).length : '—';
   document.getElementById('s-mockups').textContent   = Array.isArray(mockupData) ? mockupData.length : '—';
   document.getElementById('s-categories').textContent = Array.isArray(catData) ? catData.length : '—';
+  document.getElementById('s-cart-errors').textContent = cartErrorsStats?.total ?? '—';
+  const topReason = cartErrorsStats?.topReasons?.[0];
+  document.getElementById('s-cart-errors-delta').textContent = topReason
+    ? `Top : ${topReason.reason} (${topReason.n})`
+    : (cartErrorsStats?.total === 0 ? 'Aucun refus' : '—');
 }
 
 // ============================================
