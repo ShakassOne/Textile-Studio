@@ -1312,6 +1312,77 @@ tableau).
 Identique au dernier relevé. Aucune régression. Aucun fichier de code
 modifié.
 
+### 2026-10-19 — Seuil des 48 h franchi : le fil repris, et la question du 04/10 close par les faits
+
+Arbre de travail propre, toujours sur `dev`, HEAD toujours sur `006493f` (le
+commit de l'entrée précédente, 14/10 10h02) : **aucun commit n'est arrivé
+dans tout le dépôt depuis cinq jours**, pas seulement sur le trio de
+l'éditeur. Dernier commit sur `tl-editor.js`/`tsl-engine.js`/
+`textilelab-studio.html` toujours `07a684b`, le 2026-10-12 à 10h12 — l'écart
+réel (maintenant, 19/10 07h33, moins cette date) est de **6 jours 21 h**,
+largement au-delà du seuil de 48 h posé le 13/10. Conformément à la consigne
+laissée le 14/10, je reprends donc le fil plutôt que de reconduire la
+prudence une fois de plus.
+
+**« Reprendre le fil » ne voulait pas dire écrire le raccordement moi-même :
+en regardant le code, il s'est déjà fait, mais pas comme prévu le 04/10.**
+Ce jour-là, l'entrée « Moteur partagé et circuit de commande » notait comme
+reste à faire : « Raccorder le configurateur au moteur. Tant que ce n'est pas
+fait, « un seul moteur » reste une intention : deux implémentations
+coexistent. » L'hypothèse implicite était qu'Alan irait brancher le studio
+existant (`textilelab-studio.html`) sur `tsl-engine.js`. Ce n'est pas ce
+qu'il a fait : il a construit un **second configurateur**, `public/
+tl-editor.js` (4502 lignes, bloc `extensions/textilelab-button/blocks/
+product-editor.liquid`), directement sur le moteur partagé dès sa
+conception — `charger(BACKEND + '/tsl-engine.js')` puis
+`new window.TSLEngine.Moteur(cnv, …)` ([tl-editor.js:3131](public/tl-editor.js:3131),
+[:3193](public/tl-editor.js:3193)) — et il appelle bien `/api/render/
+from-composition/:id` ([tl-editor.js:4277](public/tl-editor.js:4277)), le
+moteur serveur du 04/10, pour le fichier d'impression.
+
+`textilelab-studio.html`, lui, ne référence `tsl-engine.js` que dans un
+commentaire ([textilelab-studio.html:4442](public/textilelab-studio.html:4442))
+: il garde sa propre logique de canevas Fabric, inchangée. **Les deux
+implémentations coexistent toujours — mais ce n'est plus un chantier
+inachevé, c'est un choix de produit tranché par Alan et déjà en production**
+(commit `07a684b`, 12/10 : « Uniquement sur ordinateur », coché par défaut —
+sur téléphone le bouton « Personnaliser » garde la main et rouvre l'ancien
+studio, parce que le configurateur plein écran part de mockups cadrés que la
+galerie du thème ne permet pas d'égaler au doigt). Le réglage existe, testé,
+documenté dans le bloc lui-même.
+
+**Conséquence pour ce chantier précis.** Le flux propre à la bibliothèque de
+designs (lot F) continue de cibler `textilelab-studio.html`, pas
+`tl-editor.js` : `tl-modal.js` n'ouvre que le studio (`&visual=` →
+`_tlChargerVisuelDemande`), et `tl-editor.js` ne lit ni `_library_id` ni
+aucun paramètre de bibliothèque — son seul usage de `?design=` sert à son
+propre mécanisme de reprise par email (`design.id`, table `designs`), sans
+lien avec la bibliothèque. Rien à changer ici : le lot F fonctionne tel que
+vérifié le 02/10, sur l'implémentation qu'il a toujours ciblée.
+
+**La question laissée ouverte le 04/10 est donc close**, pas par un choix
+arbitral mais par une lecture directe du code : les deux moteurs restent
+deux moteurs, par décision produit assumée et déjà expédiée, pas par retard.
+Aucune session suivante n'a plus besoin de la reposer ni de citer le trio
+comme raison de prudence — ce motif n'a plus lieu d'être invoqué.
+
+**Rien d'autre d'indépendant à avancer.** Le lot E reste bloqué sur une
+vraie commande que seul Alan peut passer sur sa boutique de test (tranché le
+04/10) ; le lot G vient après E dans le tableau et la décision du 03/10 est
+de ne pas l'entamer avant. Aucun changement de code dans cette session, donc
+rien à vérifier au navigateur.
+
+`npm test` : 185 tests, 182 passent, 3 ignorés (`social_proof_items`,
+`upsell_candidates`, `design-resume` — cause machine connue, inchangée).
+Identique au dernier relevé. Aucune régression.
+
+**Point informationnel pour Alan, pas une alerte :** aucun commit n'est
+arrivé dans le dépôt entre le 14/10 10h02 et le 19/10 07h33 — le plus long
+silence observé depuis l'ouverture de ce chantier, sur le trio comme
+ailleurs. Si une routine automatisée devait tourner entre ces deux dates et
+ne l'a pas fait, c'est à vérifier côté planification ; si c'est simplement
+qu'Alan n'a pas eu l'occasion de repasser, aucune action n'est requise.
+
 ## Contraintes permanentes d'Alan
 
 - Répondre en français.
