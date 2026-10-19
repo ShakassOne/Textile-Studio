@@ -7944,17 +7944,25 @@ async function _checkoutShopifyDirect() {
     //   • sinon table de mapping admin.
     // Si aucune variante → on N'AJOUTE RIEN et on affiche une erreur claire.
     let finalVariantId = String(variantId);
-    // On résout sur le SURCOÛT, pas sur le coût total : pour un produit à
-    // template dont le client n'ajoute rien, _extraDue vaut 0 → on garde la
-    // variante de base et son prix Shopify (impression déjà incluse).
-    if (_extraDue > 0) {
+    // Résolution + VALIDATION appelée systématiquement, même sans supplément
+    // d'impression (_extraDue === 0) : le backend vérifie désormais aussi que
+    // `variantId` appartient réellement au produit affiché dans l'éditeur
+    // (window._TL_PRODUCT_ID_NUM), pas seulement le palier d'impression.
+    // Avant ce correctif, le cas « sans impression » (le plus fréquent — la
+    // majorité des tailles n'ont pas de supplément) sautait entièrement cet
+    // appel et faisait confiance aveuglément à variantId : si tl-modal.js
+    // avait capté par erreur le variant_id d'un AUTRE produit affiché sur la
+    // même page (ex. un carrousel de produits recommandés), rien ne
+    // l'empêchait d'atterrir au panier — voir TSL-008/TSL-009.
+    {
       const _params = new URLSearchParams({
         base_variant_id: String(variantId),
         amount: _extraDue.toFixed(2),
         shop: window._TL_SHOP || '',
       });
       const _ref2 = (_resolvedProductHandle || window._TL_PRODUCT_HANDLE || '');
-      if (_ref2.startsWith('id:')) _params.set('product_id', _ref2.slice(3));
+      const _pid  = window._TL_PRODUCT_ID_NUM || (_ref2.startsWith('id:') ? _ref2.slice(3) : '');
+      if (_pid) _params.set('product_id', _pid);
       let rData = null, rOk = false;
       try {
         const rRes = await fetch(`${APP_ORIGIN}/api/shopify/resolve-variant?${_params.toString()}`,
@@ -7964,17 +7972,18 @@ async function _checkoutShopifyDirect() {
       } catch (e) { console.error('[TextileLab] resolve-variant:', e.message); }
 
       if (!rOk) {
-        // Variante manquante → AUCUN ajout panier + log détaillé pour Alan.
-        console.error('[TextileLab] Variante d\'impression introuvable — ajout panier annulé.', {
+        // Variante manquante OU incohérente avec le produit → AUCUN ajout
+        // panier + log détaillé pour Alan.
+        console.error('[TextileLab] Variante introuvable ou invalide pour ce produit — ajout panier annulé.', {
           product: STATE.product, color: STATE.textileColor,
           amount: _printAmount, reference: TPL_REFERENCE_AMOUNT, extraDue: _extraDue,
           label: _printLabel, sides: _printSides,
-          formats: _printFormats, base_variant_id: String(variantId),
+          formats: _printFormats, base_variant_id: String(variantId), product_id: _pid || null,
           server: rData || null,
         });
         // Message fidèle à la cause réelle : le serveur distingue « option
-        // Impression absente » de « création de la variante échouée ». On ne
-        // parle de combinaison non configurée que dans le second cas.
+        // Impression absente », « variante incohérente avec le produit » et
+        // « création de la variante échouée ».
         showToast('⚠️ ' + (rData?.error || 'Impossible de préparer cette personnalisation — réessayez.'));
         allBtns.forEach(b => { if (b.tagName === 'BUTTON') { b.disabled = false; b.textContent = '🛒 Ajouter au panier'; } });
         return;
@@ -9372,6 +9381,7 @@ function init() {
     window._TL_SHOP           = _up0.get('shop')    || '';
     window._TL_PRODUCT_HANDLE = _up0.get('product') || '';
     window._TL_VARIANT_ID     = _up0.get('variant_id') || '';  // variante choisie (fiche produit)
+    window._TL_PRODUCT_ID_NUM = _up0.get('product_id') || '';  // id Shopify numérique, pour valider côté serveur que la variante choisie appartient bien à CE produit (TSL-008/TSL-009)
     window._TL_SHOP_URL       = _up0.get('shop_url')   || '';  // domaine PRINCIPAL (cart sur le bon domaine)
     if (!window._TL_PRODUCT_HANDLE) {
       const _pid0 = _up0.get('product_id') || '';

@@ -387,23 +387,25 @@
     .tl-choix.tl-on { opacity: 1; }\
     .tl-choix-c {\
       width: 100%; max-width: 620px; max-height: 86vh; box-sizing: border-box;\
-      display: flex; flex-direction: column;\
+      display: flex; flex-direction: column; overflow: hidden;\
       padding: 20px 20px 18px; border-radius: 16px;\
       background: #fff; color: #16161a;\
       box-shadow: 0 18px 60px rgba(0,0,0,.3);\
       transform: translateY(10px) scale(.98); transition: transform .18s ease;\
     }\
     .tl-choix.tl-on .tl-choix-c { transform: none; }\
-    .tl-choix-t { font-weight: 600; font-size: 16px; margin: 0 30px 4px 2px; }\
-    .tl-choix-s { font-size: 13px; opacity: .62; margin: 0 30px 16px 2px; }\
+    .tl-choix-corps { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }\
+    .tl-choix-t { font-weight: 600; font-size: 16px; margin: 0 30px 4px 2px; flex-shrink: 0; }\
+    .tl-choix-s { font-size: 13px; opacity: .62; margin: 0 30px 16px 2px; flex-shrink: 0; }\
     .tl-choix-x {\
       position: absolute; top: 14px; right: 14px; width: 32px; height: 32px;\
       padding: 0; border: 0; border-radius: 50%; cursor: pointer;\
       background: rgba(0,0,0,.06); color: #16161a; font-size: 19px; line-height: 1;\
     }\
     .tl-choix-g {\
-      display: grid; gap: 12px; overflow-y: auto; padding: 2px;\
+      display: grid; gap: 12px; padding: 2px;\
       grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));\
+      flex: 1 1 auto; min-height: 0; overflow-y: auto;\
     }\
     .tl-choix-i { display: block; text-decoration: none; color: inherit; min-width: 0; }\
     .tl-choix-v {\
@@ -417,8 +419,12 @@
       display: inline-flex; align-items: center; gap: 6px; margin: 0 0 12px;\
       padding: 7px 12px 7px 9px; border: 0; border-radius: 9px; cursor: pointer;\
       background: rgba(0,0,0,.06); color: inherit; font: inherit; font-size: 12.5px;\
+      flex-shrink: 0;\
     }\
-    .tl-choix-tailles { display: flex; flex-wrap: wrap; gap: 8px; }\
+    .tl-choix-tailles {\
+      display: flex; flex-wrap: wrap; align-content: flex-start; gap: 8px;\
+      flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 2px 2px 4px;\
+    }\
     .tl-choix-taille {\
       padding: 11px 16px; border: 1px solid rgba(0,0,0,.18); border-radius: 9px;\
       background: #fff; color: inherit; font: inherit; font-size: 13.5px; cursor: pointer;\
@@ -1328,6 +1334,7 @@
     x.textContent = '\u00d7';
 
     var corps = document.createElement('div');
+    corps.className = 'tl-choix-corps';
 
     // ── Premier temps : le support ──────────────────────────────────────
     var etapeSupports = function () {
@@ -1369,7 +1376,33 @@
       corps.appendChild(t); corps.appendChild(st); corps.appendChild(g);
     };
 
-    // ── Second temps : la variante ──────────────────────────────────────
+    // Construit la grille de boutons taille (réutilisée par le cas simple
+    // ET par le 3e temps "taille d'une couleur donnée").
+    var construireGrilleVariantes = function (variantes, surChoix) {
+      var g = document.createElement('div');
+      g.className = 'tl-choix-tailles';
+      variantes.forEach(function (va) {
+        var b = document.createElement('button');
+        b.type = 'button'; b.className = 'tl-choix-taille';
+        b.textContent = va.nom;
+        if (!va.dispo) { b.disabled = true; b.title = 'Épuisé'; }
+        else b.addEventListener('click', function () { surChoix(va); });
+        g.appendChild(b);
+      });
+      return g;
+    };
+
+    // Un produit comme IB311 (14 couleurs x 7 tailles ~ 100 variantes)
+    // affichait TOUTES les combinaisons "Couleur / Taille" a plat dans une
+    // seule grille non bornee en hauteur : ca debordait du modal (coupe par
+    // le bas de l'ecran, aucun scroll possible -- .tl-choix-tailles n'avait
+    // ni hauteur bornee ni overflow). Au-dela du seuil ci-dessous ET quand
+    // le nom de variante a bien la forme "Couleur / Taille", on scinde en
+    // 2 temps : couleur d'abord (chips), taille ensuite -- un produit a une
+    // seule dimension (la majorite : juste des tailles) n'est pas concerne,
+    // comportement strictement inchange pour lui.
+    var SEUIL_GROUPAGE_COULEUR = 8;
+
     var etapeTailles = function (f) {
       corps.innerHTML = '';
       var retour = document.createElement('button');
@@ -1380,18 +1413,59 @@
       var t = document.createElement('div');
       t.className = 'tl-choix-t'; t.textContent = f.titre;
       var st = document.createElement('p');
+      st.className = 'tl-choix-s';
+
+      corps.appendChild(retour); corps.appendChild(t); corps.appendChild(st);
+
+      // Regroupe par 1er segment ("Couleur / Taille" -> "Couleur"). Si UNE
+      // seule variante n'a pas ce format (ex. juste "M"), on renonce au
+      // groupage plutot que de perdre une taille en route.
+      var groupes = {}, ordreGroupes = [], formatUniforme = true;
+      f.variantes.forEach(function (va) {
+        var idx = va.nom.indexOf(' / ');
+        if (idx < 0) { formatUniforme = false; return; }
+        var grp = va.nom.slice(0, idx);
+        var reste = va.nom.slice(idx + 3);
+        if (!groupes[grp]) { groupes[grp] = []; ordreGroupes.push(grp); }
+        groupes[grp].push({ id: va.id, nom: reste || va.nom, dispo: va.dispo });
+      });
+
+      if (formatUniforme && ordreGroupes.length >= 2 && f.variantes.length > SEUIL_GROUPAGE_COULEUR) {
+        st.textContent = 'Choisissez votre couleur.';
+        var gc = construireGrilleVariantes(
+          ordreGroupes.map(function (grp) {
+            return { nom: grp, dispo: groupes[grp].some(function (v) { return v.dispo; }) };
+          }),
+          function (choisie) { etapeTaillesDuGroupe(f, choisie.nom, groupes[choisie.nom]); }
+        );
+        corps.appendChild(gc);
+        var premiereCouleur = gc.querySelector('.tl-choix-taille:not([disabled])');
+        if (premiereCouleur) premiereCouleur.focus();
+        return;
+      }
+
+      st.textContent = 'Choisissez votre taille, puis la création s\'ouvre.';
+      var g = construireGrilleVariantes(f.variantes, function (va) { _tlLancerStudio(f.handle, va.id); });
+      corps.appendChild(g);
+      var premier = g.querySelector('.tl-choix-taille:not([disabled])');
+      if (premier) premier.focus();
+    };
+
+    // Troisieme temps (uniquement si regroupement par couleur) : la taille,
+    // une fois la couleur choisie.
+    var etapeTaillesDuGroupe = function (f, grp, variantesDuGroupe) {
+      corps.innerHTML = '';
+      var retour = document.createElement('button');
+      retour.type = 'button'; retour.className = 'tl-choix-retour';
+      retour.textContent = '\u2190 Changer de couleur';
+      retour.addEventListener('click', function () { etapeTailles(f); });
+
+      var t = document.createElement('div');
+      t.className = 'tl-choix-t'; t.textContent = f.titre + ' \u2014 ' + grp;
+      var st = document.createElement('p');
       st.className = 'tl-choix-s'; st.textContent = 'Choisissez votre taille, puis la création s\'ouvre.';
 
-      var g = document.createElement('div');
-      g.className = 'tl-choix-tailles';
-      f.variantes.forEach(function (va) {
-        var b = document.createElement('button');
-        b.type = 'button'; b.className = 'tl-choix-taille';
-        b.textContent = va.nom;
-        if (!va.dispo) { b.disabled = true; b.title = 'Épuisé'; }
-        else b.addEventListener('click', function () { _tlLancerStudio(f.handle, va.id); });
-        g.appendChild(b);
-      });
+      var g = construireGrilleVariantes(variantesDuGroupe, function (va) { _tlLancerStudio(f.handle, va.id); });
 
       corps.appendChild(retour); corps.appendChild(t); corps.appendChild(st); corps.appendChild(g);
       var premier = g.querySelector('.tl-choix-taille:not([disabled])');
@@ -1477,14 +1551,24 @@
     window.location.assign(_tlProductPageUrl(handle));
   }
 
+  // TSL-008/TSL-009 : cette fonction ne doit JAMAIS retourner le variant_id
+  // d'un AUTRE produit que celui désigné par `link`. `main` a été retiré du
+  // scope : dans les thèmes Shopify 2.0 (Dawn et dérivés), <main id="MainContent">
+  // enveloppe TOUTE la page (produits recommandés, "récemment vus", upsell…),
+  // donc une recherche `main.querySelector(...)` pouvait remonter le
+  // formulaire d'ajout au panier d'un produit B affiché plus haut dans le DOM
+  // que le bouton Personnaliser du produit A — d'où un ajout panier sur le
+  // mauvais produit/variante. Si aucune section correctement scopée n'est
+  // trouvée, on ne devine plus via tout le document : le variant_id du lien
+  // (posé par Liquid pour CE produit précis) reste la valeur de repli, dans
+  // l'appelant `_tlEditorRequest`.
   function _tlCurrentVariantId(link) {
     var scope = link && link.closest
-      ? (link.closest('.shopify-section, product-info, main') || document)
-      : document;
+      ? link.closest('.shopify-section, product-info')
+      : null;
+    if (!scope) return '';
     var input = scope.querySelector('form[action*="/cart/add"] input[name="id"]')
-      || document.querySelector('form[action*="/cart/add"] input[name="id"]')
-      || document.querySelector('product-form input[name="id"]')
-      || document.querySelector('input[name="id"][value]');
+      || scope.querySelector('product-form input[name="id"]');
     var value = input && input.value ? String(input.value).trim() : '';
     return /^\d+$/.test(value) ? value : '';
   }

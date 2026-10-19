@@ -158,8 +158,13 @@ test('le studio et utils/print-tiers appliquent la même règle de surcoût', ()
   assert.match(studio, /Math\.max\(0, Math\.round\(\(f - r\) \* 100\) \/ 100\)/);
 
   // Le checkout résout la variante sur le SURCOÛT, jamais sur le coût total.
-  assert.match(studio, /if \(_extraDue > 0\) \{/);
   assert.match(studio, /amount: _extraDue\.toFixed\(2\)/);
+  // TSL-008/TSL-009 : la résolution+validation de variante tourne désormais
+  // INCONDITIONNELLEMENT (plus de `if (_extraDue > 0)`), y compris pour le
+  // cas « sans impression » le plus fréquent — sinon le serveur n'a jamais
+  // l'occasion de vérifier que la variante appartient au bon produit.
+  assert.doesNotMatch(studio, /if \(_extraDue > 0\) \{/);
+  assert.match(studio, /_TL_PRODUCT_ID_NUM/);
 
   // Les templates écrits par le studio portent la référence de prix et la zone
   // d'impression. Le numéro de version n'est pas figé ici : il évolue à chaque

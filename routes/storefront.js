@@ -679,23 +679,47 @@ async function resolveVariantForCustomization(p) {
 
   if (!baseVariantId) return { ok: false, error: 'baseVariantId manquant' };
 
+  let productId = p.productId ? String(p.productId).trim() : '';
+
+  // ── Garde d'intégrité TSL-008/TSL-009 ────────────────────────────────────
+  // Quand l'appelant connaît déjà le produit affiché dans l'éditeur (cas
+  // normal : studio ouvert depuis une fiche produit), on vérifie que la
+  // variante de base appartient RÉELLEMENT à CE produit avant d'aller plus
+  // loin. Sans ce contrôle, un variant_id erroné côté client (capté par
+  // erreur sur un autre produit affiché sur la même page storefront) ferait
+  // ajouter au panier le produit propriétaire de ce variant_id — pas celui
+  // montré dans le canvas — exactement le signalement client « produit A
+  // ouvert/acheté à la place de B ».
+  let baseVariantLookup = null;
+  if (productId) {
+    try { baseVariantLookup = await fetchAdminVariantById(shopRecord, baseVariantId); }
+    catch (_) { /* réseau/Admin indisponible : pas de blocage sur l'indisponibilité elle-même */ }
+    if (baseVariantLookup && String(baseVariantLookup.product_id) !== productId) {
+      console.warn('[resolve-variant] variante/produit incohérents — ajout refusé :', JSON.stringify({
+        expected_product_id: productId,
+        base_variant_id: baseVariantId,
+        actual_product_id: baseVariantLookup.product_id,
+      }));
+      return { ok: false, error: 'La variante sélectionnée n\'appartient pas au produit personnalisé.' };
+    }
+  }
+
   // CAS « Sans impression » (montant 0) → on garde la variante de base telle quelle.
   if (amount <= 0) {
     let price = null;
     try {
-      const v = await fetchAdminVariantById(shopRecord, baseVariantId);
+      const v = baseVariantLookup || await fetchAdminVariantById(shopRecord, baseVariantId);
       price = v ? Number(v.price) : null;
     } catch (_) {}
     return { ok: true, variant_id: baseVariantId, price, source: 'base', amount: 0 };
   }
 
   // Charger le produit (options + variants).
-  let productId = p.productId ? String(p.productId).trim() : '';
   let baseVariant = null;
   let product = null;
   try {
     if (!productId) {
-      const v = await fetchAdminVariantById(shopRecord, baseVariantId);
+      const v = baseVariantLookup || await fetchAdminVariantById(shopRecord, baseVariantId);
       if (v) { productId = String(v.product_id); }
     }
     if (productId) product = await fetchAdminProductById(shopRecord, productId);
