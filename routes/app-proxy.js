@@ -68,13 +68,33 @@ function requireProxyHMAC(req, res, next) {
   next();
 }
 
+// URL publique de CE backend (multi-déploiement : app publique en review vs
+// app Custom par marchand, chacune sur son propre domaine Railway). Le reste
+// du code accepte indifféremment APP_URL ou SHOPIFY_APP_URL (server.js,
+// routes/designs.js, routes/render.js, routes/email.js, routes/mockup-gen.js)
+// — ce module ne lisait jusqu'ici QUE SHOPIFY_APP_URL, une incohérence qui
+// aurait servi les scripts storefront avec l'origin backend EN DUR (celui de
+// l'app publique) à tout déploiement n'ayant que APP_URL de configuré. Avertit
+// bruyamment si aucune des deux n'est définie : avant ce correctif, l'origin
+// en dur restait silencieusement dans le JS servi, cassant tous les flags
+// storefront qui l'appellent (resume_design_enabled, email_resume_enabled,
+// cart_edit_design_enabled, same_design_*_enabled, print_guarantee_banner_enabled…)
+// sans qu'aucune erreur ne soit visible où que ce soit.
+function resolveAppUrl(context) {
+  const url = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
+  if (!url) {
+    console.error(`⚠️  APP_URL/SHOPIFY_APP_URL absent — ${context} servi avec l'origin backend en dur, les flags storefront ne fonctionneront pas sur ce déploiement.`);
+  }
+  return url;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /proxy — Page d'accueil embed (HTML renvoyé à Shopify)
 // Shopify injecte ce contenu dans le thème de la boutique
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/', requireProxyHMAC, (req, res) => {
   const shop          = req.query.shop || '';
-  const appUrl        = process.env.SHOPIFY_APP_URL || '';
+  const appUrl        = resolveAppUrl('/proxy');
   const productId     = req.query.product_id || '';
   const productHandle = req.query.product    || '';
 
@@ -194,7 +214,7 @@ router.get('/', requireProxyHMAC, (req, res) => {
 // GET /proxy/editor — Redirect direct vers le studio (utilisé en lien direct)
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/editor', requireProxyHMAC, (req, res) => {
-  const appUrl = process.env.SHOPIFY_APP_URL || '';
+  const appUrl = resolveAppUrl('/proxy/editor');
   const params = new URLSearchParams({
     shop:       req.query.shop || '',
     product_id: req.query.product_id || '',
@@ -239,7 +259,7 @@ router.get('/designs/:id', requireProxyHMAC, (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/tl-modal.js', requireProxyHMAC, (req, res) => {
   const fs     = require('fs');
-  const appUrl = (process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
+  const appUrl = resolveAppUrl('tl-modal.js');
   fs.readFile(path.join(__dirname, '..', 'public', 'tl-modal.js'), 'utf8', (err, js) => {
     if (err) return res.status(404).type('application/javascript').send('// tl-modal.js introuvable');
     const out = appUrl
@@ -259,7 +279,7 @@ router.get('/tl-modal.js', requireProxyHMAC, (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/tl-designs.js', requireProxyHMAC, (req, res) => {
   const fs     = require('fs');
-  const appUrl = (process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
+  const appUrl = resolveAppUrl('tl-designs.js');
   fs.readFile(path.join(__dirname, '..', 'public', 'tl-designs.js'), 'utf8', (err, js) => {
     if (err) return res.status(404).type('application/javascript').send('// tl-designs.js introuvable');
     const out = appUrl
@@ -282,7 +302,7 @@ router.get('/tl-designs.js', requireProxyHMAC, (req, res) => {
 function servirScriptStorefront(nom) {
   return (req, res) => {
     const fs     = require('fs');
-    const appUrl = (process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
+    const appUrl = resolveAppUrl(nom);
     fs.readFile(path.join(__dirname, '..', 'public', nom), 'utf8', (err, js) => {
       if (err) return res.status(404).type('application/javascript').send(`// ${nom} introuvable`);
       const out = appUrl
@@ -299,7 +319,7 @@ router.get('/tsl-engine.js', requireProxyHMAC, servirScriptStorefront('tsl-engin
 
 router.get('/tl-editor.js', requireProxyHMAC, (req, res) => {
   const fs     = require('fs');
-  const appUrl = (process.env.SHOPIFY_APP_URL || '').replace(/\/$/, '');
+  const appUrl = resolveAppUrl('tl-editor.js');
   fs.readFile(path.join(__dirname, '..', 'public', 'tl-editor.js'), 'utf8', (err, js) => {
     if (err) return res.status(404).type('application/javascript').send('// tl-editor.js introuvable');
     const out = appUrl

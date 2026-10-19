@@ -44,6 +44,24 @@
   // uniquement (mobile toujours en plein écran par construction).
   var _TL_PANEL_MODE_STUDIO_ENABLED = false;
 
+  // Flag item 32 (même création, dans une autre taille, sans repasser par le
+  // studio) : même mécanique, lu une fois par _tlLoadStyleSettings. false
+  // tant que la réponse n'est pas arrivée (comportement identique à
+  // aujourd'hui : rien ne s'affiche après l'ajout au panier).
+  var _TL_SAME_DESIGN_OTHER_SIZE_ENABLED = false;
+
+  // Flag item 33 (2e exemplaire identique, spec de repli du 15/10 — sans
+  // aucun pourcentage de remise calculé/affiché par TSL) : même mécanique,
+  // lu une fois par _tlLoadStyleSettings. Complète _TL_SAME_DESIGN_OTHER_SIZE_
+  // ENABLED sans le chevaucher (autre taille vs même variante).
+  var _TL_SAME_DESIGN_SECOND_UNIT_ENABLED = false;
+
+  // Flag item 37 (bandeau "défaut d'impression refait gratuitement" après
+  // l'ajout au panier) : même mécanique, lu une fois par
+  // _tlLoadStyleSettings. false tant que la réponse n'est pas arrivée
+  // (comportement identique à aujourd'hui : rien ne s'affiche).
+  var _TL_PRINT_GUARANTEE_BANNER_ENABLED = false;
+
   // Clé ("<variantId>:<hash>") de la ligne de panier en cours de modification
   // via le bouton "Modifier" (item 26), le temps que le nouvel ajout soit
   // confirmé — remise à null après la suppression de l'ancienne ligne OU à la
@@ -370,6 +388,94 @@
     .tl-email-resume-msg { display: block; margin-top: 6px; font-size: 12px; opacity: .8; }\
   ';
 
+  // Encart "Vous voulez aussi cette création en [taille] ?" (item 32) : même
+  // famille visuelle discrète que .tl-resume/.tl-email-resume ci-dessus,
+  // posé juste au-dessus du bouton "Personnaliser" après un ajout au panier
+  // réussi — jamais un popup qui s'impose.
+  var TL_OTHER_SIZE_CSS = '\
+    .tl-other-size {\
+      display: flex;\
+      flex-wrap: wrap;\
+      align-items: center;\
+      justify-content: space-between;\
+      gap: 8px;\
+      margin: 0 0 8px;\
+      padding: 10px 12px;\
+      border-radius: 10px;\
+      border: 1px solid rgba(0,0,0,.12);\
+      background: rgba(0,0,0,.03);\
+      font: 400 13px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\
+      color: inherit;\
+    }\
+    .tl-other-size-t { font-weight: 600; }\
+    .tl-other-size-a { display: flex; gap: 10px; flex-shrink: 0; flex-wrap: wrap; }\
+    .tl-other-size-b, .tl-other-size-z {\
+      border: 0;\
+      background: none;\
+      padding: 0;\
+      font: inherit;\
+      font-weight: 600;\
+      text-decoration: underline;\
+      cursor: pointer;\
+      color: inherit;\
+    }\
+    .tl-other-size-z { font-weight: 400; opacity: .7; }\
+    .tl-other-size-b[disabled] { opacity: .5; cursor: default; text-decoration: none; }\
+    .tl-other-size-msg { flex-basis: 100%; font-size: 12px; opacity: .8; color: #b42318; }\
+  ';
+
+  // Encart "Ajouter un 2e exemplaire identique" (item 33, spec de repli du
+  // 15/10 — sans aucun pourcentage de remise calculé/affiché par TSL) : même
+  // famille visuelle que .tl-other-size ci-dessus, classe racine distincte
+  // pour ne pas être effacé par le "var vieux = querySelector('.tl-other-size')"
+  // de _tlInjectOtherSizeOffer (les deux encarts peuvent coexister, empilés).
+  var TL_SECOND_UNIT_CSS = '\
+    .tl-second-unit {\
+      display: flex;\
+      flex-wrap: wrap;\
+      align-items: center;\
+      justify-content: space-between;\
+      gap: 8px;\
+      margin: 0 0 8px;\
+      padding: 10px 12px;\
+      border-radius: 10px;\
+      border: 1px solid rgba(0,0,0,.12);\
+      background: rgba(0,0,0,.03);\
+      font: 400 13px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\
+      color: inherit;\
+    }\
+    .tl-second-unit-t { font-weight: 600; }\
+    .tl-second-unit-a { display: flex; gap: 10px; flex-shrink: 0; flex-wrap: wrap; }\
+    .tl-second-unit-b, .tl-second-unit-z {\
+      border: 0;\
+      background: none;\
+      padding: 0;\
+      font: inherit;\
+      font-weight: 600;\
+      text-decoration: underline;\
+      cursor: pointer;\
+      color: inherit;\
+    }\
+    .tl-second-unit-z { font-weight: 400; opacity: .7; }\
+    .tl-second-unit-b[disabled] { opacity: .5; cursor: default; text-decoration: none; }\
+    .tl-second-unit-msg { flex-basis: 100%; font-size: 12px; opacity: .8; color: #b42318; }\
+  ';
+
+  // Bandeau de confiance "défaut d'impression refait gratuitement" (item 37) :
+  // même famille visuelle discrète que .tl-other-size/.tl-second-unit
+  // ci-dessus, mais sans bouton ni action — une seule ligne de texte.
+  var TL_PRINT_GUARANTEE_CSS = '\
+    .tl-print-guarantee {\
+      margin: 0 0 8px;\
+      padding: 10px 12px;\
+      border-radius: 10px;\
+      border: 1px solid rgba(0,0,0,.12);\
+      background: rgba(0,0,0,.03);\
+      font: 600 13px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\
+      color: inherit;\
+    }\
+  ';
+
   // NOTE : ne pas nommer cette variable "CSS" — cela écraserait window.CSS
   // (l'API globale) dans le scope de l'IIFE et ferait planter CSS.escape().
   // ── Sélecteur de support, ouvert depuis un lien de menu ──────────────────
@@ -465,7 +571,7 @@
         box-shadow: 0 20px 60px rgba(0, 0, 0, .4);\
       }\
     }\
-  ' + CART_FIX_CSS + TL_CTA_CSS + TL_UPSELL_CSS + TL_RESUME_CSS + TL_EMAIL_RESUME_CSS + TL_CHOIX_CSS;
+  ' + CART_FIX_CSS + TL_CTA_CSS + TL_UPSELL_CSS + TL_RESUME_CSS + TL_EMAIL_RESUME_CSS + TL_OTHER_SIZE_CSS + TL_SECOND_UNIT_CSS + TL_PRINT_GUARANTEE_CSS + TL_CHOIX_CSS;
 
   // ── Injection des éléments DOM ──────────────────────────────────────────────
   function injectDOM() {
@@ -556,21 +662,40 @@
   // ── Section Rendering API : id de la section du drawer panier ───────────────
   // Permet de demander à Shopify le HTML frais du drawer lors de /cart/add, et
   // de l'injecter → le produit apparaît dès la 1re ouverture (fini le "2 fois").
+  // Certains thèmes (dont Dawn et ses dérivés) ne montent le markup du
+  // drawer panier dans le DOM qu'une fois le panier non-vide, ou seulement
+  // après une première ouverture — jamais au tout premier chargement de
+  // page d'une session neuve, cart.item_count valant alors 0. Sans repli,
+  // le tout 1er ajout au panier d'un nouveau visiteur ne trouvait aucun
+  // élément à sonder : aucun id de section déterminé, donc aucune section
+  // demandée à /cart/add.json, donc rien à injecter — le panier semblait
+  // vide jusqu'à un 2e ajout (le drawer existe alors enfin) ou un rechargement
+  // complet (rendu serveur, cart.item_count à jour). "cart-drawer" est le nom
+  // de section quasi universel des thèmes Shopify 2.0 : tenté par défaut
+  // même si rien n'est encore visible dans le DOM, pour toujours demander
+  // la bonne donnée au serveur dès le premier ajout.
   function _tlCartDrawerSectionId() {
     var el = document.querySelector(
       'cart-drawer-component, cart-drawer, #CartDrawer, #cart-drawer, .cart-drawer, .drawer--cart'
     );
     var sec = el && el.closest ? el.closest('.shopify-section') : null;
     if (sec && sec.id) return sec.id.replace(/^shopify-section-/, '');
-    if (document.getElementById('shopify-section-cart-drawer')) return 'cart-drawer';
-    return null;
+    return 'cart-drawer';
   }
   function _tlInjectSectionHTML(sectionId, html) {
     try {
-      var wrap = document.getElementById('shopify-section-' + sectionId);
-      if (!wrap || !html) return;
+      if (!html) return;
       var parsed = new DOMParser().parseFromString(html, 'text/html');
       var fresh  = parsed.getElementById('shopify-section-' + sectionId);
+      var wrap   = document.getElementById('shopify-section-' + sectionId);
+      if (!wrap) {
+        // Le wrapper n'existe pas encore (1er ajout d'une session neuve, cart
+        // vide au chargement) : l'insérer tel que rendu par le serveur plutôt
+        // que de perdre ce rendu — c'est précisément ce qui manquait pour
+        // que le drawer existe dès le premier ajout, pas seulement le 2e.
+        if (fresh) document.body.appendChild(fresh);
+        return;
+      }
       wrap.innerHTML = fresh ? fresh.innerHTML : (parsed.body ? parsed.body.innerHTML : wrap.innerHTML);
     } catch (e) { /* silencieux — on garde l'ancien contenu */ }
   }
@@ -1150,6 +1275,19 @@
 
               // 6. Suggestions curées par le marchand pour ce produit.
               _tlProposerUpsell(e.data);
+
+              // 7. Même création, dans une autre taille (item 32) — sous flag,
+              //    jamais bloquant pour l'ajout déjà confirmé ci-dessus.
+              _tlOfferOtherSize(_vid, _props, _previewUrl);
+
+              // 8. 2e exemplaire identique, même variante (item 33) — sous
+              //    flag, aucune remise calculée/affichée, jamais bloquant.
+              _tlOfferSecondUnit(_vid, _props, _previewUrl);
+
+              // 9. Bandeau de confiance "défaut d'impression refait
+              //    gratuitement" (item 37) — sous flag, pur affichage,
+              //    jamais bloquant.
+              _tlShowPrintGuaranteeBanner();
             })
             .catch(function(err) {
               document.body.classList.remove('tl-cart-loading');
@@ -1164,6 +1302,8 @@
                     f.contentWindow.postMessage({ type: 'tl-add-failed', message: err.message }, '*');
                   }
                 } catch (e2) {}
+                var _errShop = (window.Shopify && window.Shopify.shop) || window._TL_SHOP || window.location.hostname;
+                _tlTrackCartError(_errShop, _vid, err.message);
                 alert('L\'ajout au panier a été refusé : ' + err.message
                     + '\n\nRéessayez dans quelques secondes.');
                 return;
@@ -1551,24 +1691,25 @@
     window.location.assign(_tlProductPageUrl(handle));
   }
 
-  // TSL-008/TSL-009 : cette fonction ne doit JAMAIS retourner le variant_id
-  // d'un AUTRE produit que celui désigné par `link`. `main` a été retiré du
-  // scope : dans les thèmes Shopify 2.0 (Dawn et dérivés), <main id="MainContent">
-  // enveloppe TOUTE la page (produits recommandés, "récemment vus", upsell…),
-  // donc une recherche `main.querySelector(...)` pouvait remonter le
-  // formulaire d'ajout au panier d'un produit B affiché plus haut dans le DOM
-  // que le bouton Personnaliser du produit A — d'où un ajout panier sur le
-  // mauvais produit/variante. Si aucune section correctement scopée n'est
-  // trouvée, on ne devine plus via tout le document : le variant_id du lien
-  // (posé par Liquid pour CE produit précis) reste la valeur de repli, dans
-  // l'appelant `_tlEditorRequest`.
+  // Variante actuellement sélectionnée sur LA fiche produit qui porte ce
+  // bouton — jamais une autre. Sur une page qui affiche plusieurs produits
+  // (recommandations, upsell, carrousel « vu récemment »), chacun a son
+  // propre formulaire /cart/add : si le bouton n'est pas retrouvé dans une
+  // section scopée à SON produit, on ne doit PAS deviner avec le premier
+  // formulaire du document entier — ce serait potentiellement celui d'un
+  // AUTRE produit, et le client ajouterait au panier un produit différent de
+  // celui qu'il vient de personnaliser (variante sans rapport avec le
+  // product_id déjà correct, transmis par ailleurs dans l'URL). Mieux vaut
+  // ne rien trouver ici : l'appelant retombe alors sur `variant_id` déjà
+  // posé dans l'URL par Liquid pour CE produit (voir personalise-button.liquid).
   function _tlCurrentVariantId(link) {
     var scope = link && link.closest
-      ? link.closest('.shopify-section, product-info')
+      ? link.closest('.shopify-section, product-info, main')
       : null;
     if (!scope) return '';
     var input = scope.querySelector('form[action*="/cart/add"] input[name="id"]')
-      || scope.querySelector('product-form input[name="id"]');
+      || scope.querySelector('product-form input[name="id"]')
+      || scope.querySelector('input[name="id"][value]');
     var value = input && input.value ? String(input.value).trim() : '';
     return /^\d+$/.test(value) ? value : '';
   }
@@ -1752,6 +1893,19 @@
           // si le studio est déjà ouvert quand la réponse arrive, il reste en
           // plein écran jusqu'à la fermeture suivante (pas de bascule à chaud).
           _TL_PANEL_MODE_STUDIO_ENABLED = !!data.panel_mode_studio_enabled;
+          // Flag item 32 (même création, autre taille) : simple mémorisation,
+          // consommée par _tlOfferOtherSize() juste après un ajout au panier
+          // réussi — pas d'appel réseau supplémentaire ici.
+          _TL_SAME_DESIGN_OTHER_SIZE_ENABLED = !!data.same_design_other_size_enabled;
+          // Flag item 33 (2e exemplaire identique) : simple mémorisation,
+          // consommée par _tlOfferSecondUnit() juste après un ajout au panier
+          // réussi — pas d'appel réseau supplémentaire ici.
+          _TL_SAME_DESIGN_SECOND_UNIT_ENABLED = !!data.same_design_second_unit_enabled;
+          // Flag item 37 (bandeau "défaut d'impression refait gratuitement") :
+          // simple mémorisation, consommée par _tlShowPrintGuaranteeBanner()
+          // juste après un ajout au panier réussi — pas d'appel réseau
+          // supplémentaire ici.
+          _TL_PRINT_GUARANTEE_BANNER_ENABLED = !!data.print_guarantee_banner_enabled;
         })
         .catch(function() {});
     } catch (e) { /* silencieux */ }
@@ -2034,6 +2188,296 @@
     container.parentNode.insertBefore(el, container);
   }
 
+  // ── Même création, dans une autre taille, sans repasser par le studio (item 32) ─
+  //
+  // Un client qui vient d'ajouter sa création au panier dans une taille peut
+  // vouloir la même création dans une 2e taille (pour lui-même ou pour un
+  // proche) — aujourd'hui il doit fermer le studio, changer la taille sur la
+  // fiche, le rouvrir et tout redessiner de zéro. Le fichier d'impression
+  // (design_id/layers_json) n'est jamais lié à une variant_id Shopify : la
+  // même création reste valide quelle que soit la taille, il suffit de poser
+  // une 2e ligne panier avec les mêmes `properties` (donc le même
+  // `_design_id`/`_preview_img`) et une `id` de variante différente — jamais
+  // de réouverture du studio, jamais de nouveau rendu Fabric.js.
+  //
+  // Ce n'est PAS la "commande groupée" rejetée par Alan : un seul acheteur,
+  // une seule création, un 2e exemplaire pour lui-même/un proche dans une
+  // autre taille — pas plusieurs personnes différentes dans une commande
+  // partagée.
+  function _tlOtherSizeDismissKey(designId, variantId) {
+    return 'tl_other_size_dismissed_' + (designId || 'na') + '_' + variantId;
+  }
+
+  function _tlOfferOtherSize(vid, props, previewUrl) {
+    if (!_TL_SAME_DESIGN_OTHER_SIZE_ENABLED || !vid) return;
+    var designId = (props && props['_design_id']) || '';
+    try { if (sessionStorage.getItem(_tlOtherSizeDismissKey(designId, vid))) return; } catch (e) { /* stockage indisponible → on propose quand même */ }
+
+    // Même mécanisme que _tlCheckResumeDesign/_tlInjectEmailResumeLink pour
+    // retrouver le produit courant sans appel réseau supplémentaire — ici il
+    // faut un handle (pas seulement un id) pour pouvoir lire /products/<h>.js,
+    // comme le fait déjà _tlFicheSupport pour l'upsell.
+    var btns = document.querySelectorAll('.tl-personalise-btn');
+    var btn = null, ph = '';
+    for (var i = 0; i < btns.length; i++) {
+      var p = _tlBtnProduct(btns[i]);
+      if (p.ph) { btn = btns[i]; ph = p.ph; break; }
+    }
+    if (!btn || !ph) return; // pas de handle connu sur cette page → rien à proposer
+
+    fetch('/products/' + encodeURIComponent(ph) + '.js', { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.text() : ''; })
+      .then(function (txt) {
+        var d = null;
+        try { d = JSON.parse(txt); } catch (e) { /* page de garde, pas un produit */ }
+        if (!d) return;
+        var vidNum = parseInt(vid, 10);
+        // Les autres tailles DISPONIBLES de ce même produit, sans la variante
+        // qui vient d'être ajoutée — au plus 2, pour rester discret.
+        var autres = _tlVariantesDeBase(d).filter(function (v) {
+          return v.id !== vidNum && v.dispo !== false;
+        }).slice(0, 2);
+        if (!autres.length) return;
+        _tlInjectOtherSizeOffer(btn, autres, designId, vid, props, previewUrl);
+      })
+      .catch(function () {}); // jamais bloquant : pas de suggestion, le client continue
+  }
+
+  function _tlInjectOtherSizeOffer(btn, autres, designId, vid, props, previewUrl) {
+    var vieux = document.querySelector('.tl-other-size');
+    if (vieux && vieux.parentNode) vieux.parentNode.removeChild(vieux);
+
+    var el = document.createElement('div');
+    el.className = 'tl-other-size';
+
+    var texte = document.createElement('span');
+    texte.className = 'tl-other-size-t';
+    texte.textContent = autres.length > 1
+      ? 'Vous voulez aussi cette création dans une autre taille ?'
+      : 'Vous voulez aussi cette création en ' + autres[0].nom + ' ?';
+    el.appendChild(texte);
+
+    var actions = document.createElement('span');
+    actions.className = 'tl-other-size-a';
+
+    autres.forEach(function (v) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'tl-other-size-b';
+      b.textContent = v.nom;
+      b.addEventListener('click', function () {
+        if (b.disabled) return;
+        b.disabled = true;
+        fetch('/cart/add.json', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ items: [{ id: v.id, quantity: 1, properties: props }] }),
+        })
+        // Même piège déjà corrigé le 13/10 pour l'ajout principal : un refus
+        // Shopify (422, variante épuisée entre-temps, etc.) répond souvent un
+        // JSON {status,message,description} avec un code HTTP non-200 — jamais
+        // lire juste r.json() sans vérifier r.ok/data.status, sous peine de
+        // traiter un refus silencieux comme un succès (image injectée pour une
+        // ligne jamais ajoutée, encart masqué, plus jamais reproposé).
+        .then(function (r) {
+          return r.text().then(function (txt) {
+            var data = null;
+            try { data = txt ? JSON.parse(txt) : null; } catch (e) { /* pas du JSON */ }
+            var echec = !r.ok || !data || data.status >= 400;
+            if (echec) {
+              var raison = (data && (data.description || data.message))
+                || String(txt || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)
+                || ('HTTP ' + r.status);
+              var err = new Error(raison);
+              err.panierRefuse = true;
+              throw err;
+            }
+            return data;
+          });
+        })
+        .then(function () {
+          if (previewUrl) {
+            _tlInjectCartImage(v.id, previewUrl);
+            setTimeout(function () { _tlInjectCartImage(v.id, previewUrl); }, 200);
+            setTimeout(function () { _tlInjectCartImage(v.id, previewUrl); }, 600);
+          }
+          _tlFixAllLineItems();
+          setTimeout(_tlFixAllLineItems, 300);
+          try { sessionStorage.setItem(_tlOtherSizeDismissKey(designId, vid), '1'); } catch (e) { /* non bloquant */ }
+          if (el.parentNode) el.parentNode.removeChild(el);
+        })
+        .catch(function (err) {
+          // Jamais bloquant pour le 1er ajout (déjà acquis) : on réactive le
+          // bouton et on le dit, plutôt que de laisser croire que le 2e
+          // exemplaire a été ajouté alors que rien n'est au panier.
+          b.disabled = false;
+          var shop = (window.Shopify && window.Shopify.shop) || window._TL_SHOP || window.location.hostname;
+          _tlTrackCartError(shop, v.id, (err && err.message) || 'other-size-add-failed');
+          var msg = el.querySelector('.tl-other-size-msg');
+          if (!msg) {
+            msg = document.createElement('div');
+            msg.className = 'tl-other-size-msg';
+            el.appendChild(msg);
+          }
+          msg.textContent = 'Ajout impossible pour l\'instant, réessayez.';
+        });
+      });
+      actions.appendChild(b);
+    });
+
+    var fermer = document.createElement('button');
+    fermer.type = 'button';
+    fermer.className = 'tl-other-size-z';
+    fermer.textContent = 'Non merci';
+    fermer.addEventListener('click', function () {
+      try { sessionStorage.setItem(_tlOtherSizeDismissKey(designId, vid), '1'); } catch (e) { /* tant pis, pas bloquant */ }
+      if (el.parentNode) el.parentNode.removeChild(el);
+    });
+    actions.appendChild(fermer);
+
+    el.appendChild(actions);
+
+    var container = _tlCtaContainer(btn);
+    container.parentNode.insertBefore(el, container);
+  }
+
+  // ── "Ajouter un 2e exemplaire identique" (item 33) ──────────────────────────
+  //
+  // Spec de repli du 15/10 (veille CPB) : la V1 originale envisageait une
+  // remise affichée ("-10%"), mais aucune API panier Shopify ni aucun code de
+  // ce dépôt ne sait aujourd'hui créer/piloter une remise réelle — promettre
+  // un pourcentage non tenu au checkout serait un bug de confiance. Cette
+  // version ne calcule ni n'affiche AUCUN pourcentage : juste la même
+  // variante/properties que l'ajout qui vient d'avoir lieu (pas une autre
+  // taille, voir _tlOfferOtherSize ci-dessus), posée une 2e fois au panier —
+  // Shopify fusionne alors les deux lignes identiques en une seule quantité 2,
+  // aucun nouveau rendu Fabric.js nécessaire. Si Alan configure un jour une
+  // remise automatique native Shopify sur ce produit/cette collection, elle
+  // s'appliquera d'elle-même au panier/checkout sans que TSL ait besoin de la
+  // connaître ni de la promettre.
+  function _tlSecondUnitDismissKey(designId, variantId) {
+    return 'tl_second_unit_dismissed_' + (designId || 'na') + '_' + variantId;
+  }
+
+  function _tlOfferSecondUnit(vid, props, previewUrl) {
+    if (!_TL_SAME_DESIGN_SECOND_UNIT_ENABLED || !vid) return;
+    var designId = (props && props['_design_id']) || '';
+    try { if (sessionStorage.getItem(_tlSecondUnitDismissKey(designId, vid))) return; } catch (e) { /* stockage indisponible → on propose quand même */ }
+
+    var btn = document.querySelector('.tl-personalise-btn');
+    if (!btn) return; // aucun bouton sur cette page → rien où ancrer l'encart
+
+    _tlInjectSecondUnitOffer(btn, vid, props, previewUrl, designId);
+  }
+
+  function _tlInjectSecondUnitOffer(btn, vid, props, previewUrl, designId) {
+    var vieux = document.querySelector('.tl-second-unit');
+    if (vieux && vieux.parentNode) vieux.parentNode.removeChild(vieux);
+
+    var el = document.createElement('div');
+    el.className = 'tl-second-unit';
+
+    var texte = document.createElement('span');
+    texte.className = 'tl-second-unit-t';
+    texte.textContent = 'Vous en voulez un 2e exemplaire identique ?';
+    el.appendChild(texte);
+
+    var actions = document.createElement('span');
+    actions.className = 'tl-second-unit-a';
+
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tl-second-unit-b';
+    b.textContent = 'Ajouter un 2e exemplaire';
+    b.addEventListener('click', function () {
+      if (b.disabled) return;
+      b.disabled = true;
+      fetch('/cart/add.json', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ items: [{ id: vid, quantity: 1, properties: props }] }),
+      })
+      // Même détection de refus silencieux que _tlInjectOtherSizeOffer
+      // (bug trouvé le 15/10) : jamais un r.json() non vérifié.
+      .then(function (r) {
+        return r.text().then(function (txt) {
+          var data = null;
+          try { data = txt ? JSON.parse(txt) : null; } catch (e) { /* pas du JSON */ }
+          var echec = !r.ok || !data || data.status >= 400;
+          if (echec) {
+            var raison = (data && (data.description || data.message))
+              || String(txt || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)
+              || ('HTTP ' + r.status);
+            var err = new Error(raison);
+            err.panierRefuse = true;
+            throw err;
+          }
+          return data;
+        });
+      })
+      .then(function () {
+        if (previewUrl) {
+          _tlInjectCartImage(vid, previewUrl);
+          setTimeout(function () { _tlInjectCartImage(vid, previewUrl); }, 200);
+          setTimeout(function () { _tlInjectCartImage(vid, previewUrl); }, 600);
+        }
+        _tlFixAllLineItems();
+        setTimeout(_tlFixAllLineItems, 300);
+        try { sessionStorage.setItem(_tlSecondUnitDismissKey(designId, vid), '1'); } catch (e) { /* non bloquant */ }
+        if (el.parentNode) el.parentNode.removeChild(el);
+      })
+      .catch(function (err) {
+        b.disabled = false;
+        var shop = (window.Shopify && window.Shopify.shop) || window._TL_SHOP || window.location.hostname;
+        _tlTrackCartError(shop, vid, (err && err.message) || 'second-unit-add-failed');
+        var msg = el.querySelector('.tl-second-unit-msg');
+        if (!msg) {
+          msg = document.createElement('div');
+          msg.className = 'tl-second-unit-msg';
+          el.appendChild(msg);
+        }
+        msg.textContent = 'Ajout impossible pour l\'instant, réessayez.';
+      });
+    });
+    actions.appendChild(b);
+
+    var fermer = document.createElement('button');
+    fermer.type = 'button';
+    fermer.className = 'tl-second-unit-z';
+    fermer.textContent = 'Non merci';
+    fermer.addEventListener('click', function () {
+      try { sessionStorage.setItem(_tlSecondUnitDismissKey(designId, vid), '1'); } catch (e) { /* tant pis, pas bloquant */ }
+      if (el.parentNode) el.parentNode.removeChild(el);
+    });
+    actions.appendChild(fermer);
+
+    el.appendChild(actions);
+
+    var container = _tlCtaContainer(btn);
+    container.parentNode.insertBefore(el, container);
+  }
+
+  // Bandeau de confiance "défaut d'impression refait gratuitement" (item 37)
+  // — calqué sur _tlInjectSecondUnitOffer ci-dessus, mais sans bouton ni appel
+  // réseau : une seule ligne de texte, jamais bloquante. Texte placeholder,
+  // à relire/ajuster avec Alan selon la politique réelle de WinShirt avant
+  // activation (flag désactivé par défaut).
+  function _tlShowPrintGuaranteeBanner() {
+    if (!_TL_PRINT_GUARANTEE_BANNER_ENABLED) return;
+    var btn = document.querySelector('.tl-personalise-btn');
+    if (!btn) return; // aucun bouton sur cette page → rien où ancrer le bandeau
+
+    var vieux = document.querySelector('.tl-print-guarantee');
+    if (vieux && vieux.parentNode) vieux.parentNode.removeChild(vieux);
+
+    var el = document.createElement('div');
+    el.className = 'tl-print-guarantee';
+    el.textContent = '✅ Un souci avec l\'impression ? On la refait gratuitement.';
+
+    var container = _tlCtaContainer(btn);
+    container.parentNode.insertBefore(el, container);
+  }
+
   // ── Suggestions après l'ajout au panier (Upsell V2) ────────────────────────
   //
   // Le marchand associe en admin 2 à 4 produits à proposer une fois un
@@ -2134,6 +2578,28 @@
       var url = TSL_BACKEND_ORIGIN
               + '/api/upsell-candidates/track?shop=' + encodeURIComponent(shop);
       var payload = JSON.stringify({ source: source, target: target, event: event });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
+      } else {
+        fetch(url, {
+          method: 'POST', mode: 'cors', credentials: 'omit', keepalive: true,
+          headers: { 'Content-Type': 'application/json' }, body: payload,
+        }).catch(function () {});
+      }
+    } catch (e) { /* jamais bloquant */ }
+  }
+
+  /**
+   * Refus de /cart/add déjà détecté par le client (tl-modal.js), envoyé
+   * sans jamais attendre ni bloquer — même mécanique que _tlTrackUpsell().
+   * Backlog item 31 : objectiver le point P0 (trou paiement commencé →
+   * commande) sans dépendre d'un accès live à Shopify Analytics.
+   */
+  function _tlTrackCartError(shop, variantId, reason) {
+    try {
+      var url = TSL_BACKEND_ORIGIN
+              + '/api/cart-add-errors/track?shop=' + encodeURIComponent(shop);
+      var payload = JSON.stringify({ variantId: variantId, reason: reason });
       if (navigator.sendBeacon) {
         navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
       } else {

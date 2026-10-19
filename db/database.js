@@ -404,6 +404,24 @@ function initDB() {
   `);
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_upsell_events_source ON upsell_events(shop_id, source_shopify_product_id, created_at)"); } catch {}
 
+  // ── Table: cart_add_errors (refus silencieux de /cart/add, backlog item 31) ──
+  // Spec du 13/10 18h (docs/ROADMAP-DEV.md §2, item 31) : le point P0 (trou
+  // paiement commencé → commande) n'est pas mesurable sans accès live Shopify
+  // depuis cet environnement — on trace donc côté serveur TSL les refus que
+  // tl-modal.js détecte déjà (`err.panierRefuse`) mais ne faisait jusqu'ici
+  // que logger en `console.error`/`alert()` côté client, invisible pour nous.
+  // Même forme que upsell_events ci-dessus (copie conforme du pattern).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS cart_add_errors (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      shop_id     INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+      variant_id  TEXT NOT NULL DEFAULT '',
+      reason      TEXT NOT NULL DEFAULT '',
+      created_at  TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_cart_add_errors_shop ON cart_add_errors(shop_id, created_at)"); } catch {}
+
   // ── Table: social_proof_items (vignettes "Ils l'ont fait" curées par shop) ──
   // Backlog item 18 (docs/ROADMAP-DEV.md §2) : preuve sociale visuelle dans le
   // studio (photos de vraies réalisations clients), en complément du bandeau

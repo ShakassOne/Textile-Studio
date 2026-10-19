@@ -512,6 +512,7 @@ app.use((req, res, next) => {
     '/api/social-proof/public',
     '/api/upsell-candidates/public', // ← suggestions après ajout au panier : un CLIENT ne souscrit pas
     '/api/upsell-candidates/track',  // ← tracking impression/clic de l'encart : même raison
+    '/api/cart-add-errors/track',   // ← tracking des refus /cart/add (item 31) : même raison
     '/api/designs/mine',    // ← bandeau "Reprendre ma création" : même raison (item 24)
     // (lien de reprise par email, item 25 : /api/designs/:id/email-resume-link,
     // exemptée juste au-dessous via emailResumeLinkPath — id variable, pas de
@@ -554,6 +555,7 @@ app.use('/api/mockup-gen', express.json({ limit: '10mb' }), require('./routes/mo
 app.use('/api/product-categories', require('./routes/product-categories'));
 app.use('/api/product-links',      require('./routes/product-links'));
 app.use('/api/upsell-candidates',  require('./routes/upsell-candidates'));
+app.use('/api/cart-add-errors',    require('./routes/cart-add-errors'));
 app.use('/api/social-proof',       require('./routes/social-proof'));
 app.use('/api/email',              require('./routes/email'));
 app.use('/api/shopify',    require('./routes/storefront'));

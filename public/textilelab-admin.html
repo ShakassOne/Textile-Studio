@@ -450,6 +450,7 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
           <div class="stat-card"><div class="stat-label">Images bibliothèque</div><div class="stat-value" id="s-library">—</div><div class="stat-delta neutral">Visuels disponibles</div></div>
           <div class="stat-card"><div class="stat-label">Mockups</div><div class="stat-value" id="s-mockups">—</div><div class="stat-delta neutral">Produits configurés</div></div>
           <div class="stat-card"><div class="stat-label">Catégories</div><div class="stat-value" id="s-categories">—</div><div class="stat-delta neutral">Types de produits</div></div>
+          <div class="stat-card"><div class="stat-label">Refus panier silencieux (30j)</div><div class="stat-value" id="s-cart-errors">—</div><div class="stat-delta neutral" id="s-cart-errors-delta">—</div></div>
         </div>
         <div class="product-bars" id="product-bars" style="display:none"></div>
       </div>
@@ -992,6 +993,125 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
           </div>
           <div id="social-proof-list" style="display:flex;flex-direction:column;gap:6px"></div>
           <span id="social-proof-result" style="font-size:12px;color:var(--text3);min-height:16px;display:block;margin-top:6px"></span>
+        </div>
+
+        <!-- Studio — Reprendre ma création (client connecté) -->
+        <div class="table-card" style="padding:20px">
+          <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px">↩️ Studio — Reprendre ma création</h3>
+          <p style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5">Sur la fiche produit, propose au client connecté de reprendre une création récente (30 jours) non encore commandée au lieu de repartir de zéro. <strong style="color:var(--text2)">Désactivé par défaut</strong> — non vérifié visuellement sur une vraie fiche WinShirt dans l'environnement de dev, à activer après vérification visuelle réelle. Prise en compte côté boutique en ~1 min.</p>
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+            <label class="tl-switch">
+              <input type="checkbox" id="resume-design-toggle" onchange="_applyResumeDesignToggle(this.checked)">
+              <span class="tl-switch-slider"></span>
+            </label>
+            <span id="resume-design-state" style="font-size:13px;color:var(--text3)">…</span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+            <button class="btn btn-primary" id="resume-design-save-btn" onclick="saveResumeDesign()">💾 Enregistrer</button>
+            <span id="resume-design-result" style="font-size:12px;color:var(--text3);align-self:center;min-height:16px"></span>
+          </div>
+        </div>
+
+        <!-- Studio — Lien de reprise par email (visiteur non connecté) -->
+        <div class="table-card" style="padding:20px">
+          <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px">✉️ Studio — Lien de reprise par email</h3>
+          <p style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5">À la fermeture volontaire du studio, propose au visiteur non connecté de recevoir par email un lien pour reprendre sa création (complète « Reprendre ma création » qui ne couvre que le client connecté). <strong style="color:var(--text2)">Désactivé par défaut</strong> — non vérifié visuellement sur une vraie fiche WinShirt dans l'environnement de dev, à activer après vérification visuelle réelle. Prise en compte côté boutique en ~1 min.</p>
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+            <label class="tl-switch">
+              <input type="checkbox" id="email-resume-toggle" onchange="_applyEmailResumeToggle(this.checked)">
+              <span class="tl-switch-slider"></span>
+            </label>
+            <span id="email-resume-state" style="font-size:13px;color:var(--text3)">…</span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+            <button class="btn btn-primary" id="email-resume-save-btn" onclick="saveEmailResume()">💾 Enregistrer</button>
+            <span id="email-resume-result" style="font-size:12px;color:var(--text3);align-self:center;min-height:16px"></span>
+          </div>
+        </div>
+
+        <!-- Panier — Bouton "Modifier" sur une ligne personnalisée -->
+        <div class="table-card" style="padding:20px">
+          <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px">✏️ Panier — Bouton « Modifier »</h3>
+          <p style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5">Ajoute un bouton « Modifier » sur une ligne de panier déjà personnalisée, qui rouvre le studio sur cette création et remplace la ligne au lieu d'en ajouter une nouvelle. <strong style="color:var(--text2)">Désactivé par défaut</strong> — non vérifié visuellement sur une vraie fiche WinShirt dans l'environnement de dev, à activer après vérification visuelle réelle. Prise en compte côté boutique en ~1 min.</p>
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+            <label class="tl-switch">
+              <input type="checkbox" id="cart-edit-design-toggle" onchange="_applyCartEditDesignToggle(this.checked)">
+              <span class="tl-switch-slider"></span>
+            </label>
+            <span id="cart-edit-design-state" style="font-size:13px;color:var(--text3)">…</span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+            <button class="btn btn-primary" id="cart-edit-design-save-btn" onclick="saveCartEditDesign()">💾 Enregistrer</button>
+            <span id="cart-edit-design-result" style="font-size:12px;color:var(--text3);align-self:center;min-height:16px"></span>
+          </div>
+        </div>
+
+        <!-- Studio — Panneau partiel desktop -->
+        <div class="table-card" style="padding:20px">
+          <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px">🖥️ Studio — Panneau partiel desktop</h3>
+          <p style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5">Sur desktop uniquement, ouvre le studio dans un panneau centré (fond flouté, coins arrondis, ombre) au lieu du plein écran opaque actuel. Mobile inchangé. <strong style="color:var(--text2)">Désactivé par défaut</strong> — non vérifié visuellement sur une vraie fiche WinShirt dans l'environnement de dev, à activer après vérification visuelle réelle. Prise en compte côté boutique en ~1 min.</p>
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+            <label class="tl-switch">
+              <input type="checkbox" id="panel-mode-studio-toggle" onchange="_applyPanelModeStudioToggle(this.checked)">
+              <span class="tl-switch-slider"></span>
+            </label>
+            <span id="panel-mode-studio-state" style="font-size:13px;color:var(--text3)">…</span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+            <button class="btn btn-primary" id="panel-mode-studio-save-btn" onclick="savePanelModeStudio()">💾 Enregistrer</button>
+            <span id="panel-mode-studio-result" style="font-size:12px;color:var(--text3);align-self:center;min-height:16px"></span>
+          </div>
+        </div>
+
+        <!-- Panier — Même création, autre taille -->
+        <div class="table-card" style="padding:20px">
+          <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px">📐 Panier — Même création, autre taille</h3>
+          <p style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5">Après l'ajout au panier, propose d'ajouter la même création déjà personnalisée dans une autre taille, sans repasser par tout le studio. <strong style="color:var(--text2)">Désactivé par défaut</strong> — non vérifié visuellement sur une vraie fiche WinShirt dans l'environnement de dev, à activer après vérification visuelle réelle. Prise en compte côté boutique en ~1 min.</p>
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+            <label class="tl-switch">
+              <input type="checkbox" id="same-design-other-size-toggle" onchange="_applySameDesignOtherSizeToggle(this.checked)">
+              <span class="tl-switch-slider"></span>
+            </label>
+            <span id="same-design-other-size-state" style="font-size:13px;color:var(--text3)">…</span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+            <button class="btn btn-primary" id="same-design-other-size-save-btn" onclick="saveSameDesignOtherSize()">💾 Enregistrer</button>
+            <span id="same-design-other-size-result" style="font-size:12px;color:var(--text3);align-self:center;min-height:16px"></span>
+          </div>
+        </div>
+
+        <!-- Panier — 2e exemplaire identique -->
+        <div class="table-card" style="padding:20px">
+          <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px">🧍‍♂️🧍‍♂️ Panier — 2ᵉ exemplaire identique</h3>
+          <p style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5">Après l'ajout au panier, propose d'ajouter un 2ᵉ exemplaire identique de la création qu'on vient d'ajouter (même variante, pas une autre taille) — aucune remise calculée ou affichée par TSL. <strong style="color:var(--text2)">Désactivé par défaut</strong> — non vérifié visuellement sur une vraie fiche WinShirt dans l'environnement de dev, à activer après vérification visuelle réelle. Prise en compte côté boutique en ~1 min.</p>
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+            <label class="tl-switch">
+              <input type="checkbox" id="same-design-second-unit-toggle" onchange="_applySameDesignSecondUnitToggle(this.checked)">
+              <span class="tl-switch-slider"></span>
+            </label>
+            <span id="same-design-second-unit-state" style="font-size:13px;color:var(--text3)">…</span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+            <button class="btn btn-primary" id="same-design-second-unit-save-btn" onclick="saveSameDesignSecondUnit()">💾 Enregistrer</button>
+            <span id="same-design-second-unit-result" style="font-size:12px;color:var(--text3);align-self:center;min-height:16px"></span>
+          </div>
+        </div>
+
+        <!-- Panier — Garantie défaut d'impression -->
+        <div class="table-card" style="padding:20px">
+          <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px">✅ Panier — Garantie défaut d'impression</h3>
+          <p style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5">Après l'ajout au panier, affiche une ligne de confiance courte : « Un souci avec l'impression ? On la refait gratuitement. » <strong style="color:var(--text2)">Texte placeholder</strong> — à relire/ajuster avec Alan selon la politique réelle de WinShirt avant activation. <strong style="color:var(--text2)">Désactivé par défaut</strong> — non vérifié visuellement sur une vraie fiche WinShirt dans l'environnement de dev. Prise en compte côté boutique en ~1 min.</p>
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+            <label class="tl-switch">
+              <input type="checkbox" id="print-guarantee-banner-toggle" onchange="_applyPrintGuaranteeBannerToggle(this.checked)">
+              <span class="tl-switch-slider"></span>
+            </label>
+            <span id="print-guarantee-banner-state" style="font-size:13px;color:var(--text3)">…</span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+            <button class="btn btn-primary" id="print-guarantee-banner-save-btn" onclick="savePrintGuaranteeBanner()">💾 Enregistrer</button>
+            <span id="print-guarantee-banner-result" style="font-size:12px;color:var(--text3);align-self:center;min-height:16px"></span>
+          </div>
         </div>
 
         <!-- IA — Formulation d'identité générique du prompt Photo → Illustration -->
@@ -1744,16 +1864,22 @@ async function api(path, opts = {}) {
 async function loadDashboard() {
   const d = new Date();
   document.getElementById('dash-date').textContent = d.toLocaleDateString('fr-FR',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
-  const [stats, libData, mockupData, catData] = await Promise.all([
+  const [stats, libData, mockupData, catData, cartErrorsStats] = await Promise.all([
     api('/api/stats'),
     api('/api/library'),
     api('/api/mockups'),
     api('/api/product-categories'),
+    api('/api/cart-add-errors/stats?days=30'),
   ]);
   document.getElementById('s-designs').textContent   = stats?.designs?.count ?? '—';
   document.getElementById('s-library').textContent   = Array.isArray(libData) ? libData.filter(i => !i.filename?.startsWith('__cat_placeholder_')).length : '—';
   document.getElementById('s-mockups').textContent   = Array.isArray(mockupData) ? mockupData.length : '—';
   document.getElementById('s-categories').textContent = Array.isArray(catData) ? catData.length : '—';
+  document.getElementById('s-cart-errors').textContent = cartErrorsStats?.total ?? '—';
+  const topReason = cartErrorsStats?.topReasons?.[0];
+  document.getElementById('s-cart-errors-delta').textContent = topReason
+    ? `Top : ${topReason.reason} (${topReason.n})`
+    : (cartErrorsStats?.total === 0 ? 'Aucun refus' : '—');
 }
 
 // ============================================
@@ -3486,6 +3612,21 @@ let _plUpsellGrouped = {}; // { source_shopify_product_id: [{id, target_shopify_
 let _plUpsellSourcePid = null; // produit source en cours d'édition dans le modal upsell
 let _plUpsellStats = {}; // { source_shopify_product_id: {impression, click} } — tracking Upsell V2 (30j)
 
+// GET /api/admin/products (GraphQL Admin API) renvoie un GID complet
+// ("gid://shopify/Product/123"), alors que les liaisons sont désormais
+// toujours stockées/renvoyées par le serveur en id numérique brut (fix du
+// 14/10, routes/product-links.js::normalizeProductId) — c'est ce même id
+// numérique que la fiche produit Shopify (Liquid `product.id`) transmet.
+// Sans normaliser p.id ICI, _plLinks[p.id] ne correspond jamais (un GID ne
+// matche jamais une clé numérique) : un produit tout juste lié réapparaît
+// "Non lié" au rechargement de cet écran, alors qu'il l'est bien en base.
+function _normPid(id) {
+  const s = String(id == null ? '' : id).trim();
+  if (!s) return s;
+  const m = s.match(/^gid:\/\/shopify\/\w+\/(\d+)$/);
+  return m ? m[1] : s;
+}
+
 async function loadProductLinks() {
   // Charger mockups + produits Shopify + liaisons existantes + candidats upsell + stats upsell en parallèle
   const [mockupsRaw, shopifyResult, linksRaw, upsellGrouped, upsellStats] = await Promise.all([
@@ -3497,7 +3638,7 @@ async function loadProductLinks() {
   ]);
 
   _plMockups  = Array.isArray(mockupsRaw) ? mockupsRaw : [];
-  _plProducts = shopifyResult.products || [];
+  _plProducts = (shopifyResult.products || []).map(p => ({ ...p, id: _normPid(p.id) }));
   _plLinks    = {};
   if (Array.isArray(linksRaw)) {
     linksRaw.forEach(l => { _plLinks[l.shopify_product_id] = l.mockup_id; });
@@ -4301,6 +4442,13 @@ async function loadSettingsInfo() {
   loadMobilePriceBar();
   loadSocialProof();
   loadAiGenericIdentity();
+  loadResumeDesign();
+  loadEmailResume();
+  loadCartEditDesign();
+  loadPanelModeStudio();
+  loadSameDesignOtherSize();
+  loadSameDesignSecondUnit();
+  loadPrintGuaranteeBanner();
   const [aiStatus, shopStatus] = await Promise.all([api('/api/ai/status'), api('/api/shopify/status')]);
   const svcEl = document.getElementById('services-status');
   if (svcEl) {
@@ -4536,6 +4684,265 @@ async function saveSocialProofToggle() {
     _applySocialProofToggle(!!data.social_proof_enabled);
     if (out) { out.textContent = '✅ Enregistré — visible côté boutique dans ~1 min'; out.style.color = 'var(--success)'; }
     showToast('✅ Preuve sociale ' + (data.social_proof_enabled ? 'activée' : 'désactivée'));
+  } else {
+    if (out) { out.textContent = '❌ ' + (data?.error || 'Erreur inconnue'); out.style.color = 'var(--danger)'; }
+  }
+}
+
+// ── Studio : reprendre ma création (client connecté) ────────────────────────
+function _applyResumeDesignToggle(enabled) {
+  const tog = document.getElementById('resume-design-toggle');
+  const st  = document.getElementById('resume-design-state');
+  if (tog) tog.checked = !!enabled;
+  if (st) {
+    st.textContent  = enabled ? 'Activé — proposé au client connecté sur la fiche produit' : 'Désactivé — pas de proposition de reprise';
+    st.style.color  = enabled ? 'var(--success)' : 'var(--text3)';
+  }
+}
+
+async function loadResumeDesign() {
+  const data = await api('/api/shop-settings/style');
+  _applyResumeDesignToggle(!!(data && data.resume_design_enabled));
+}
+
+async function saveResumeDesign() {
+  const tog = document.getElementById('resume-design-toggle');
+  const out = document.getElementById('resume-design-result');
+  const btn = document.getElementById('resume-design-save-btn');
+  const enabled = !!(tog && tog.checked);
+  if (out) { out.textContent = '⏳ Sauvegarde…'; out.style.color = 'var(--text3)'; }
+  if (btn) btn.disabled = true;
+  const data = await api('/api/shop-settings/style', {
+    method: 'POST',
+    body:   JSON.stringify({ resume_design_enabled: enabled }),
+  });
+  if (btn) btn.disabled = false;
+  if (data?.ok) {
+    _applyResumeDesignToggle(!!data.resume_design_enabled);
+    if (out) { out.textContent = '✅ Enregistré — visible côté boutique dans ~1 min'; out.style.color = 'var(--success)'; }
+    showToast('✅ Reprendre ma création ' + (data.resume_design_enabled ? 'activé' : 'désactivé'));
+  } else {
+    if (out) { out.textContent = '❌ ' + (data?.error || 'Erreur inconnue'); out.style.color = 'var(--danger)'; }
+  }
+}
+
+// ── Studio : lien de reprise par email (visiteur non connecté) ──────────────
+function _applyEmailResumeToggle(enabled) {
+  const tog = document.getElementById('email-resume-toggle');
+  const st  = document.getElementById('email-resume-state');
+  if (tog) tog.checked = !!enabled;
+  if (st) {
+    st.textContent  = enabled ? 'Activé — proposé à la fermeture du studio (visiteur non connecté)' : 'Désactivé — pas de lien de reprise par email';
+    st.style.color  = enabled ? 'var(--success)' : 'var(--text3)';
+  }
+}
+
+async function loadEmailResume() {
+  const data = await api('/api/shop-settings/style');
+  _applyEmailResumeToggle(!!(data && data.email_resume_enabled));
+}
+
+async function saveEmailResume() {
+  const tog = document.getElementById('email-resume-toggle');
+  const out = document.getElementById('email-resume-result');
+  const btn = document.getElementById('email-resume-save-btn');
+  const enabled = !!(tog && tog.checked);
+  if (out) { out.textContent = '⏳ Sauvegarde…'; out.style.color = 'var(--text3)'; }
+  if (btn) btn.disabled = true;
+  const data = await api('/api/shop-settings/style', {
+    method: 'POST',
+    body:   JSON.stringify({ email_resume_enabled: enabled }),
+  });
+  if (btn) btn.disabled = false;
+  if (data?.ok) {
+    _applyEmailResumeToggle(!!data.email_resume_enabled);
+    if (out) { out.textContent = '✅ Enregistré — visible côté boutique dans ~1 min'; out.style.color = 'var(--success)'; }
+    showToast('✅ Lien de reprise par email ' + (data.email_resume_enabled ? 'activé' : 'désactivé'));
+  } else {
+    if (out) { out.textContent = '❌ ' + (data?.error || 'Erreur inconnue'); out.style.color = 'var(--danger)'; }
+  }
+}
+
+// ── Panier : bouton "Modifier" sur une ligne personnalisée ──────────────────
+function _applyCartEditDesignToggle(enabled) {
+  const tog = document.getElementById('cart-edit-design-toggle');
+  const st  = document.getElementById('cart-edit-design-state');
+  if (tog) tog.checked = !!enabled;
+  if (st) {
+    st.textContent  = enabled ? 'Activé — bouton « Modifier » visible dans le tiroir panier' : 'Désactivé — pas de bouton « Modifier »';
+    st.style.color  = enabled ? 'var(--success)' : 'var(--text3)';
+  }
+}
+
+async function loadCartEditDesign() {
+  const data = await api('/api/shop-settings/style');
+  _applyCartEditDesignToggle(!!(data && data.cart_edit_design_enabled));
+}
+
+async function saveCartEditDesign() {
+  const tog = document.getElementById('cart-edit-design-toggle');
+  const out = document.getElementById('cart-edit-design-result');
+  const btn = document.getElementById('cart-edit-design-save-btn');
+  const enabled = !!(tog && tog.checked);
+  if (out) { out.textContent = '⏳ Sauvegarde…'; out.style.color = 'var(--text3)'; }
+  if (btn) btn.disabled = true;
+  const data = await api('/api/shop-settings/style', {
+    method: 'POST',
+    body:   JSON.stringify({ cart_edit_design_enabled: enabled }),
+  });
+  if (btn) btn.disabled = false;
+  if (data?.ok) {
+    _applyCartEditDesignToggle(!!data.cart_edit_design_enabled);
+    if (out) { out.textContent = '✅ Enregistré — visible côté boutique dans ~1 min'; out.style.color = 'var(--success)'; }
+    showToast('✅ Bouton « Modifier » ' + (data.cart_edit_design_enabled ? 'activé' : 'désactivé'));
+  } else {
+    if (out) { out.textContent = '❌ ' + (data?.error || 'Erreur inconnue'); out.style.color = 'var(--danger)'; }
+  }
+}
+
+// ── Studio : panneau partiel desktop ─────────────────────────────────────────
+function _applyPanelModeStudioToggle(enabled) {
+  const tog = document.getElementById('panel-mode-studio-toggle');
+  const st  = document.getElementById('panel-mode-studio-state');
+  if (tog) tog.checked = !!enabled;
+  if (st) {
+    st.textContent  = enabled ? 'Activé — panneau centré sur desktop' : 'Désactivé — plein écran sur desktop';
+    st.style.color  = enabled ? 'var(--success)' : 'var(--text3)';
+  }
+}
+
+async function loadPanelModeStudio() {
+  const data = await api('/api/shop-settings/style');
+  _applyPanelModeStudioToggle(!!(data && data.panel_mode_studio_enabled));
+}
+
+async function savePanelModeStudio() {
+  const tog = document.getElementById('panel-mode-studio-toggle');
+  const out = document.getElementById('panel-mode-studio-result');
+  const btn = document.getElementById('panel-mode-studio-save-btn');
+  const enabled = !!(tog && tog.checked);
+  if (out) { out.textContent = '⏳ Sauvegarde…'; out.style.color = 'var(--text3)'; }
+  if (btn) btn.disabled = true;
+  const data = await api('/api/shop-settings/style', {
+    method: 'POST',
+    body:   JSON.stringify({ panel_mode_studio_enabled: enabled }),
+  });
+  if (btn) btn.disabled = false;
+  if (data?.ok) {
+    _applyPanelModeStudioToggle(!!data.panel_mode_studio_enabled);
+    if (out) { out.textContent = '✅ Enregistré — visible côté boutique dans ~1 min'; out.style.color = 'var(--success)'; }
+    showToast('✅ Panneau partiel desktop ' + (data.panel_mode_studio_enabled ? 'activé' : 'désactivé'));
+  } else {
+    if (out) { out.textContent = '❌ ' + (data?.error || 'Erreur inconnue'); out.style.color = 'var(--danger)'; }
+  }
+}
+
+// ── Panier : même création, autre taille ─────────────────────────────────────
+function _applySameDesignOtherSizeToggle(enabled) {
+  const tog = document.getElementById('same-design-other-size-toggle');
+  const st  = document.getElementById('same-design-other-size-state');
+  if (tog) tog.checked = !!enabled;
+  if (st) {
+    st.textContent  = enabled ? 'Activé — encart « autre taille » visible après l\'ajout au panier' : 'Désactivé — pas d\'encart « autre taille »';
+    st.style.color  = enabled ? 'var(--success)' : 'var(--text3)';
+  }
+}
+
+async function loadSameDesignOtherSize() {
+  const data = await api('/api/shop-settings/style');
+  _applySameDesignOtherSizeToggle(!!(data && data.same_design_other_size_enabled));
+}
+
+async function saveSameDesignOtherSize() {
+  const tog = document.getElementById('same-design-other-size-toggle');
+  const out = document.getElementById('same-design-other-size-result');
+  const btn = document.getElementById('same-design-other-size-save-btn');
+  const enabled = !!(tog && tog.checked);
+  if (out) { out.textContent = '⏳ Sauvegarde…'; out.style.color = 'var(--text3)'; }
+  if (btn) btn.disabled = true;
+  const data = await api('/api/shop-settings/style', {
+    method: 'POST',
+    body:   JSON.stringify({ same_design_other_size_enabled: enabled }),
+  });
+  if (btn) btn.disabled = false;
+  if (data?.ok) {
+    _applySameDesignOtherSizeToggle(!!data.same_design_other_size_enabled);
+    if (out) { out.textContent = '✅ Enregistré — visible côté boutique dans ~1 min'; out.style.color = 'var(--success)'; }
+    showToast('✅ Encart « autre taille » ' + (data.same_design_other_size_enabled ? 'activé' : 'désactivé'));
+  } else {
+    if (out) { out.textContent = '❌ ' + (data?.error || 'Erreur inconnue'); out.style.color = 'var(--danger)'; }
+  }
+}
+
+// ── Panier : 2ᵉ exemplaire identique ─────────────────────────────────────────
+function _applySameDesignSecondUnitToggle(enabled) {
+  const tog = document.getElementById('same-design-second-unit-toggle');
+  const st  = document.getElementById('same-design-second-unit-state');
+  if (tog) tog.checked = !!enabled;
+  if (st) {
+    st.textContent  = enabled ? 'Activé — encart « 2e exemplaire » visible après l\'ajout au panier' : 'Désactivé — pas d\'encart « 2e exemplaire »';
+    st.style.color  = enabled ? 'var(--success)' : 'var(--text3)';
+  }
+}
+
+async function loadSameDesignSecondUnit() {
+  const data = await api('/api/shop-settings/style');
+  _applySameDesignSecondUnitToggle(!!(data && data.same_design_second_unit_enabled));
+}
+
+async function saveSameDesignSecondUnit() {
+  const tog = document.getElementById('same-design-second-unit-toggle');
+  const out = document.getElementById('same-design-second-unit-result');
+  const btn = document.getElementById('same-design-second-unit-save-btn');
+  const enabled = !!(tog && tog.checked);
+  if (out) { out.textContent = '⏳ Sauvegarde…'; out.style.color = 'var(--text3)'; }
+  if (btn) btn.disabled = true;
+  const data = await api('/api/shop-settings/style', {
+    method: 'POST',
+    body:   JSON.stringify({ same_design_second_unit_enabled: enabled }),
+  });
+  if (btn) btn.disabled = false;
+  if (data?.ok) {
+    _applySameDesignSecondUnitToggle(!!data.same_design_second_unit_enabled);
+    if (out) { out.textContent = '✅ Enregistré — visible côté boutique dans ~1 min'; out.style.color = 'var(--success)'; }
+    showToast('✅ Encart « 2e exemplaire » ' + (data.same_design_second_unit_enabled ? 'activé' : 'désactivé'));
+  } else {
+    if (out) { out.textContent = '❌ ' + (data?.error || 'Erreur inconnue'); out.style.color = 'var(--danger)'; }
+  }
+}
+
+// ── Panier : garantie défaut d'impression ────────────────────────────────────
+function _applyPrintGuaranteeBannerToggle(enabled) {
+  const tog = document.getElementById('print-guarantee-banner-toggle');
+  const st  = document.getElementById('print-guarantee-banner-state');
+  if (tog) tog.checked = !!enabled;
+  if (st) {
+    st.textContent  = enabled ? 'Activé — bandeau de garantie visible après l\'ajout au panier' : 'Désactivé — pas de bandeau de garantie';
+    st.style.color  = enabled ? 'var(--success)' : 'var(--text3)';
+  }
+}
+
+async function loadPrintGuaranteeBanner() {
+  const data = await api('/api/shop-settings/style');
+  _applyPrintGuaranteeBannerToggle(!!(data && data.print_guarantee_banner_enabled));
+}
+
+async function savePrintGuaranteeBanner() {
+  const tog = document.getElementById('print-guarantee-banner-toggle');
+  const out = document.getElementById('print-guarantee-banner-result');
+  const btn = document.getElementById('print-guarantee-banner-save-btn');
+  const enabled = !!(tog && tog.checked);
+  if (out) { out.textContent = '⏳ Sauvegarde…'; out.style.color = 'var(--text3)'; }
+  if (btn) btn.disabled = true;
+  const data = await api('/api/shop-settings/style', {
+    method: 'POST',
+    body:   JSON.stringify({ print_guarantee_banner_enabled: enabled }),
+  });
+  if (btn) btn.disabled = false;
+  if (data?.ok) {
+    _applyPrintGuaranteeBannerToggle(!!data.print_guarantee_banner_enabled);
+    if (out) { out.textContent = '✅ Enregistré — visible côté boutique dans ~1 min'; out.style.color = 'var(--success)'; }
+    showToast('✅ Bandeau de garantie ' + (data.print_guarantee_banner_enabled ? 'activé' : 'désactivé'));
   } else {
     if (out) { out.textContent = '❌ ' + (data?.error || 'Erreur inconnue'); out.style.color = 'var(--danger)'; }
   }
