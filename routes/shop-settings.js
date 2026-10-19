@@ -99,6 +99,13 @@
  *      sans le chevaucher). Exposé sur la route publique : tl-modal.js ne
  *      propose cette offre que si ce flag est actif. Désactivé par défaut,
  *      même logique prudente que les autres changements visuels storefront.
+ *    print_guarantee_banner_enabled bool — engagement court affiché après un
+ *      ajout au panier réussi (tl-modal.js, backlog item 37) : "Un souci avec
+ *      l'impression ? On la refait gratuitement." Texte livré en placeholder,
+ *      à relire/ajuster avec Alan selon la politique réelle de WinShirt avant
+ *      activation. Exposé sur la route publique : tl-modal.js n'affiche la
+ *      ligne que si ce flag est actif. Désactivé par défaut, même logique
+ *      prudente que les autres changements visuels storefront.
  *
  *  Cors public : Cross-origin (shop_domain.myshopify.com → textile-studio-production)
  *    → le storefront fait fetch direct, on autorise tout origin sur le GET public.
@@ -179,6 +186,9 @@ const SAME_DESIGN_OTHER_SIZE_DEFAULT = false;
 // visuel storefront après l'ajout au panier, à valider avant diffusion large
 // (backlog item 33, spec de repli sans remise calculée/affichée par TSL).
 const SAME_DESIGN_SECOND_UNIT_DEFAULT = false;
+// Bandeau "défaut d'impression refait gratuitement" désactivé par défaut :
+// texte placeholder à valider avec Alan avant diffusion large (backlog item 37).
+const PRINT_GUARANTEE_BANNER_DEFAULT = false;
 
 // ── GET /api/shop-settings/style — lecture admin ────────────────────────────
 router.get('/style', requireAuth, attachShopId, (req, res) => {
@@ -197,6 +207,7 @@ router.get('/style', requireAuth, attachShopId, (req, res) => {
     cart_error_tracking_enabled: readBoolSetting(req.shopId, 'cart_error_tracking_enabled', CART_ERROR_TRACKING_DEFAULT),
     same_design_other_size_enabled: readBoolSetting(req.shopId, 'same_design_other_size_enabled', SAME_DESIGN_OTHER_SIZE_DEFAULT),
     same_design_second_unit_enabled: readBoolSetting(req.shopId, 'same_design_second_unit_enabled', SAME_DESIGN_SECOND_UNIT_DEFAULT),
+    print_guarantee_banner_enabled: readBoolSetting(req.shopId, 'print_guarantee_banner_enabled', PRINT_GUARANTEE_BANNER_DEFAULT),
   });
 });
 
@@ -267,6 +278,10 @@ router.post('/style', requireAuth, attachShopId, express.json(), (req, res) => {
     setSetting(req.shopId, 'same_design_second_unit_enabled', coerceBool(body.same_design_second_unit_enabled) ? '1' : '0');
   }
 
+  if ('print_guarantee_banner_enabled' in body) {
+    setSetting(req.shopId, 'print_guarantee_banner_enabled', coerceBool(body.print_guarantee_banner_enabled) ? '1' : '0');
+  }
+
   res.json({
     ok: true,
     cart_drawer_bg_color:       getSetting(req.shopId, 'cart_drawer_bg_color') || '',
@@ -283,6 +298,7 @@ router.post('/style', requireAuth, attachShopId, express.json(), (req, res) => {
     cart_error_tracking_enabled: readBoolSetting(req.shopId, 'cart_error_tracking_enabled', CART_ERROR_TRACKING_DEFAULT),
     same_design_other_size_enabled: readBoolSetting(req.shopId, 'same_design_other_size_enabled', SAME_DESIGN_OTHER_SIZE_DEFAULT),
     same_design_second_unit_enabled: readBoolSetting(req.shopId, 'same_design_second_unit_enabled', SAME_DESIGN_SECOND_UNIT_DEFAULT),
+    print_guarantee_banner_enabled: readBoolSetting(req.shopId, 'print_guarantee_banner_enabled', PRINT_GUARANTEE_BANNER_DEFAULT),
   });
 });
 
@@ -307,6 +323,7 @@ router.get('/style/public', (req, res) => {
       panel_mode_studio_enabled: PANEL_MODE_STUDIO_DEFAULT,
       same_design_other_size_enabled: SAME_DESIGN_OTHER_SIZE_DEFAULT,
       same_design_second_unit_enabled: SAME_DESIGN_SECOND_UNIT_DEFAULT,
+      print_guarantee_banner_enabled: PRINT_GUARANTEE_BANNER_DEFAULT,
     });
   }
   const shopId = getShopIdByDomain(shopDomain);
@@ -323,6 +340,7 @@ router.get('/style/public', (req, res) => {
       panel_mode_studio_enabled: PANEL_MODE_STUDIO_DEFAULT,
       same_design_other_size_enabled: SAME_DESIGN_OTHER_SIZE_DEFAULT,
       same_design_second_unit_enabled: SAME_DESIGN_SECOND_UNIT_DEFAULT,
+      print_guarantee_banner_enabled: PRINT_GUARANTEE_BANNER_DEFAULT,
     });
   }
   res.json({
@@ -337,6 +355,7 @@ router.get('/style/public', (req, res) => {
     panel_mode_studio_enabled:  readBoolSetting(shopId, 'panel_mode_studio_enabled', PANEL_MODE_STUDIO_DEFAULT),
     same_design_other_size_enabled: readBoolSetting(shopId, 'same_design_other_size_enabled', SAME_DESIGN_OTHER_SIZE_DEFAULT),
     same_design_second_unit_enabled: readBoolSetting(shopId, 'same_design_second_unit_enabled', SAME_DESIGN_SECOND_UNIT_DEFAULT),
+    print_guarantee_banner_enabled: readBoolSetting(shopId, 'print_guarantee_banner_enabled', PRINT_GUARANTEE_BANNER_DEFAULT),
   });
 });
 

@@ -56,6 +56,12 @@
   // ENABLED sans le chevaucher (autre taille vs même variante).
   var _TL_SAME_DESIGN_SECOND_UNIT_ENABLED = false;
 
+  // Flag item 37 (bandeau "défaut d'impression refait gratuitement" après
+  // l'ajout au panier) : même mécanique, lu une fois par
+  // _tlLoadStyleSettings. false tant que la réponse n'est pas arrivée
+  // (comportement identique à aujourd'hui : rien ne s'affiche).
+  var _TL_PRINT_GUARANTEE_BANNER_ENABLED = false;
+
   // Clé ("<variantId>:<hash>") de la ligne de panier en cours de modification
   // via le bouton "Modifier" (item 26), le temps que le nouvel ajout soit
   // confirmé — remise à null après la suppression de l'ancienne ligne OU à la
@@ -455,6 +461,21 @@
     .tl-second-unit-msg { flex-basis: 100%; font-size: 12px; opacity: .8; color: #b42318; }\
   ';
 
+  // Bandeau de confiance "défaut d'impression refait gratuitement" (item 37) :
+  // même famille visuelle discrète que .tl-other-size/.tl-second-unit
+  // ci-dessus, mais sans bouton ni action — une seule ligne de texte.
+  var TL_PRINT_GUARANTEE_CSS = '\
+    .tl-print-guarantee {\
+      margin: 0 0 8px;\
+      padding: 10px 12px;\
+      border-radius: 10px;\
+      border: 1px solid rgba(0,0,0,.12);\
+      background: rgba(0,0,0,.03);\
+      font: 600 13px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\
+      color: inherit;\
+    }\
+  ';
+
   // NOTE : ne pas nommer cette variable "CSS" — cela écraserait window.CSS
   // (l'API globale) dans le scope de l'IIFE et ferait planter CSS.escape().
   // ── Sélecteur de support, ouvert depuis un lien de menu ──────────────────
@@ -544,7 +565,7 @@
         box-shadow: 0 20px 60px rgba(0, 0, 0, .4);\
       }\
     }\
-  ' + CART_FIX_CSS + TL_CTA_CSS + TL_UPSELL_CSS + TL_RESUME_CSS + TL_EMAIL_RESUME_CSS + TL_OTHER_SIZE_CSS + TL_SECOND_UNIT_CSS + TL_CHOIX_CSS;
+  ' + CART_FIX_CSS + TL_CTA_CSS + TL_UPSELL_CSS + TL_RESUME_CSS + TL_EMAIL_RESUME_CSS + TL_OTHER_SIZE_CSS + TL_SECOND_UNIT_CSS + TL_PRINT_GUARANTEE_CSS + TL_CHOIX_CSS;
 
   // ── Injection des éléments DOM ──────────────────────────────────────────────
   function injectDOM() {
@@ -1256,6 +1277,11 @@
               // 8. 2e exemplaire identique, même variante (item 33) — sous
               //    flag, aucune remise calculée/affichée, jamais bloquant.
               _tlOfferSecondUnit(_vid, _props, _previewUrl);
+
+              // 9. Bandeau de confiance "défaut d'impression refait
+              //    gratuitement" (item 37) — sous flag, pur affichage,
+              //    jamais bloquant.
+              _tlShowPrintGuaranteeBanner();
             })
             .catch(function(err) {
               document.body.classList.remove('tl-cart-loading');
@@ -1801,6 +1827,11 @@
           // consommée par _tlOfferSecondUnit() juste après un ajout au panier
           // réussi — pas d'appel réseau supplémentaire ici.
           _TL_SAME_DESIGN_SECOND_UNIT_ENABLED = !!data.same_design_second_unit_enabled;
+          // Flag item 37 (bandeau "défaut d'impression refait gratuitement") :
+          // simple mémorisation, consommée par _tlShowPrintGuaranteeBanner()
+          // juste après un ajout au panier réussi — pas d'appel réseau
+          // supplémentaire ici.
+          _TL_PRINT_GUARANTEE_BANNER_ENABLED = !!data.print_guarantee_banner_enabled;
         })
         .catch(function() {});
     } catch (e) { /* silencieux */ }
@@ -2347,6 +2378,27 @@
     actions.appendChild(fermer);
 
     el.appendChild(actions);
+
+    var container = _tlCtaContainer(btn);
+    container.parentNode.insertBefore(el, container);
+  }
+
+  // Bandeau de confiance "défaut d'impression refait gratuitement" (item 37)
+  // — calqué sur _tlInjectSecondUnitOffer ci-dessus, mais sans bouton ni appel
+  // réseau : une seule ligne de texte, jamais bloquante. Texte placeholder,
+  // à relire/ajuster avec Alan selon la politique réelle de WinShirt avant
+  // activation (flag désactivé par défaut).
+  function _tlShowPrintGuaranteeBanner() {
+    if (!_TL_PRINT_GUARANTEE_BANNER_ENABLED) return;
+    var btn = document.querySelector('.tl-personalise-btn');
+    if (!btn) return; // aucun bouton sur cette page → rien où ancrer le bandeau
+
+    var vieux = document.querySelector('.tl-print-guarantee');
+    if (vieux && vieux.parentNode) vieux.parentNode.removeChild(vieux);
+
+    var el = document.createElement('div');
+    el.className = 'tl-print-guarantee';
+    el.textContent = '✅ Un souci avec l\'impression ? On la refait gratuitement.';
 
     var container = _tlCtaContainer(btn);
     container.parentNode.insertBefore(el, container);

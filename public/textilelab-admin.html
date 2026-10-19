@@ -1097,6 +1097,23 @@ body.modal-open #lib-drop-zone * { pointer-events: none !important; }
           </div>
         </div>
 
+        <!-- Panier — Garantie défaut d'impression -->
+        <div class="table-card" style="padding:20px">
+          <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px">✅ Panier — Garantie défaut d'impression</h3>
+          <p style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5">Après l'ajout au panier, affiche une ligne de confiance courte : « Un souci avec l'impression ? On la refait gratuitement. » <strong style="color:var(--text2)">Texte placeholder</strong> — à relire/ajuster avec Alan selon la politique réelle de WinShirt avant activation. <strong style="color:var(--text2)">Désactivé par défaut</strong> — non vérifié visuellement sur une vraie fiche WinShirt dans l'environnement de dev. Prise en compte côté boutique en ~1 min.</p>
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+            <label class="tl-switch">
+              <input type="checkbox" id="print-guarantee-banner-toggle" onchange="_applyPrintGuaranteeBannerToggle(this.checked)">
+              <span class="tl-switch-slider"></span>
+            </label>
+            <span id="print-guarantee-banner-state" style="font-size:13px;color:var(--text3)">…</span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+            <button class="btn btn-primary" id="print-guarantee-banner-save-btn" onclick="savePrintGuaranteeBanner()">💾 Enregistrer</button>
+            <span id="print-guarantee-banner-result" style="font-size:12px;color:var(--text3);align-self:center;min-height:16px"></span>
+          </div>
+        </div>
+
         <!-- IA — Formulation d'identité générique du prompt Photo → Illustration -->
         <div class="table-card" style="padding:20px">
           <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px">🧩 IA — Formulation d'identité générique</h3>
@@ -4431,6 +4448,7 @@ async function loadSettingsInfo() {
   loadPanelModeStudio();
   loadSameDesignOtherSize();
   loadSameDesignSecondUnit();
+  loadPrintGuaranteeBanner();
   const [aiStatus, shopStatus] = await Promise.all([api('/api/ai/status'), api('/api/shopify/status')]);
   const svcEl = document.getElementById('services-status');
   if (svcEl) {
@@ -4888,6 +4906,43 @@ async function saveSameDesignSecondUnit() {
     _applySameDesignSecondUnitToggle(!!data.same_design_second_unit_enabled);
     if (out) { out.textContent = '✅ Enregistré — visible côté boutique dans ~1 min'; out.style.color = 'var(--success)'; }
     showToast('✅ Encart « 2e exemplaire » ' + (data.same_design_second_unit_enabled ? 'activé' : 'désactivé'));
+  } else {
+    if (out) { out.textContent = '❌ ' + (data?.error || 'Erreur inconnue'); out.style.color = 'var(--danger)'; }
+  }
+}
+
+// ── Panier : garantie défaut d'impression ────────────────────────────────────
+function _applyPrintGuaranteeBannerToggle(enabled) {
+  const tog = document.getElementById('print-guarantee-banner-toggle');
+  const st  = document.getElementById('print-guarantee-banner-state');
+  if (tog) tog.checked = !!enabled;
+  if (st) {
+    st.textContent  = enabled ? 'Activé — bandeau de garantie visible après l\'ajout au panier' : 'Désactivé — pas de bandeau de garantie';
+    st.style.color  = enabled ? 'var(--success)' : 'var(--text3)';
+  }
+}
+
+async function loadPrintGuaranteeBanner() {
+  const data = await api('/api/shop-settings/style');
+  _applyPrintGuaranteeBannerToggle(!!(data && data.print_guarantee_banner_enabled));
+}
+
+async function savePrintGuaranteeBanner() {
+  const tog = document.getElementById('print-guarantee-banner-toggle');
+  const out = document.getElementById('print-guarantee-banner-result');
+  const btn = document.getElementById('print-guarantee-banner-save-btn');
+  const enabled = !!(tog && tog.checked);
+  if (out) { out.textContent = '⏳ Sauvegarde…'; out.style.color = 'var(--text3)'; }
+  if (btn) btn.disabled = true;
+  const data = await api('/api/shop-settings/style', {
+    method: 'POST',
+    body:   JSON.stringify({ print_guarantee_banner_enabled: enabled }),
+  });
+  if (btn) btn.disabled = false;
+  if (data?.ok) {
+    _applyPrintGuaranteeBannerToggle(!!data.print_guarantee_banner_enabled);
+    if (out) { out.textContent = '✅ Enregistré — visible côté boutique dans ~1 min'; out.style.color = 'var(--success)'; }
+    showToast('✅ Bandeau de garantie ' + (data.print_guarantee_banner_enabled ? 'activé' : 'désactivé'));
   } else {
     if (out) { out.textContent = '❌ ' + (data?.error || 'Erreur inconnue'); out.style.color = 'var(--danger)'; }
   }
