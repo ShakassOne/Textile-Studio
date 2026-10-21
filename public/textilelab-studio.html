@@ -330,6 +330,12 @@
     flex-shrink: 0;
   }
 
+  /* Sélecteur Recto/Verso compact au-dessus du canvas — mobile uniquement
+     (TSL-007 : sur mobile le sélecteur de face vivait seulement dans le
+     drawer "Vue", devenu inaccessible faute de bouton dans la bottom nav ;
+     desktop garde le sien dans #view-switcher-desktop, pas de doublon ici). */
+  #face-switcher-top { display: none; }
+
   #canvas-container {
     position: relative;
     border-radius: 12px;
@@ -1094,6 +1100,14 @@
 
     #canvas-wrap { width: 100%; position: relative; }
     #mobile-canvas-overlay { display: flex !important; }
+
+    #face-switcher-top:not(:empty) {
+      display: flex;
+      gap: 6px;
+      justify-content: center;
+      flex-wrap: wrap;
+      width: 100%;
+    }
 
     #print-bar {
       display: none;
@@ -2505,6 +2519,8 @@
 
     <!-- CENTER -->
     <main id="center">
+      <!-- Recto/Verso — mobile uniquement, rempli par updateViewSwitcher() -->
+      <div id="face-switcher-top"></div>
       <!-- Canvas -->
       <div id="canvas-wrap">
         <!-- MOBILE OVERLAY : undo/redo flottants + badge zoom viewport -->
@@ -5625,17 +5641,24 @@ function drawPrintFrameFromMockup(view, img, scale, imgLeft, imgTop) {
 function updateViewSwitcher() {
   const switcherDesktop = document.getElementById('view-switcher-desktop');
   const switcherMobile  = document.getElementById('view-switcher-mobile');
+  // Barre Recto/Verso compacte au-dessus du canvas (mobile) — voir TSL-007 :
+  // le sélecteur de face complet ci-dessus vit dans un drawer ("Vue") que la
+  // bottom nav mobile n'a plus de bouton pour ouvrir. Celle-ci reste
+  // accessible en permanence, sans dépendre de ce drawer.
+  const faceTop = document.getElementById('face-switcher-top');
   const allMockups = getMockupsForProduct(STATE.product);
 
   if (!allMockups.length) {
     if (switcherDesktop) switcherDesktop.innerHTML = '';
     if (switcherMobile)  switcherMobile.innerHTML  = '';
+    if (faceTop)          faceTop.innerHTML        = '';
     return;
   }
 
   if (window._TL_SHOP && (!_shopifyLinksLoaded || !_shopifyCatalogLoaded)) {
     if (switcherDesktop) switcherDesktop.innerHTML = '';
     if (switcherMobile)  switcherMobile.innerHTML  = '';
+    if (faceTop)          faceTop.innerHTML        = '';
     return;
   }
 
@@ -5692,6 +5715,22 @@ function updateViewSwitcher() {
                     text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;margin-top:8px">Face</div>
         <div style="display:flex;gap:5px;flex-wrap:wrap">${viewBtns}</div>
       </div>`);
+
+    if (faceTop) {
+      faceTop.innerHTML = STATE_mockup.views.map((v, i) => {
+        const active = i === STATE_viewIdx;
+        return `<button onclick="switchMockupView(${i})"
+          style="padding:7px 18px;border-radius:20px;border:1px solid ${active ? 'var(--amber)' : 'var(--border)'};
+                 background:${active ? 'var(--amber-dim)' : 'var(--bg3)'};
+                 color:${active ? 'var(--amber)' : 'var(--text2)'};
+                 font-size:12.5px;cursor:pointer;white-space:nowrap;font-family:'DM Sans',sans-serif;
+                 transition:all .15s;font-weight:${active ? '600' : '500'}">
+          ${v.name}
+        </button>`;
+      }).join('');
+    }
+  } else if (faceTop) {
+    faceTop.innerHTML = '';
   }
 
 
