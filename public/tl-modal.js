@@ -1195,24 +1195,21 @@
             })
             .catch(function(err) {
               document.body.classList.remove('tl-cart-loading');
-              // Refus explicite de Shopify après toutes les tentatives : le
-              // renvoyer vers /cart afficherait un panier vide sans rien
-              // expliquer. On le dit, et on laisse le studio ouvert pour
-              // réessayer sans tout refaire.
-              if (err && err.panierRefuse) {
-                try {
-                  var f = document.querySelector('#tl-modal iframe, .tl-modal iframe');
-                  if (f && f.contentWindow) {
-                    f.contentWindow.postMessage({ type: 'tl-add-failed', message: err.message }, '*');
-                  }
-                } catch (e2) {}
-                var _errShop = (window.Shopify && window.Shopify.shop) || window._TL_SHOP || window.location.hostname;
-                _tlTrackCartError(_errShop, _vid, err.message);
-                alert('L\'ajout au panier a été refusé : ' + err.message
-                    + '\n\nRéessayez dans quelques secondes.');
-                return;
-              }
-              window.location.href = '/cart';
+              // Un échec réseau comme un 422 doit rendre la main au studio :
+              // surtout ne pas rediriger vers /cart (design perdu, panier vide).
+              var _reason = err && err.message ? err.message : 'Connexion impossible. Réessayez.';
+              var _notified = false;
+              try {
+                var f = document.querySelector('#tl-modal iframe, .tl-modal iframe');
+                if (f && f.contentWindow) {
+                  f.contentWindow.postMessage({ type: 'tl-add-failed', message: _reason }, '*');
+                  _notified = true;
+                }
+              } catch (e2) { /* modal démonté : alerte de secours */ }
+              var _errShop = (window.Shopify && window.Shopify.shop) || window._TL_SHOP || window.location.hostname;
+              _tlTrackCartError(_errShop, _vid, _reason);
+              console.error('[TSL] Ajout panier impossible, création conservée :', err);
+              if (!_notified) alert('L’ajout au panier a échoué : ' + _reason);
             });
 
           } else if (e.data.cartUrl) {
