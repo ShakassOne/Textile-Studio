@@ -1557,23 +1557,91 @@
   }
   .btn-cart-big:hover { background: var(--amber2); }
 
-  /* Pendant l'ajout au panier (~30s : sauvegarde design + rendu HD + résolution
-     variante) : le bouton se contracte en un petit carré arrondi qui "respire"
-     en boucle, plutôt qu'un texte figé qui laisse croire que ça a planté sur
-     une attente aussi longue. Couleur du bouton inchangée (ex. noir en thème
-     clair) — seule la forme bouge. Le texte reste dans le DOM (lu par les
-     lecteurs d'écran) mais devient invisible via color:transparent. */
-  .btn-cart-big.tl-loading {
-    width: 48px; min-width: 48px; max-width: 48px; flex: none;
-    margin: 0 auto; padding: 0; color: transparent;
-    pointer-events: none; cursor: default;
-    animation: tlCartBtnWobble 1.2s ease-in-out infinite;
+  /* Checkout : bouton stable + écran de progression lié aux étapes réelles.
+     Pas de pourcentage fictif : le rendu HD et Shopify définissent la fin. */
+  .btn-cart-big.tl-loading, button[onclick*="addToCart"].tl-loading {
+    position: relative; overflow: hidden; pointer-events: none;
+    cursor: progress; opacity: .92;
   }
-  @keyframes tlCartBtnWobble {
-    0%, 100% { border-radius: 14px; transform: scale(1) rotate(0deg); }
-    25%      { border-radius: 42% 58% 53% 47% / 48% 42% 58% 52%; transform: scale(.92) rotate(-6deg); }
-    50%      { border-radius: 50%; transform: scale(1.05) rotate(5deg); }
-    75%      { border-radius: 55% 45% 40% 60% / 58% 55% 45% 42%; transform: scale(.94) rotate(-4deg); }
+  .btn-cart-big.tl-loading::after, button[onclick*="addToCart"].tl-loading::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(100deg, transparent 24%, rgba(255,255,255,.3) 48%, transparent 72%);
+    transform: translateX(-120%); animation: tlcwSweep 1.6s ease-in-out infinite;
+  }
+  .tlcw-inline-spin { width: 17px; height: 17px; border: 2px solid currentColor;
+    border-right-color: transparent; border-radius: 50%; display: inline-block;
+    vertical-align: middle; margin-right: 8px; animation: tlcwSpin .85s linear infinite; }
+  #tl-cart-wait { position: fixed; inset: 0; z-index: 3000; display: grid;
+    place-items: center; padding: 16px; box-sizing: border-box;
+    background: rgba(9, 10, 15, .80); backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px); animation: tlcwAppear .25s ease-out; }
+  #tl-cart-wait *, #tl-cart-wait *::before, #tl-cart-wait *::after { box-sizing: border-box; }
+  #tl-cart-wait .tlcw-card { position: relative; width: min(100%, 420px);
+    overflow: hidden; padding: 32px 28px 25px; border-radius: 26px;
+    border: 1px solid rgba(255,255,255,.15);
+    background: linear-gradient(155deg, #24242b, #14151b 58%, #101116);
+    color: #fafafa; font-family: 'DM Sans', sans-serif;
+    box-shadow: 0 30px 85px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06); }
+  #tl-cart-wait .tlcw-card::before { content:""; position:absolute; top:0; left:0;
+    right:0; height:3px; background:linear-gradient(90deg,#ff9900,#ffbd4a,#ff9900);
+    background-size:200% 100%; animation:tlcwSlide 2s linear infinite; }
+  #tl-cart-wait .tlcw-kicker { text-align:center; font:700 10px 'DM Mono',monospace;
+    letter-spacing: .2em; color:#f6a92d; text-transform:uppercase; }
+  #tl-cart-wait .tlcw-orb { position: relative; width: 120px; height: 120px;
+    display: grid; place-items: center; margin: 16px auto 12px;
+    border-radius: 50%; background: radial-gradient(circle,rgba(255,169,42,.17) 0%,rgba(255,169,42,.04) 54%,transparent 72%); }
+  #tl-cart-wait .tlcw-orb::before, #tl-cart-wait .tlcw-orb::after {
+    content:""; position:absolute; inset:8px; border:1px solid rgba(255,180,57,.27);
+    border-radius:50%; animation:tlcwPulse 2.8s ease-in-out infinite; }
+  #tl-cart-wait .tlcw-orb::after { inset:0; animation-delay: -1.4s; }
+  #tl-cart-wait .tlcw-shirt { position: relative; z-index:1; width: 65px; height:65px;
+    filter: drop-shadow(0 0 17px rgba(255,181,65,.48));
+    animation:tlcwFloat 2.5s ease-in-out infinite; }
+  #tl-cart-wait .tlcw-title { margin:0; text-align:center;
+    font: 800 clamp(22px,5vw,27px) 'Syne',sans-serif; letter-spacing:-.035em; }
+  #tl-cart-wait .tlcw-subtitle { text-align:center; color:#b9bac2;
+    font-size:12px; line-height:1.6; margin:9px 0 23px; }
+  #tl-cart-wait .tlcw-track { position:relative; overflow:hidden; height:5px;
+    border-radius:20px; background:rgba(255,255,255,.1); margin-bottom:20px; }
+  #tl-cart-wait .tlcw-track::after { content:""; position:absolute; height:100%; width:38%;
+    border-radius:20px; background:linear-gradient(90deg,#e68c00,#ffd277);
+    box-shadow:0 0 18px rgba(255,165,24,.5); animation:tlcwTrack 1.7s ease-in-out infinite; }
+  #tl-cart-wait .tlcw-steps { padding:0; margin:0; list-style:none; display:grid; gap:13px; }
+  #tl-cart-wait .tlcw-step { display:flex; align-items:center; gap:12px;
+    color:#777983; font-size:12px; transition:color .2s ease; }
+  #tl-cart-wait .tlcw-dot { flex:0 0 24px; width:24px; height:24px;
+    border:1px solid rgba(255,255,255,.14); border-radius:50%;
+    display:grid; place-items:center; font-size:11px; font-weight:800; }
+  #tl-cart-wait .tlcw-step[data-state="current"] { color:#fff; font-weight:700; }
+  #tl-cart-wait .tlcw-step[data-state="current"] .tlcw-dot { border-color:#ffac30;
+    color:#ffb53a; box-shadow:0 0 0 4px rgba(255,172,48,.1); }
+  #tl-cart-wait .tlcw-step[data-state="current"] .tlcw-dot::before {
+    content:""; width:9px;height:9px; border-radius:50%;background:#ffb53a;
+    animation:tlcwPulse 1s ease-in-out infinite; }
+  #tl-cart-wait .tlcw-step[data-state="done"] { color:#c6c7cd; }
+  #tl-cart-wait .tlcw-step[data-state="done"] .tlcw-dot { color:#181818;
+    background:#ffb53a; border-color:#ffb53a; }
+  #tl-cart-wait .tlcw-step[data-state="done"] .tlcw-dot::before { content:"✓"; }
+  #tl-cart-wait .tlcw-footer { display:flex; align-items:center; gap:10px; justify-content:space-between;
+    border-top:1px solid rgba(255,255,255,.09); margin-top:22px; padding-top:17px;
+    color:#9c9da6; font-size:11px; line-height:1.4; }
+  #tl-cart-wait .tlcw-time { white-space:nowrap; font:700 12px 'DM Mono',monospace; color:#e9e9ed; }
+  @keyframes tlcwSpin { to { transform:rotate(360deg); } }
+  @keyframes tlcwSweep { to { transform:translateX(120%); } }
+  @keyframes tlcwSlide { to { background-position:200% 0; } }
+  @keyframes tlcwAppear { from { opacity:0; } to { opacity:1; } }
+  @keyframes tlcwPulse { 50% { opacity:.35; transform:scale(1.07); } }
+  @keyframes tlcwFloat { 50% { transform:translateY(-6px) rotate(2deg); } }
+  @keyframes tlcwTrack { 0% { left:-38%; } 100% { left:100%; } }
+  @media(max-width:480px) {
+    #tl-cart-wait .tlcw-card { padding:25px 22px 21px; border-radius:22px; }
+    #tl-cart-wait .tlcw-orb { margin:10px auto; }
+  }
+  @media(prefers-reduced-motion: reduce) {
+    #tl-cart-wait *, #tl-cart-wait *::before, #tl-cart-wait *::after,
+    .btn-cart-big.tl-loading::after, button[onclick*="addToCart"].tl-loading::after,
+    .tlcw-inline-spin { animation: none !important; }
+    #tl-cart-wait .tlcw-track::after { left:30%; }
   }
 
   /* ============================================
@@ -7882,19 +7950,95 @@ function addMobileTicketBatch() {
 // Le studio désactive ses boutons avant de confier l'ajout à tl-modal.js. Si
 // le panier refuse, personne ne les réactivait : le client se retrouvait
 // devant un bouton mort et devait recharger pour réessayer.
+// Garde unique : évite les doubles clics et les commandes en double pendant
+// les requêtes réseau. L'état est relâché uniquement après un refus réel.
+let _tlCartPending = false;
+let _tlCartClock = null;
+const _tlCartOriginalButtons = new Map();
+const _tlCartSteps = [
+  'Enregistrement de votre création',
+  'Préparation des aperçus',
+  'Génération du fichier d’impression HD',
+  'Ajout au panier Shopify',
+];
+
+function _tlCartWaitStart() {
+  if (_tlCartPending) return false;
+  _tlCartPending = true;
+  document.querySelectorAll('.btn-cart-big, [onclick*="addToCart"]').forEach(b => {
+    if (b.tagName !== 'BUTTON') return;
+    _tlCartOriginalButtons.set(b, { html: b.innerHTML, disabled: b.disabled });
+    b.disabled = true;
+    b.classList.add('tl-loading');
+    b.setAttribute('aria-busy', 'true');
+    b.innerHTML = '<span class="tlcw-inline-spin" aria-hidden="true"></span><span>Préparation…</span>';
+  });
+
+  const overlay = document.createElement('div');
+  overlay.id = 'tl-cart-wait';
+  overlay.innerHTML = '<section class="tlcw-card" role="status" aria-live="polite" aria-atomic="false">'
+    + '<div class="tlcw-kicker">TEXTILE STUDIO LAB</div>'
+    + '<div class="tlcw-orb" aria-hidden="true"><svg class="tlcw-shirt" viewBox="0 0 100 100" fill="none">'
+    + '<path d="M32 19 42 14c4 7 12 7 16 0l10 5 19 17-13 17-9-7v38H35V46l-9 7-13-17 19-17Z"'
+    + ' stroke="#ffb43d" stroke-width="3.5" stroke-linejoin="round" fill="rgba(255,180,61,.1)"/>'
+    + '<path d="M42 14c2 12 14 12 16 0M40 54h20M44 62h12" stroke="#ffe0a0" stroke-width="2.5" stroke-linecap="round"/>'
+    + '</svg></div>'
+    + '<h2 class="tlcw-title">Votre création prend vie</h2>'
+    + '<p class="tlcw-subtitle">Nous préparons votre design pour l’impression.<br>Gardez cette fenêtre ouverte.</p>'
+    + '<div class="tlcw-track" aria-hidden="true"></div>'
+    + '<ol class="tlcw-steps">'
+    + _tlCartSteps.map((label, i) => '<li class="tlcw-step" data-step="' + i
+      + '" data-state="pending"><span class="tlcw-dot" aria-hidden="true"></span><span>' + label + '</span></li>').join('')
+    + '</ol>'
+    + '<div class="tlcw-footer"><span id="tlcw-note">Chaque étape est vérifiée avant l’ajout.</span>'
+    + '<span class="tlcw-time" id="tlcw-time" aria-hidden="true">0 s</span></div>'
+    + '</section>';
+  document.body.appendChild(overlay);
+  _tlCartWaitStep(0);
+  const started = Date.now();
+  _tlCartClock = window.setInterval(() => {
+    const sec = Math.floor((Date.now() - started) / 1000);
+    const counter = document.getElementById('tlcw-time');
+    if (counter) counter.textContent = sec + ' s';
+    const note = document.getElementById('tlcw-note');
+    if (note && sec >= 15) note.textContent = 'Cela prend un peu plus de temps, nous continuons.';
+  }, 1000);
+  return true;
+}
+
+function _tlCartWaitStep(step) {
+  const root = document.getElementById('tl-cart-wait');
+  if (!root) return;
+  root.querySelectorAll('.tlcw-step').forEach((el, i) => {
+    el.dataset.state = i < step ? 'done' : i === step ? 'current' : 'pending';
+  });
+}
+
+function _tlCartWaitStop() {
+  if (_tlCartClock !== null) { clearInterval(_tlCartClock); _tlCartClock = null; }
+  document.getElementById('tl-cart-wait')?.remove();
+  _tlCartOriginalButtons.forEach((v, btn) => {
+    btn.innerHTML = v.html;
+    btn.disabled = v.disabled;
+    btn.classList.remove('tl-loading');
+    btn.removeAttribute('aria-busy');
+  });
+  _tlCartOriginalButtons.clear();
+  _tlCartPending = false;
+}
+
 window.addEventListener('message', (e) => {
   if (e.data?.type !== 'tl-add-failed') return;
-  document.querySelectorAll('.btn-cart-big, [onclick*="addToCart"]').forEach(b => {
-    if (b.tagName === 'BUTTON') { b.disabled = false; b.textContent = '🛒 Ajouter au panier'; b.classList.remove('tl-loading'); }
-  });
+  // Un site tiers ne doit pas pouvoir réarmer les boutons via postMessage.
+  if (window.self !== window.top && e.source !== window.parent) return;
+  _tlCartWaitStop();
   showToast('⚠️ ' + (e.data.message || 'Ajout au panier refusé — réessayez'));
 });
 
 // ── Checkout Shopify direct (depuis fiche produit via bouton Personnaliser) ──
 async function _checkoutShopifyDirect() {
-  const allBtns = document.querySelectorAll('.btn-cart-big, [onclick*="addToCart"]');
-  allBtns.forEach(b => { if (b.tagName === 'BUTTON') { b.disabled = true; b.textContent = '⏳ Préparation…'; b.classList.add('tl-loading'); } });
-
+  if (!_tlCartWaitStart()) return;
+  try {
   // ── 1. Snapshot de la vue courante (mockup + calques) AVANT tout ──
   _saveCurrentViewLayers(); // met aussi à jour STATE.viewThumbs[currentKey]
 
@@ -7946,6 +8090,7 @@ async function _checkoutShopifyDirect() {
   }
   viewsCount = Math.max(1, viewsCount);
 
+  _tlCartWaitStep(1);
   // ── 4. Uploader les thumbnails de chaque vue ──
   let viewsPreview = {}; // { idx: { url, name } }
   if (designId && viewsToUpload.length) {
@@ -8028,6 +8173,7 @@ async function _checkoutShopifyDirect() {
     } catch (e) { console.warn('[TextileLab] cart-set prep:', e.message); }
   }
 
+  _tlCartWaitStep(2);
   // ── 4d. Rendu PNG print HD (DTF) — BLOQUANT avant l'ajout panier ──────
   // On (re)génère toujours le fichier d'impression de chaque vue avec contenu.
   // Si ça échoue, on n'ajoute PAS au panier (sinon commande sans fichier imprimable).
@@ -8036,7 +8182,7 @@ async function _checkoutShopifyDirect() {
   catch (e) { console.warn('[TextileLab] print render:', e.message); _printOk = false; }
   if (!designId || !_printOk) {
     showToast('❌ Impossible de générer le fichier d\'impression. Vérifiez votre connexion et réessayez.');
-    allBtns.forEach(b => { if (b.tagName === 'BUTTON') { b.disabled = false; b.textContent = '🛒 Ajouter au panier'; b.classList.remove('tl-loading'); } });
+    _tlCartWaitStop();
     return;
   }
 
@@ -8097,6 +8243,7 @@ async function _checkoutShopifyDirect() {
     || (_firstViewUrl ? (_firstViewUrl.startsWith('http') ? _firstViewUrl : `${APP_ORIGIN}${_firstViewUrl}`) : null);
   if (_previewImgUrl) propsObj['_preview_img'] = _previewImgUrl;
 
+  _tlCartWaitStep(3);
   try {
     // La variante doit venir de la fiche produit. Résoudre silencieusement la
     // première variante ici ferait acheter une taille différente de celle voulue.
@@ -8143,7 +8290,7 @@ async function _checkoutShopifyDirect() {
         // Impression absente » de « création de la variante échouée ». On ne
         // parle de combinaison non configurée que dans le second cas.
         showToast('⚠️ ' + (rData?.error || 'Impossible de préparer cette personnalisation — réessayez.'));
-        allBtns.forEach(b => { if (b.tagName === 'BUTTON') { b.disabled = false; b.textContent = '🛒 Ajouter au panier'; b.classList.remove('tl-loading'); } });
+        _tlCartWaitStop();
         return;
       }
       finalVariantId = String(rData.variant_id);
@@ -8192,7 +8339,13 @@ async function _checkoutShopifyDirect() {
   } catch(e) {
     console.error('[TextileLab] _checkoutShopifyDirect:', e);
     showToast('❌ Erreur Shopify : ' + e.message);
-    allBtns.forEach(b => { if (b.tagName === 'BUTTON') { b.disabled = false; b.textContent = '🛒 Ajouter au panier'; b.classList.remove('tl-loading'); } });
+    _tlCartWaitStop();
+  }
+  } catch (e) {
+    // Inclut la sauvegarde du design et des aperçus, historiquement hors try.
+    console.error('[TextileLab] Checkout préparation :', e);
+    _tlCartWaitStop();
+    showToast('❌ Préparation interrompue : ' + (e?.message || 'réessayez.'));
   }
 }
 
