@@ -571,6 +571,34 @@
     if (document.getElementById('shopify-section-cart-drawer')) return 'cart-drawer';
     return null;
   }
+  // Un coup sur deux environ, le panier s'ouvre avec un total à 0 € et sans
+  // visuel : le snapshot du drawer renvoyé par /cart/add.json (sections[...])
+  // est pris au moment même de l'ajout — pour une variante que le backend
+  // vient tout juste de créer à la volée (voir createPricedVariant côté
+  // serveur), Shopify met parfois un instant à propager son prix et son
+  // media à la couche qui rend les sections du thème, même quand l'ajout
+  // lui-même a réussi (200). Plutôt que de laisser le client recharger la
+  // page à la main pour voir le bon prix revenir, on redemande le HTML de
+  // CETTE section à froid, un peu plus tard, et on le réinjecte par-dessus
+  // — idempotent et silencieux si tout était déjà correct.
+  function _tlForceRefreshCartSection(sectionId) {
+    if (!sectionId) return;
+    fetch(window.location.pathname + '?section_id=' + encodeURIComponent(sectionId), { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .then(function (html) {
+        if (!html) return;
+        _tlInjectSectionHTML(sectionId, html);
+        // Le HTML frais remplace tout le contenu de la section : l'overlay
+        // du visuel et le nettoyage des properties "_" (posés APRÈS le tout
+        // premier rendu, pas par le serveur) doivent être rejoués dessus,
+        // sans quoi ce rafraîchissement ferait réapparaître le flash qu'ils
+        // évitaient.
+        _tlSyncCartImages();
+        _tlFixAllLineItems();
+      })
+      .catch(function () { /* silencieux — le 1er rendu reste affiché */ });
+  }
+
   function _tlInjectSectionHTML(sectionId, html) {
     try {
       var wrap = document.getElementById('shopify-section-' + sectionId);
@@ -1102,6 +1130,14 @@
               // 1. Injecter le HTML frais du drawer (sinon il s'ouvre vide au 1er ajout)
               if (_sectionId && data && data.sections && data.sections[_sectionId]) {
                 _tlInjectSectionHTML(_sectionId, data.sections[_sectionId]);
+              }
+              // 1b. Rafraîchissement forcé, un peu plus tard : auto-guérit le
+              // panier à 0 €/sans visuel d'une variante tout juste créée (voir
+              // _tlForceRefreshCartSection ci-dessus). Deux passes espacées :
+              // la propagation côté Shopify n'a pas un délai garanti.
+              if (_sectionId) {
+                setTimeout(function() { _tlForceRefreshCartSection(_sectionId); }, 1500);
+                setTimeout(function() { _tlForceRefreshCartSection(_sectionId); }, 3500);
               }
               // Déclencher cart:update (compat thèmes qui écoutent l'event)
               document.dispatchEvent(new CustomEvent('cart:update', {

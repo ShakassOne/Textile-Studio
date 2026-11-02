@@ -1557,6 +1557,25 @@
   }
   .btn-cart-big:hover { background: var(--amber2); }
 
+  /* Pendant l'ajout au panier (~30s : sauvegarde design + rendu HD + résolution
+     variante) : le bouton se contracte en un petit carré arrondi qui "respire"
+     en boucle, plutôt qu'un texte figé qui laisse croire que ça a planté sur
+     une attente aussi longue. Couleur du bouton inchangée (ex. noir en thème
+     clair) — seule la forme bouge. Le texte reste dans le DOM (lu par les
+     lecteurs d'écran) mais devient invisible via color:transparent. */
+  .btn-cart-big.tl-loading {
+    width: 48px; min-width: 48px; max-width: 48px; flex: none;
+    margin: 0 auto; padding: 0; color: transparent;
+    pointer-events: none; cursor: default;
+    animation: tlCartBtnWobble 1.2s ease-in-out infinite;
+  }
+  @keyframes tlCartBtnWobble {
+    0%, 100% { border-radius: 14px; transform: scale(1) rotate(0deg); }
+    25%      { border-radius: 42% 58% 53% 47% / 48% 42% 58% 52%; transform: scale(.92) rotate(-6deg); }
+    50%      { border-radius: 50%; transform: scale(1.05) rotate(5deg); }
+    75%      { border-radius: 55% 45% 40% 60% / 58% 55% 45% 42%; transform: scale(.94) rotate(-4deg); }
+  }
+
   /* ============================================
      LIBRARY & DEFORM BUTTONS
   ============================================ */
@@ -7866,7 +7885,7 @@ function addMobileTicketBatch() {
 window.addEventListener('message', (e) => {
   if (e.data?.type !== 'tl-add-failed') return;
   document.querySelectorAll('.btn-cart-big, [onclick*="addToCart"]').forEach(b => {
-    if (b.tagName === 'BUTTON') { b.disabled = false; b.textContent = '🛒 Ajouter au panier'; }
+    if (b.tagName === 'BUTTON') { b.disabled = false; b.textContent = '🛒 Ajouter au panier'; b.classList.remove('tl-loading'); }
   });
   showToast('⚠️ ' + (e.data.message || 'Ajout au panier refusé — réessayez'));
 });
@@ -7874,7 +7893,7 @@ window.addEventListener('message', (e) => {
 // ── Checkout Shopify direct (depuis fiche produit via bouton Personnaliser) ──
 async function _checkoutShopifyDirect() {
   const allBtns = document.querySelectorAll('.btn-cart-big, [onclick*="addToCart"]');
-  allBtns.forEach(b => { if (b.tagName === 'BUTTON') { b.disabled = true; b.textContent = '⏳ Préparation…'; } });
+  allBtns.forEach(b => { if (b.tagName === 'BUTTON') { b.disabled = true; b.textContent = '⏳ Préparation…'; b.classList.add('tl-loading'); } });
 
   // ── 1. Snapshot de la vue courante (mockup + calques) AVANT tout ──
   _saveCurrentViewLayers(); // met aussi à jour STATE.viewThumbs[currentKey]
@@ -8017,7 +8036,7 @@ async function _checkoutShopifyDirect() {
   catch (e) { console.warn('[TextileLab] print render:', e.message); _printOk = false; }
   if (!designId || !_printOk) {
     showToast('❌ Impossible de générer le fichier d\'impression. Vérifiez votre connexion et réessayez.');
-    allBtns.forEach(b => { if (b.tagName === 'BUTTON') { b.disabled = false; b.textContent = '🛒 Ajouter au panier'; } });
+    allBtns.forEach(b => { if (b.tagName === 'BUTTON') { b.disabled = false; b.textContent = '🛒 Ajouter au panier'; b.classList.remove('tl-loading'); } });
     return;
   }
 
@@ -8124,7 +8143,7 @@ async function _checkoutShopifyDirect() {
         // Impression absente » de « création de la variante échouée ». On ne
         // parle de combinaison non configurée que dans le second cas.
         showToast('⚠️ ' + (rData?.error || 'Impossible de préparer cette personnalisation — réessayez.'));
-        allBtns.forEach(b => { if (b.tagName === 'BUTTON') { b.disabled = false; b.textContent = '🛒 Ajouter au panier'; } });
+        allBtns.forEach(b => { if (b.tagName === 'BUTTON') { b.disabled = false; b.textContent = '🛒 Ajouter au panier'; b.classList.remove('tl-loading'); } });
         return;
       }
       finalVariantId = String(rData.variant_id);
@@ -8173,7 +8192,7 @@ async function _checkoutShopifyDirect() {
   } catch(e) {
     console.error('[TextileLab] _checkoutShopifyDirect:', e);
     showToast('❌ Erreur Shopify : ' + e.message);
-    allBtns.forEach(b => { if (b.tagName === 'BUTTON') { b.disabled = false; b.textContent = '🛒 Ajouter au panier'; } });
+    allBtns.forEach(b => { if (b.tagName === 'BUTTON') { b.disabled = false; b.textContent = '🛒 Ajouter au panier'; b.classList.remove('tl-loading'); } });
   }
 }
 
