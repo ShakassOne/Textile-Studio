@@ -532,11 +532,17 @@
       flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 2px 2px 4px;\
     }\
     .tl-choix-taille {\
+      display: inline-flex; align-items: center; gap: 7px;\
       padding: 11px 16px; border: 1px solid rgba(0,0,0,.18); border-radius: 9px;\
       background: #fff; color: inherit; font: inherit; font-size: 13.5px; cursor: pointer;\
     }\
     .tl-choix-taille:hover { background: #16161a; color: #fff; border-color: #16161a; }\
     .tl-choix-taille[disabled] { opacity: .35; cursor: default; text-decoration: line-through; }\
+    .tl-choix-pastille {\
+      width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0;\
+      border: 1px solid rgba(0,0,0,.18);\
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.5);\
+    }\
   ';
 
   var TL_STYLES = '\
@@ -1516,15 +1522,75 @@
       corps.appendChild(t); corps.appendChild(st); corps.appendChild(g);
     };
 
-    // Construit la grille de boutons taille (réutilisée par le cas simple
-    // ET par le 3e temps "taille d'une couleur donnée").
-    var construireGrilleVariantes = function (variantes, surChoix) {
+    // Correspondance approximative nom de couleur → couleur CSS, pour une
+    // pastille visuelle sur les chips de l'étape couleur. Best-effort : les
+    // fournisseurs (TopTex/Kariban...) ne transmettent qu'un libellé texte
+    // via l'API publique Shopify (/products/<handle>.js), jamais de code hex
+    // réel. Les noms composés sont testés avant les noms simples ("dark
+    // grey" avant "grey"), sinon "Ideal Dark Grey" matcherait "grey" en gris
+    // clair. Aucune correspondance → pas de pastille plutôt qu'une couleur
+    // fausse (ex. un nom de gamme inconnu).
+    var PASTILLES_COMPOSEES = [
+      [/ash\s*heather/i,      '#b6b2b0'],
+      [/heather\s*grey|heather\s*gray/i, '#9a9a9a'],
+      [/oxford\s*grey|oxford\s*gray/i,   '#54585a'],
+      [/dark\s*grey|dark\s*gray/i,       '#4b4b4d'],
+      [/light\s*grey|light\s*gray/i,     '#c9c9c9'],
+      [/royal\s*blue/i,       '#1e40af'],
+      [/navy\s*blue/i,        '#1b1f3b'],
+      [/sky\s*blue/i,         '#7ec8e3'],
+      [/atoll\s*blue/i,       '#1b8fa0'],
+      [/forest\s*green/i,     '#2e5339'],
+      [/kelly\s*green/i,      '#4cbb17'],
+      [/bottle\s*green/i,     '#163429'],
+      [/fluo\w*\s*yellow/i,   '#e8f41a'],
+      [/fluo\w*\s*orange/i,   '#ff6f1a'],
+      [/fluo\w*\s*pink/i,     '#ff2d9e'],
+    ];
+    var PASTILLES_SIMPLES = {
+      white: '#ffffff', black: '#111111', grey: '#8a8a8a', gray: '#8a8a8a',
+      red: '#c8102e', blue: '#2a52be', green: '#2e8b57', navy: '#1b1f3b',
+      orange: '#f47c20', yellow: '#f5d020', gold: '#cda434', purple: '#6a3fa0',
+      violet: '#6a3fa0', fuchsia: '#cc0a6e', pink: '#e5739f', sand: '#d9c2a3',
+      beige: '#d9c2a3', brown: '#6b4226', khaki: '#8a7d55', bordeaux: '#6d1b2a',
+      maroon: '#6d1b2a', turquoise: '#30c2b0', cream: '#f2e9d8', ivory: '#f3ecd6',
+      silver: '#c0c0c0', lime: '#9acd32', azur: '#4fa8e0', azure: '#4fa8e0',
+      cyan: '#2bb6c9',
+    };
+    var _tlCouleurHex = function (nom) {
+      var n = String(nom || '');
+      for (var i = 0; i < PASTILLES_COMPOSEES.length; i++) {
+        if (PASTILLES_COMPOSEES[i][0].test(n)) return PASTILLES_COMPOSEES[i][1];
+      }
+      var mots = n.toLowerCase().match(/[a-zàâäéèêëïîôöùûüç]+/g) || [];
+      for (var j = mots.length - 1; j >= 0; j--) {
+        if (PASTILLES_SIMPLES[mots[j]]) return PASTILLES_SIMPLES[mots[j]];
+      }
+      return null;
+    };
+
+    // Construit la grille de boutons taille (réutilisée par le cas simple,
+    // le 3e temps "taille d'une couleur donnée", ET l'étape couleur elle-
+    // même avec `avecPastilles: true`).
+    var construireGrilleVariantes = function (variantes, surChoix, opts) {
+      var avecPastilles = !!(opts && opts.avecPastilles);
       var g = document.createElement('div');
       g.className = 'tl-choix-tailles';
       variantes.forEach(function (va) {
         var b = document.createElement('button');
         b.type = 'button'; b.className = 'tl-choix-taille';
-        b.textContent = va.nom;
+        if (avecPastilles) {
+          var hex = _tlCouleurHex(va.nom);
+          if (hex) {
+            var pastille = document.createElement('span');
+            pastille.className = 'tl-choix-pastille';
+            pastille.style.background = hex;
+            b.appendChild(pastille);
+          }
+        }
+        var label = document.createElement('span');
+        label.textContent = va.nom;
+        b.appendChild(label);
         if (!va.dispo) { b.disabled = true; b.title = 'Épuisé'; }
         else b.addEventListener('click', function () { surChoix(va); });
         g.appendChild(b);
@@ -1576,7 +1642,8 @@
           ordreGroupes.map(function (grp) {
             return { nom: grp, dispo: groupes[grp].some(function (v) { return v.dispo; }) };
           }),
-          function (choisie) { etapeTaillesDuGroupe(f, choisie.nom, groupes[choisie.nom]); }
+          function (choisie) { etapeTaillesDuGroupe(f, choisie.nom, groupes[choisie.nom]); },
+          { avecPastilles: true }
         );
         corps.appendChild(gc);
         var premiereCouleur = gc.querySelector('.tl-choix-taille:not([disabled])');
