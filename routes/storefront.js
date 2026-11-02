@@ -611,39 +611,74 @@ async function adminGraphQL(shopRecord, query, variables) {
   return j ? j.data : null;
 }
 
-// Admin REST : crée une variante pré-tarifée (taille de base + palier d'impression).
-// ADDITIF — ne modifie jamais les variantes existantes. La valeur d'option
-// « Impression » (ex « +4,00 € ») est ajoutée automatiquement par Shopify si
-// elle n'existe pas encore. Lance une erreur (.status) en cas d'échec.
-async function createPricedVariant(shopRecord, product, baseVariant, printPos, wantLabel, price) {
-  const variant = { price: Number(price).toFixed(2) };
-  for (const i of [1, 2, 3]) {
-    if (i === printPos) variant['option' + i] = wantLabel;
-    else if (baseVariant['option' + i] != null) variant['option' + i] = baseVariant['option' + i];
-  }
-  // Hérite des propriétés logistiques de la variante de base.
-  variant.taxable           = baseVariant.taxable !== false;
-  variant.requires_shipping = baseVariant.requires_shipping !== false;
-  if (baseVariant.weight != null) { variant.weight = baseVariant.weight; variant.weight_unit = baseVariant.weight_unit; }
-  if (baseVariant.sku) variant.sku = baseVariant.sku;
-  // Pas de suivi de stock sur la dimension « Impression » → toujours achetable.
-  variant.inventory_management = null;
-  variant.inventory_policy     = 'continue';
-
-  const r = await fetch(
-    `https://${shopRecord.shop_domain}/admin/api/2024-01/products/${encodeURIComponent(product.id)}/variants.json`,
-    {
-      method: 'POST',
-      headers: { 'X-Shopify-Access-Token': shopRecord.access_token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ variant }),
+// Admin GraphQL : crée une variante pré-tarifée (taille de base + palier
+// d'impression). ADDITIF — ne modifie jamais les variantes existantes.
+// Lance une erreur (.status) en cas d'échec.
+//
+// ANCIENNEMENT en REST (POST /products/{id}/variants.json) : Shopify a
+// déprécié la création de variantes par REST (2024-04) ET cet endpoint
+// reste de toute façon plafonné à 100 variantes par produit — un produit
+// qui a DÉJÀ atteint ou dépassé 100 variantes (ex. IB311 : 101 variantes en
+// prod, cf. registre d'anomalies) voit alors CHAQUE tentative de création
+// échouer silencieusement en arrière-plan : ni 401 ni 403 (donc jamais le
+// message « scope write_products requis »), juste une erreur Shopify
+// générique qui retombe dans le 409 « Cette combinaison taille / impression
+// n'est pas encore configurée. » — vrai pour N'IMPORTE QUELLE combinaison
+// pas déjà créée sur ce produit, pas seulement celle testée en premier.
+// La mutation GraphQL productVariantsBulkCreate n'a pas ce plafond de 100
+// (jusqu'à 2048 variantes) : c'est elle qui permet de fonctionner par
+// défaut, sans configuration manuelle préalable, sur n'importe quel produit.
+const _MUT_CREATE_PRICED_VARIANT = `
+  mutation tlCreatePricedVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+    productVariantsBulkCreate(productId: $productId, variants: $variants) {
+      productVariants { id price }
+      userErrors { field message code }
     }
-  );
-  const j = await r.json().catch(() => null);
-  if (!r.ok) {
-    const msg = j && j.errors ? JSON.stringify(j.errors) : ('HTTP ' + r.status);
-    const e = new Error(msg); e.status = r.status; throw e;
+  }`;
+
+const _WEIGHT_UNIT_GRAPHQL = { g: 'GRAMS', kg: 'KILOGRAMS', oz: 'OUNCES', lb: 'POUNDS' };
+
+async function createPricedVariant(shopRecord, product, baseVariant, printPos, wantLabel, price) {
+  // optionValues se résout par NOM d'option (pas par position "option1/2/3"
+  // comme en REST) — product.options est au format REST ({name, position}),
+  // donc on fait la correspondance position → nom ici.
+  const optionValues = (product.options || [])
+    .map((opt) => {
+      const valeur = opt.position === printPos ? wantLabel : baseVariant['option' + opt.position];
+      return (valeur != null) ? { optionName: opt.name, name: String(valeur) } : null;
+    })
+    .filter(Boolean);
+
+  const inventoryItem = {
+    tracked: false, // pas de suivi de stock sur une variante créée à la volée → toujours achetable
+    requiresShipping: baseVariant.requires_shipping !== false,
+  };
+  if (baseVariant.sku) inventoryItem.sku = baseVariant.sku;
+  if (baseVariant.weight != null) {
+    const unit = _WEIGHT_UNIT_GRAPHQL[String(baseVariant.weight_unit || '').toLowerCase()];
+    if (unit) inventoryItem.measurement = { weight: { value: baseVariant.weight, unit } };
   }
-  return j.variant;
+
+  const data = await adminGraphQL(shopRecord, _MUT_CREATE_PRICED_VARIANT, {
+    productId: `gid://shopify/Product/${product.id}`,
+    variants: [{
+      price: Number(price).toFixed(2),
+      optionValues,
+      taxable: baseVariant.taxable !== false,
+      inventoryPolicy: 'CONTINUE', // jamais de rupture sur la dimension Impression
+      inventoryItem,
+    }],
+  });
+  const ue = data?.productVariantsBulkCreate?.userErrors || [];
+  if (ue.length) {
+    const e = new Error(ue.map(x => x.message).join(', '));
+    e.status = 422; e.userErrors = ue;
+    throw e;
+  }
+  const created = (data?.productVariantsBulkCreate?.productVariants || [])[0];
+  if (!created) { const e = new Error('Aucune variante retournée par Shopify'); e.status = 500; throw e; }
+  // Normalise au format attendu par l'appelant (id numérique, comme le REST d'avant).
+  return { id: _numId(created.id), price: created.price };
 }
 
 const _numId = (v) => String(v || '').replace(/^gid:\/\/shopify\/ProductVariant\//, '').trim();
