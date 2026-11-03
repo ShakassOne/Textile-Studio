@@ -1557,23 +1557,27 @@
   }
   .btn-cart-big:hover { background: var(--amber2); }
 
-  /* Pendant l'ajout au panier (~30s : sauvegarde design + rendu HD + résolution
-     variante) : le bouton se contracte en un petit carré arrondi qui "respire"
-     en boucle, plutôt qu'un texte figé qui laisse croire que ça a planté sur
-     une attente aussi longue. Couleur du bouton inchangée (ex. noir en thème
-     clair) — seule la forme bouge. Le texte reste dans le DOM (lu par les
-     lecteurs d'écran) mais devient invisible via color:transparent. */
-  .btn-cart-big.tl-loading {
-    width: 48px; min-width: 48px; max-width: 48px; flex: none;
-    margin: 0 auto; padding: 0; color: transparent;
-    pointer-events: none; cursor: default;
-    animation: tlCartBtnWobble 1.2s ease-in-out infinite;
+  /* Pendant l'ajout au panier : un petit T-shirt (icône SVG) se remplit de
+     "peinture" en boucle à côté du texte — léger (CSS pur, un clip-path
+     animé, aucun WebGL/canvas), après l'essai LaserFlow jugé trop lourd en
+     usage réel. L'icône par défaut (🛒) et le libellé normal sont remplacés
+     le temps du chargement via b.innerHTML (voir _checkoutShopifyDirect),
+     puis restaurés tels quels — jamais de recréation de bouton. */
+  .tl-paint-icon {
+    position: relative; width: 20px; height: 20px; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
   }
-  @keyframes tlCartBtnWobble {
-    0%, 100% { border-radius: 14px; transform: scale(1) rotate(0deg); }
-    25%      { border-radius: 42% 58% 53% 47% / 48% 42% 58% 52%; transform: scale(.92) rotate(-6deg); }
-    50%      { border-radius: 50%; transform: scale(1.05) rotate(5deg); }
-    75%      { border-radius: 55% 45% 40% 60% / 58% 55% 45% 42%; transform: scale(.94) rotate(-4deg); }
+  .tl-paint-icon svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .tl-paint-icon .tl-ts-outline { opacity: .4; }
+  .tl-paint-icon .tl-ts-fill {
+    fill: #ffb020;
+    clip-path: inset(100% 0 0 0);
+    animation: tlPaintFill 1.7s cubic-bezier(.45,0,.2,1.35) infinite;
+  }
+  @keyframes tlPaintFill {
+    0%   { clip-path: inset(100% 0 0 0); }
+    55%  { clip-path: inset(0% 0 0 0); }
+    100% { clip-path: inset(100% 0 0 0); }
   }
 
   /* ============================================
@@ -7875,6 +7879,32 @@ function addMobileTicketBatch() {
 
 // Touch swipe to close drawers — géré uniquement via _initDrawerDrag sur le handle
 
+// Icône T-shirt (SVG) qui se remplit de « peinture » pendant le chargement
+// (voir .tl-paint-icon / @keyframes tlPaintFill plus haut) — remplace
+// l'icône panier + le libellé normal pendant la préparation, restaurés à
+// l'identique ensuite. Un seul tracé SVG réutilisé deux fois (contour
+// discret + remplissage, découpé par le clip-path animé en CSS).
+var _TL_TS_PATH = 'M8 3L3 7l3 3 2-1.5V21h8V8.5L18 10l3-3-5-4-2 2a3 3 0 0 1-4 0L8 3z';
+var _TL_PAINT_ICON_HTML = '<span class="tl-paint-icon" aria-hidden="true">'
+  + '<svg viewBox="0 0 24 24" class="tl-ts-outline"><path d="' + _TL_TS_PATH + '" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></svg>'
+  + '<svg viewBox="0 0 24 24" class="tl-ts-fill"><path d="' + _TL_TS_PATH + '"/></svg>'
+  + '</span>';
+
+function _tslStartCartPaint(btns) {
+  btns.forEach(function (b) {
+    if (b.tagName !== 'BUTTON') return;
+    if (b.dataset.tlOrigHtml === undefined) b.dataset.tlOrigHtml = b.innerHTML;
+    b.innerHTML = _TL_PAINT_ICON_HTML + '<span>Fabrication en cours…</span>';
+  });
+}
+function _tslStopCartPaint(btns) {
+  btns.forEach(function (b) {
+    if (b.tagName !== 'BUTTON' || b.dataset.tlOrigHtml === undefined) return;
+    b.innerHTML = b.dataset.tlOrigHtml;
+    delete b.dataset.tlOrigHtml;
+  });
+}
+
 // ============================================
 // CART
 // ============================================
@@ -7884,16 +7914,17 @@ function addMobileTicketBatch() {
 // devant un bouton mort et devait recharger pour réessayer.
 window.addEventListener('message', (e) => {
   if (e.data?.type !== 'tl-add-failed') return;
-  document.querySelectorAll('.btn-cart-big, [onclick*="addToCart"]').forEach(b => {
-    if (b.tagName === 'BUTTON') { b.disabled = false; b.textContent = '🛒 Ajouter au panier'; b.classList.remove('tl-loading'); }
-  });
+  const _failBtns = document.querySelectorAll('.btn-cart-big, [onclick*="addToCart"]');
+  _failBtns.forEach(b => { if (b.tagName === 'BUTTON') b.disabled = false; });
+  _tslStopCartPaint(_failBtns);
   showToast('⚠️ ' + (e.data.message || 'Ajout au panier refusé — réessayez'));
 });
 
 // ── Checkout Shopify direct (depuis fiche produit via bouton Personnaliser) ──
 async function _checkoutShopifyDirect() {
   const allBtns = document.querySelectorAll('.btn-cart-big, [onclick*="addToCart"]');
-  allBtns.forEach(b => { if (b.tagName === 'BUTTON') { b.disabled = true; b.textContent = '⏳ Préparation…'; b.classList.add('tl-loading'); } });
+  allBtns.forEach(b => { if (b.tagName === 'BUTTON') b.disabled = true; });
+  _tslStartCartPaint(allBtns);
 
   // ── 1. Snapshot de la vue courante (mockup + calques) AVANT tout ──
   _saveCurrentViewLayers(); // met aussi à jour STATE.viewThumbs[currentKey]
@@ -8036,7 +8067,8 @@ async function _checkoutShopifyDirect() {
   catch (e) { console.warn('[TextileLab] print render:', e.message); _printOk = false; }
   if (!designId || !_printOk) {
     showToast('❌ Impossible de générer le fichier d\'impression. Vérifiez votre connexion et réessayez.');
-    allBtns.forEach(b => { if (b.tagName === 'BUTTON') { b.disabled = false; b.textContent = '🛒 Ajouter au panier'; b.classList.remove('tl-loading'); } });
+    allBtns.forEach(b => { if (b.tagName === 'BUTTON') b.disabled = false; });
+    _tslStopCartPaint(allBtns);
     return;
   }
 
@@ -8143,7 +8175,8 @@ async function _checkoutShopifyDirect() {
         // Impression absente » de « création de la variante échouée ». On ne
         // parle de combinaison non configurée que dans le second cas.
         showToast('⚠️ ' + (rData?.error || 'Impossible de préparer cette personnalisation — réessayez.'));
-        allBtns.forEach(b => { if (b.tagName === 'BUTTON') { b.disabled = false; b.textContent = '🛒 Ajouter au panier'; b.classList.remove('tl-loading'); } });
+        allBtns.forEach(b => { if (b.tagName === 'BUTTON') b.disabled = false; });
+        _tslStopCartPaint(allBtns);
         return;
       }
       finalVariantId = String(rData.variant_id);
@@ -8192,7 +8225,8 @@ async function _checkoutShopifyDirect() {
   } catch(e) {
     console.error('[TextileLab] _checkoutShopifyDirect:', e);
     showToast('❌ Erreur Shopify : ' + e.message);
-    allBtns.forEach(b => { if (b.tagName === 'BUTTON') { b.disabled = false; b.textContent = '🛒 Ajouter au panier'; b.classList.remove('tl-loading'); } });
+    allBtns.forEach(b => { if (b.tagName === 'BUTTON') b.disabled = false; });
+    _tslStopCartPaint(allBtns);
   }
 }
 
