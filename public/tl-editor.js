@@ -57,6 +57,47 @@
     return window.innerWidth < 768 || window.innerHeight < 500;
   }
 
+  /**
+   * Icône T-shirt (SVG) qui se remplit de « peinture » pendant l'envoi au
+   * panier — remplace l'essai LaserFlow (WebGL2) jugé trop lourd en usage
+   * réel. Simple badge positionné par-dessus le bouton du THÈME (jamais
+   * touché directement : c'est un élément du marchand, pas le nôtre), en
+   * CSS pur (un clip-path animé) — aucun canvas, aucune boucle JS par frame.
+   */
+  var _TL_TS_PATH = 'M8 3L3 7l3 3 2-1.5V21h8V8.5L18 10l3-3-5-4-2 2a3 3 0 0 1-4 0L8 3z';
+  var _TL_PAINT_ICON_HTML = '<svg viewBox="0 0 24 24" class="tl-ts-outline"><path d="' + _TL_TS_PATH + '" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></svg>'
+    + '<svg viewBox="0 0 24 24" class="tl-ts-fill"><path d="' + _TL_TS_PATH + '"/></svg>';
+
+  function tsleAfficherIconePeinture(surfaceEl) {
+    if (!surfaceEl) return { destroy: function () {} };
+    var badge = document.createElement('div');
+    badge.setAttribute('aria-hidden', 'true');
+    badge.className = 'tsle-paint-icon-badge';
+    badge.innerHTML = _TL_PAINT_ICON_HTML;
+    document.body.appendChild(badge);
+    function position() {
+      var r = surfaceEl.getBoundingClientRect();
+      badge.style.left = (r.left + 10) + 'px';
+      badge.style.top  = (r.top + r.height / 2 - 11) + 'px';
+    }
+    position();
+    var resizeObserver = new ResizeObserver(position);
+    resizeObserver.observe(document.body);
+    window.addEventListener('scroll', position, true);
+    window.addEventListener('resize', position);
+    var destroyed = false;
+    return {
+      destroy: function () {
+        if (destroyed) return;
+        destroyed = true;
+        resizeObserver.disconnect();
+        window.removeEventListener('scroll', position, true);
+        window.removeEventListener('resize', position);
+        if (badge.parentNode) badge.parentNode.removeChild(badge);
+      }
+    };
+  }
+
   var OUTILS = {
     text:   { titre: 'Textes',  sous: 'Ajoutez et personnalisez votre texte',
               icone: '<path d="M4 7V5h16v2M9 19h6M12 5v14"/>' },
@@ -74,6 +115,17 @@
   // Peu de règles, toutes préfixées, et on hérite de la police du thème : ce
   // bloc doit se fondre dans des habillages qu'on ne maîtrise pas.
   var CSS = ''
+    // Badge "T-shirt qui se remplit de peinture", posé par-dessus le bouton
+    // du thème pendant la préparation (voir tsleAfficherIconePeinture) —
+    // léger : un clip-path animé, aucun canvas/WebGL.
+    + '.tsle-paint-icon-badge{position:fixed;z-index:2147483000;width:22px;height:22px;'
+    +   'pointer-events:none}'
+    + '.tsle-paint-icon-badge svg{position:absolute;inset:0;width:100%;height:100%}'
+    + '.tsle-paint-icon-badge .tl-ts-outline{opacity:.5;stroke:#111}'
+    + '.tsle-paint-icon-badge .tl-ts-fill{fill:#ffb020;clip-path:inset(100% 0 0 0);'
+    +   'animation:tlPaintFill 1.7s cubic-bezier(.45,0,.2,1.35) infinite}'
+    + '@keyframes tlPaintFill{0%{clip-path:inset(100% 0 0 0)}55%{clip-path:inset(0% 0 0 0)}'
+    +   '100%{clip-path:inset(100% 0 0 0)}}'
     // `width:100%` et `flex-basis:100%` : posé dans un groupe de blocs que le
     // thème dispose en rangée, le conteneur était écrasé à zéro de large et
     // la barre devenait invisible — présente dans le DOM, mais sans surface.
@@ -844,6 +896,10 @@
   };
 
   Editeur.prototype.fermer = function () {
+    // L'icône peinture du bouton panier ne doit jamais survivre à la
+    // fermeture du studio, qu'elle vienne d'un ajout réussi ou d'un clic du
+    // client.
+    if (this._peintureFx) { this._peintureFx.destroy(); this._peintureFx = null; }
     if (!this.outil) return;
 
     // Retour au recto avant de refermer. La galerie du thème reprend sa
@@ -4250,6 +4306,10 @@
     if (this._envoiEnCours) return;
     this._envoiEnCours = true;
     this.occuperBoutons(true);
+    // Retour visuel : le T-shirt se remplit de peinture pendant la
+    // préparation du fichier d'impression. fermer() (succès) ou le catch
+    // ci-dessous (échec) l'arrêtent — jamais laissé tourner après coup.
+    this._peintureFx = tsleAfficherIconePeinture(this.boutonTheme);
 
     var comp = this.moteur.exporterComposition();
     var vignette = '';
@@ -4322,6 +4382,7 @@
         self.poserDansLePanier(props, apercu || impression, rendu.varianteId);
       });
     }).catch(function (err) {
+      if (self._peintureFx) { self._peintureFx.destroy(); self._peintureFx = null; }
       self._envoiEnCours = false;
       self.occuperBoutons(false);
       self._message('Impossible d\'enregistrer votre personnalisation ('
@@ -4398,6 +4459,7 @@
       if (!r.ok) throw new Error('panier ' + r.status);
       window.location.href = '/cart';
     }).catch(function () {
+      if (self._peintureFx) { self._peintureFx.destroy(); self._peintureFx = null; }
       self._envoiEnCours = false;
       self.occuperBoutons(false);
       self._message('L\'ajout au panier a échoué. Réessayez.', true);
